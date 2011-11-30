@@ -1,0 +1,89 @@
+Changelog:
+
+Version 0.6.9 ()
+    - Bugfix to xstatus to reset terminal after clean exit
+    - Bugfix to corr_snap_10gbe_tx.py which decoded frequencies incorrectly.
+    - X-engine 10gbe cores were not being reset correctly in corr_functions.initialise and in the corr_init script (which should use corr_functions.init?).
+      gbe_enable in the control register was being disabled, but isn't used in the gateware. The gateware uses the gbe_out_enable bit to stop transmission
+      from the mux_out block.
+      gbe_reset_hold_x/f and gbe_reset_release_x/f functions added to corr_functions to be used instead of using x/feng_ctrl_set_all directly.
+    - corr_snap_descramble.py can analyse both descramble snap blocks on an x-engine board. Also plot the reassembled spectrum.
+    - corr_snap_xaui_feng.py updated for new snapshot blocks.
+    - corr_snap_xaui_feng_build_spectrum.py added. Rebuild and plot the spectrum from the snap_xaui block.
+
+Version 0.6.8 (2011-08-03):
+    - Bugfix to n_accs calc with changes to acc_n_set/get
+
+Version 0.6.7 (2011-07-20):
+    - More reliable rx.py for interleaved RX mode. No more repeated accumulations.
+    - Began adding functions for upcoming narrowband mode. 
+    - Started generalising bitfields
+
+Version 0.6.6 (2011-04-04):
+    - Added function to corr_functions to calibrate ADC spectrum.
+    - Removed bits counter used from adc_amplitudes, which was an inaccurate reflection anyway.
+    - Prettied time plots from snapshots, added spectrum etc. corr_adc_time now replaces corr_adc_histogram
+    - RCS blocks now supported.
+    - changes to fstatus, spead metadata, adc_amplitudes_get
+    - added colour to log printouts when error occurs
+    - changes to config file. system now basically single-pol. no more n_stokes, n_pol or pol map
+    - support for arbitrary antenna names. parameters to all fuctions that used to take antenna,pol params now take single string param.
+    - get_ant_location replaced by get_ant_str_location
+    - single RX script... now calls threaded functions in rx.py.
+    - added functions for per-engine status. useful for system health displays.
+    - bugfixes to katadc's temp reading
+    - katadc attenuator get/set implemented
+
+Version 0.6.5 (2011-03-01):
+    - Added software control for KATADC and iADC.
+
+Version 0.6.4 (2011-02-09):
+    - Bug fixes for systems using xaui loopback
+    - added clear facilities to fstatus
+    - removed stats library dependancy
+    - bug fixes to scroller
+    - bug fixes to snap capture in katcp_wrapper
+
+
+Version 0.6.2 (2010-11-26):
+    - Added example.conf file to distribution package.
+    - Fix to corr_xstatus.py for case where F engines have 10GbE out and X engines have 10GbE (fabric) output.
+    - Mod to corr_rx_cont_h5.py to allow for commanline disable of n_acc scaleback.
+    - Mod to corr_arm to resync vaccs after rearm.
+     
+Version 0.6.1 (2010-11-25):
+    - Fix to corr_snap_quant.py script.
+
+Version 0.6.0
+    - Support added for F engines that output data directly on 10GbE ports (ie no XAUI loopback through X engines). 
+    - Support added for X engines that process contiguous frequency chunks.
+    - Should be backwards compatible with XAUI systems and X engines that process interleaved channels (corr-0.5.1).
+    - Error handling mostly unified and coded to use logging everywhere rather than printing errors to the console.
+    - Added funtion to check firmware versions.
+    - Added SPEAD metadata.
+    - Feng/Xeng ctrl registers now keep state across function calls and can automatically pulse, set or clear bits.
+    - ADC and Requant histogram plotting improvements
+    - Shift to curses display for ADC amplitudes and status reporting
+    - Fix to fine delay calc in fr_delay_set call and added ability to disable load check.
+    - New config file params to support above features. Some redundant and unnecessary params removed.
+
+Version 0.5.1
+    - Bugfixes relating to KATADC/iADC use.
+    - Moving all scripts to function calls.
+    - First PyPI submission.
+    - Incomplete and untested. Development abandoned to start work on system with native Feng 10Gbe out.
+
+Version 0.5.0
+    - Requires reconfigurable (ie ROACH) F engines. Support for iBOB-based F engines has been dropped as we switch to KATCP-only connections.
+    - significant changes to corr_functions and cn_conf to support ROACH based F engines.
+    - Changed configuration parsing library to iniparse.
+
+Version 0.4.2: 2010-04-02
+     *) tgtap call in katcp_wrapper now takes another parameter to allow naming of tap devices. *NOT BACKWARDS COMPATIBLE*
+     *) antenna numbering now correct off F engines.
+     *) cn_tx.py replaced by corr_tx.py
+     *) cleanup of some functions.
+
+Version 0.4.0 
+    - KATCP control protocol. 
+

@@ -1,0 +1,139 @@
+#NO WHITESPACE BETWEEN TEXT DELIMITERS!
+#This is a sample config file for KAT7 lab system in South Africa with 8 dual-pol antennas on 16 ROACH boards all plugged into 10GbE switch with 10GbE output.
+#Some fields will be automatically overwritten when corr_init is run.
+
+[katcp]
+#List of servers to be used for F/X engines. Comma separated list with no whitespace.
+servers_f = roach030268,roach030279,roach030265,roach030203,roach030276,roach030269,roach030267,roach030277
+servers_x = roach030274,roach030271,roach030270,roach030273,roach030266,roach030263,roach030275,roach030196
+#This is the control port to use when communicating with BORPH. By default, ROACHes use 7147.
+katcp_port = 7147
+#bitstream to load the FPGAs. Should be present and load-able by ROACH's KATCP server - corr will not do this for you.
+bitstream_f = r_128w_1024_11_1a_r418_2011_Jul_21_1621.bof
+bitstream_x = r_1f_2x_8a_1k_r352_2011_Jun_29_1057.bof
+
+[correlator]
+#type of ADC. katadc or iadc.
+adc_type = katadc
+#number of frequency channels
+n_chans = 1024
+#number of antennas in the design.
+n_ants = 8
+#fft shifting schedule in decimal. A binary '1' shifts, a zero does not.
+fft_shift = 252
+#Number of spectra to integrate in DRAM.
+acc_len = 3051
+#Number of accumulations performed in the X engine cores.
+xeng_acc_len = 128
+#Clockrate of ADCs in Hz.
+adc_clk = 800000000
+##Number of stokes parameters calculated. Currently only fully supports n_stokes=4.
+#n_stokes = 4
+#Number of X engines per FPGA
+x_per_fpga = 2
+#Mixing freqency as a fraction of the sampling frequency. (the DDC block in the F engines). eg, 0.25. Set to zero if no DDC is present.
+ddc_mix_freq = 0
+#Frequency decimation of the DDC block in the F engines. eg, 4. Set to 1 if no DDC present.
+ddc_decimation = 1
+#Number of quantisation bits post FFT in the F engines. feng_bits=4 is the only fully supported config option at present.
+feng_bits = 4
+#Logical binary point position of F engine data. Normally feng_bits-1. 
+feng_fix_pnt_pos = 3
+#pkt len of 10GbE exchange data in 64 bit words.
+10gbe_pkt_len = 32
+#Starting ip address to use for FPGA cores (will be auto-incremented for different x engines and auto decremented for F engines)
+10gbe_ip = 10.0.0.128
+#UDP data port to use for 10GbE cores.
+10gbe_port = 8888
+#clock rate in MHz for X engine boards.
+xeng_clk = 210
+#Number of accumulations used during ADC amplitude averaging.
+adc_levels_acc_len = 65536
+#Number of bits in ADC
+adc_bits = 8
+#Xengine output format. Interleaved (inter) or contiguous (cont).
+xeng_format = cont
+#how does data exit the F engines? xaui or 10gbe.
+feng_out_type = 10gbe
+#Number of dual-pol antennas' data coming over one link from the F engines (ie per 10GbE or XAUI cable)
+n_ants_per_xaui = 1
+#Number of XAUI ports in use per X engine FPGA
+n_xaui_ports_per_xfpga = 1
+#Number of XAUI or 10GbE ports in use per F engine FPGA
+n_xaui_ports_per_ffpga = 1
+#Number of bits used in the F engine for timekeeping (the master counter)
+mcnt_bits = 48
+#number of bits used in the packet header for timestamping
+pcnt_bits = 48
+
+[receiver]
+#How is data to be retrieved from the correlator? either ppc or 10GbE. Only 10GbE is fully (ie automatically) supported. ppc will require manual intervention with the cn_tx.py script.
+out_type = 10gbe
+#spead flavour. string in the form XX,YY. Default: 64,40. consult the SPEAD documentation for details. Only 64-40 tested.
+spead_flavour=64,40
+#UDP receiver for output data
+rx_udp_ip = 10.0.0.2
+rx_udp_port = 7148
+rx_meta_ip = 127.0.0.1
+#Output packet payload length in bytes. Does not include SPEAD options fields.
+rx_pkt_payload_len = 4096
+#signal display config:
+sig_disp_ip = 127.0.0.1
+sig_disp_port=7149
+
+[equalisation]
+#Decimation. Adjacent frequency channels share coefficients. The center equalisation value is chosen for adjacent bins. n_eq_coeffs_per_polarisation == n_chans/eq_decimation
+eq_decimation=1
+#Equaliser type (complex or scalar)
+eq_type=complex
+#Default values for equaliser (digital gain) derived from eq_poly values (poly) or set to eq_coeff values (coef).
+eq_default=poly
+#Tolerance to use for auto-equalization
+tolerance = 0.01
+
+#rf_gain sets the analogue attenuators on the ADCs. Acceptible range on KATADCs is -11 to +22 in  0.5dB steps. 
+#the antenna string must match your /var/run/corr/antenna_mapping contents!
+rf_gain_0 = 4
+rf_gain_1 = 4
+rf_gain_2 = 4
+rf_gain_3 = 4
+rf_gain_4 = 4
+rf_gain_5 = 4
+rf_gain_6 = 4
+rf_gain_7 = 4 
+rf_gain_8 = 4
+rf_gain_9 = 4
+rf_gain_10 = 4
+rf_gain_11 = 4
+rf_gain_12 = 4
+rf_gain_13 = 4
+rf_gain_14 = 4
+rf_gain_15 = 4 
+
+#The eq_poly lines are used for setting the equalisers using a polynomial. 
+#One line entry per input. Item is a list of polynomial coefficients.
+#the antenna string must match your /var/run/corr/antenna_mapping contents exactly!
+#Eg,
+#eq_poly_0x = 10,30,40
+#corresponds to 10c^2 + 30c + 40 where c is the frequency channel index.
+#In the event of complex equaliser types, these values are applied to both the real and imaginary components (ie scalar). If you want to be able to configure these coefficients separately, use the eq_coeff configuration mode.
+eq_poly_0  = 300
+eq_poly_1  = 300
+eq_poly_2  = 300
+eq_poly_3  = 300
+eq_poly_4  = 300
+eq_poly_5  = 300
+eq_poly_6  = 300
+eq_poly_7  = 300
+eq_poly_8  = 300
+eq_poly_9  = 300
+eq_poly_10  = 300
+eq_poly_11  = 300
+eq_poly_12  = 300
+eq_poly_13  = 300
+eq_poly_14  = 300
+eq_poly_15  = 300
+#The eq_coeff lines are used for setting the equalisers manually, specifying each frequency channel for every polarisation input.
+#Each line should have n_chans/eq_decimation entries.
+#Entries are python lists (comma separated values within square brackets).
+#eg eq_coeff_0x=[1,2,3,4]

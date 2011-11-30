@@ -1,0 +1,31 @@
+CORR
+
+This package provides functions to control modern CASPER packetised correlators.  It also provides a general-purpose wrapper for communicating with ROACH boards over KATCP (src/katcp_wrapper.py).  
+
+Installation:
+Do the normal
+    sudo python setup.py install
+
+Usage:
+
+Correlators are configured by writing a configuration file. This is stored in /etc/corr/config as of version 0.6.5. This file should match the bitstreams' configurations (Simulink parameters). Simply change to suite your setup.
+
+Users can control the entire system by calling the appropriate functions in corr_functions.py. Most common commands also have scripts available. All scripts start with "corr_" which will help users to find the right one for their needs (type corr <tab><tab> at the command prompt and most linux distros will list all matching executables in your path). Some have additional options (run with the -h flag to see details).
+
+Normally users will only need to run corr_init.py to configure everything and start the correlator dumping output. For those not using 10GbE output, you will need to manually start cn_tx_*.py on the ROACH boards. Demonstration receiver scripts are also provided that store data in HDF5 format. Start the appropriate cn_rx*.py script BEFORE initialising the system to capture your data to disk and forward to a katsdisp compatible realtime signal display. If you start the cn_rx script afterwards, you will need to reissue the SPEAD metadata (corr_spead_issue.py) so that the receiver can understand how to unpack the data. The receiver can run on a different computer. 
+
+There are additional scripts for system control and monitoring. For example, ADC input levels can be monitored using corr_adc_ampl.py and histograms plotted using corr_adc_hist.py. Accumulation periods can be configured using corr_acc_period.py and quantisation (equaliser) control with corr_eq_init.py. 
+
+For debugging purposes, the corr_snap_* scripts allow the user to see snapshots of signalflow through the system. Most of these scripts will decode the datastream to the terminal but some are capable of plotting spectrums etc.
+
+Requires:
+    - iniparse, numpy, matplotlib (if plotting outputs), katcp, PySPEAD, construct
+
+Recommended:
+    - katsdisp, the standalone KAT signal display package for visualising output.
+
+ToDo:
+    - Support for parallel connections to ROACH boards. Right now, commands issued to multiple boards are processed sequentially. It should be possible to gain speedups by issuing such commands in parallel.
+    - Create an error-handling class so that all scripts use the same thing. As it stands, all scripts re-write the same functions repeatedly.
+    - fix integer rounding in corr_rx and in katsdip
+
