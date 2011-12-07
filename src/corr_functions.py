@@ -294,6 +294,7 @@ class Correlator:
             raise RuntimeError("Failed to successfully program FPGAs.")
         else:
             self.syslogger.info("All FPGAs programmed ok.")
+            time.sleep(1)
             self.get_rcs()
 
     def check_fpga_comms(self):

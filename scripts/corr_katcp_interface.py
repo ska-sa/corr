@@ -190,7 +190,7 @@ class DeviceExampleServer(katcp.DeviceServer):
 
     def request_get_adc_snapshots(self, sock, orgmsg):
         """Grabs a snapshot of data from the specified antennas. 
-            \n@Param boolean Sync to 1PPS (ie align all snapshots). Note that this could cost a bit of time as we wait for the next 1PPS. 
+            \n@Param integer Sync to 1PPS (ie align all snapshots). Note that this could cost a bit of time as we wait for the next 1PPS. 
             \n@Param integer Wait for ADC level of trigger_level to capture transients.
             \n@Params list of antenna strings.
             \n@reply str antenna name.
@@ -202,7 +202,7 @@ class DeviceExampleServer(katcp.DeviceServer):
         if len(orgmsg.arguments)<3: 
             return katcp.Message.reply(orgmsg.name,"fail","... you didn't specify enough arguments.")
         try:
-            sync_to_pps=bool(orgmsg.arguments[0])
+            sync_to_pps=bool(int(orgmsg.arguments[0]))
             trig_level=int(orgmsg.arguments[1])
             ant_strs=orgmsg.arguments[2:]
             for ant_str in ant_strs:

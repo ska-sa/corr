@@ -43,7 +43,7 @@ def feng_unpack(f, hdr_index, pkt_len):
 
     # average the packet contents - ignore first entry (header)
     for pkt_index in range(1, pkt_len):
-        pkt_64bit = snap_data[f]['data'][pkt_index].data
+        pkt_64bit = snap_data[f]['data'][hdr_index + pkt_index].data
 
         for offset in range(0,64,16):
             polQ_r = (pkt_64bit & ((2**(offset+16)) - (2**(offset+12))))>>(offset+12)

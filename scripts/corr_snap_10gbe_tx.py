@@ -38,7 +38,7 @@ def feng_unpack(f, hdr_index, pkt_len):
 
     # average the packet contents - ignore first entry (header)
     for pkt_index in range(1, pkt_len):
-        pkt_64bit = snap_data[f]['data'][pkt_index].data
+        pkt_64bit = snap_data[f]['data'][hdr_index + pkt_index].data
 
         for offset in range(0,64,16):
             polQ_r = (pkt_64bit & ((2**(offset+16)) - (2**(offset+12))))>>(offset+12)
@@ -108,17 +108,12 @@ if __name__ == '__main__':
         help='Be Verbose; print raw packet contents.')   
     p.add_option('-n', '--core_n', dest='core_n', type='int', default=0,
         help='Core number to decode. Default 0.')
-    p.add_option('-e', '--engine', dest='engine', type='str', default='f', help='f for F-engines, x for X-engines')
     opts, args = p.parse_args(sys.argv[1:])
     if args == []:
         config_file = None
     else:
         config_file = args[0]
     verbose = opts.verbose
-
-    if not (opts.engine == 'x' or opts.engine == 'f'):
-        print 'Can only choose F- or X-engines. (x or f)'
-        exit_fail()
 
 try:        
     print 'Connecting...',
@@ -135,13 +130,11 @@ try:
     n_chans = c.config['n_chans']
     n_xengs = c.config['n_xeng']
 
-    print 'Grabbing and unpacking snap data... ',
-    if opts.engine == 'x':
-        servers = c.xsrvs
-        snap_data = corr.snap.get_gbe_tx_snapshot_xeng(c, offset = opts.offset, man_trigger = opts.man_trigger, man_valid = opts.raw)
-    elif opts.engine == 'f':
-        servers = c.fsrvs
-        snap_data = corr.snap.get_gbe_tx_snapshot_feng(c, offset = opts.offset, man_trigger = opts.man_trigger, man_valid = opts.raw)
+    print 'Grabbing and unpacking snap data from F engines... ',
+
+    #TODO: add check to make sure this is a 10gbe design (as opposed to a xaui link)
+    servers = c.fsrvs
+    snap_data = corr.snap.get_gbe_tx_snapshot_feng(c, offset = opts.offset, man_trigger = opts.man_trigger, man_valid = opts.raw)
     print 'done.'
 
     report = dict()

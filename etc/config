@@ -13,6 +13,8 @@ bitstream_f = r_128w_1024_11_1a_r418_2011_Jul_21_1621.bof
 bitstream_x = r_1f_2x_8a_1k_r352_2011_Jun_29_1057.bof
 
 [correlator]
+# the correlator mode - 0 = wideband, 1 = narrowband, 2 = narrowband_ddc
+mode = 0
 #type of ADC. katadc or iadc.
 adc_type = katadc
 #number of frequency channels

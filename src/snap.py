@@ -83,7 +83,7 @@ def snapshots_get(fpgas,dev_names,man_trig=False,man_valid=False,wait_period=-1,
 
 
 def get_adc_snapshots(correlator,ant_strs=[],trig_level=-1,sync_to_pps=True):
-    """Fetches multiple ADC snapshots from hardware. Set trig_level to negative value to disable triggered captures."""
+    """Fetches multiple ADC snapshots from hardware. Set trig_level to negative value to disable triggered captures. Timestamps only valid if system is correctly sync'd!"""
 
     if correlator.config['adc_n_bits'] !=8: 
         raise RuntimeError('This function is hardcoded to work with 8 bit ADCs. According to your config file, yours is %i bits.'%correlator.config['adc_n_bits'])
@@ -95,6 +95,9 @@ def get_adc_snapshots(correlator,ant_strs=[],trig_level=-1,sync_to_pps=True):
         fpgas.append(correlator.ffpgas[ffpga_n])
         dev_names.append('adc_snap%i'%feng_input)
 
+    init_mcnt=correlator.mcnt_current_get(ant_str=ant_strs[0])
+    mcnt_lsbs=init_mcnt&0xffffffff
+
     if trig_level>=0:
         [fpga.write_int('trig_level',trig_level) for fpga in fpgas]
         raw=snapshots_get(fpgas,dev_names,wait_period=-1,circular_capture=True,man_trig=(not sync_to_pps))
@@ -104,14 +107,14 @@ def get_adc_snapshots(correlator,ant_strs=[],trig_level=-1,sync_to_pps=True):
             ready=((int(time.time()*10)%10)==5)
     else:
         raw=snapshots_get(fpgas,dev_names,wait_period=2,circular_capture=False,man_trig=(not sync_to_pps))
-
+    
     rv={}
     for ant_n,ant_str in enumerate(ant_strs):    
         rv[ant_str]={'data':numpy.fromstring(raw['data'][ant_n],dtype=numpy.int8),'offset':raw['offsets'][ant_n],'length':raw['lengths'][ant_n]}
-    
-    if (sync_to_pps==True) or (trig_level>=0):
-        for ant_n,ant_str in enumerate(ant_strs):    
-            rv[ant_str]['timestamp']=fpgas[ant_n].read_uint(dev_names[ant_n]+'_val')
+        ts=fpgas[ant_n].read_uint(dev_names[ant_n]+'_val')
+        rv[ant_str]['timestamp']=correlator.time_from_mcnt((init_mcnt&0xffffffff00000000) + ts)
+        if mcnt_lsbs > ts: 
+            rv[ant_str]['timestamp'] += 0x100000000 #32 bit number must've overflowed once.
 
     return rv
        
