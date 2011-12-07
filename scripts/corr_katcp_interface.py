@@ -210,7 +210,7 @@ class DeviceExampleServer(katcp.DeviceServer):
                     return katcp.Message.reply(orgmsg.name,"fail","Antenna not found. Valid entries are %s."%str(self.c.config._get_ant_mapping_list()))
             snap_data=self.c.get_adc_snapshots(ant_strs,trig_level=trig_level,sync_to_pps=sync_to_pps)
             for ant_str,data in snap_data.iteritems():
-                self.reply_inform(sock,katcp.Message.inform(orgmsg.name,ant_str,str(data['timestamp']),str(data['offset']),*data['data']),orgmsg)
+                self.reply_inform(sock,katcp.Message.inform(orgmsg.name,ant_str,str(data['timestamp']*1000),str(data['offset']),*data['data']),orgmsg)
             return katcp.Message.reply(orgmsg.name,'ok',str(len(snap_data)))
         except:
             return katcp.Message.reply(orgmsg.name,"fail","something broke. sorry.")
