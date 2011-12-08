@@ -201,8 +201,9 @@ def get_rx_snapshot(correlator, xeng_ids, snapname = 'snap_rx0'):
         rv.append(v)
     return rv
 
-def get_gbe_rx_snapshot(correlator, xeng_ids = '', snapname = 'snap_gbe_rx0'):
-    if xeng_ids == '':
+def get_gbe_rx_snapshot(correlator, xeng_ids = [], snapname = 'snap_gbe_rx0'):
+    """Returns a list of dictionaries from 10GbE cores' RX outputs. xeng_ids is a list of integers (xeng core numbers)."""
+    if xeng_ids == []:
        xeng_ids = range(len(correlator.xfpgas))
     fpgas = []
     for xeng_n in xeng_ids:    
