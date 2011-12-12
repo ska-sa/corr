@@ -1,4 +1,11 @@
 """Code for receiving data from correlators and storing in HDF5 file. Will also send a copy to realtime signal display."""
+"""Revs:
+2011-12-12  JRM Metadata propagation to SD.
+                Datatype propagation through to SD
+                min/max value logging (was not scaling back).
+                Loggin: SPEAD and RX levels. 
+                Timestamps to SD.
+"""
 
 import threading
 import numpy as np
@@ -10,14 +17,13 @@ import h5py
 import corr
 
 class CorrRx(threading.Thread):
-    def __init__(self, mode = 'cont', log_handler = None, log_level = logging.INFO, spead_log_level = spead.logging.NOTSET, **kwargs):
+    def __init__(self, mode = 'cont', log_handler = None, log_level = logging.INFO, spead_log_level = spead.logging.WARN, **kwargs):
         if log_handler == None: 
             log_handler=corr.log_handlers.DebugLogHandler(100)
         self.log_handler = log_handler
         self.logger=logging.getLogger('rx')
         self.logger.addHandler(self.log_handler)
         self.logger.setLevel(log_level)
-
         spead.logging.getLogger().setLevel(spead_log_level)
 
         if mode == 'cont':
@@ -52,25 +58,36 @@ class CorrRx(threading.Thread):
         dump_size = 0
         datasets = {} 
         datasets_index = {}
-        meta_required = ['n_chans','n_bls','n_xengs']
+        meta_required = ['n_chans','bandwidth','n_bls','n_xengs','center_freq','bls_ordering']
          # we need these bits of meta data before being able to assemble and transmit signal display data
         meta_desired = ['n_accs']
         meta = {}
         for heap in spead.iterheaps(rx):
             ig.update(heap)
+            logger.debug("PROCESSING HEAP idx(%i) cnt(%i) @ %.4f" % (idx, heap.heap_cnt, time.time()))
             for name in ig.keys():
                 item = ig.get_item(name)
-                if not item._changed and datasets.has_key(name): continue
-                 # the item is not marked as changed, and we have a record for it
+                if not item._changed and datasets.has_key(name): continue # the item is not marked as changed, and we have a record for it
                 if name in meta_desired:
                     meta[name] = ig[name]
                 if name in meta_required:
                     meta[name] = ig[name]
                     meta_required.pop(meta_required.index(name))
                     if len(meta_required) == 0:
-                        logger.info("Got all required metadata. Initialised expecting SD frame shape of %i %i %i"%(
-                            meta['n_chans'],meta['n_bls'],2))
-                        meta_required = ['n_chans','n_bls','n_xengs']
+                        #sd_frame = np.zeros((meta['n_chans'],meta['n_bls'],2),dtype=np.float32)
+                        logger.info("Got all required metadata. Expecting data frame shape of %i %i %i"%(meta['n_chans'],meta['n_bls'],2))
+                        meta_required = ['n_chans','bandwidth','n_bls','n_xengs','center_freq','bls_ordering']
+                        ig_sd = spead.ItemGroup()
+                        for meta_item in meta_required:
+                          ig_sd.add_item(
+                            name=ig.get_item(meta_item).name,
+                            id=ig.get_item(meta_item).id,
+                            description=ig.get_item(meta_item).description,
+                            #shape=ig.get_item(meta_item).shape,
+                            #fmt=ig.get_item(meta_item).format,
+                            init_val=ig.get_item(meta_item).get_value())
+                        tx_sd.send_heap(ig_sd.get_heap())
+
                 if not datasets.has_key(name):
                  # check to see if we have encountered this type before
                     shape = ig[name].shape if item.shape == -1 else item.shape
@@ -88,32 +105,37 @@ class CorrRx(threading.Thread):
                     logger.info("Adding %s to dataset. New size is %i."%(name,datasets_index[name]+1))
                     f[name].resize(datasets_index[name]+1, axis=0)
                 if name.startswith("xeng_raw"):
-                    sd_timestamp = ig['sync_time'] + (ig['timestamp'] / ig['scale_factor_timestamp'])
+                    sd_timestamp = ig['sync_time'] + (ig['timestamp'] / float(ig['scale_factor_timestamp']))
                     #logger.info("SD Timestamp: %f (%s)."%(sd_timestamp,time.ctime(sd_timestamp)))
-                    ig_sd = spead.ItemGroup()
+
+                    scale_factor=float(meta['n_accs'] if (meta.has_key('n_accs') and acc_scale) else 1)
+                    scaled_data = (ig[name]/scale_factor).astype(np.float32)
+
                      # reinit the group to force meta data resend
+                    ig_sd = spead.ItemGroup()
                     ig_sd.add_item(name=('sd_data'),
                                     id=(0x3501), 
                                     description="Combined raw data from all x engines.", 
-                                    ndarray=(ig[name].dtype,ig[name].shape))
+                                    ndarray=(scaled_data.dtype,scaled_data.shape))
                     ig_sd.add_item(name=('sd_timestamp'), 
                                     id=0x3502, 
                                     description='Timestamp of this sd frame in centiseconds since epoch (40 bit limitation).', 
-                                    shape=[], 
-                                    fmt=spead.mkfmt(('u',spead.ADDRSIZE)))
+                                    init_val=sd_timestamp)
+                                    #shape=[], 
+                                    #fmt=spead.mkfmt(('u',spead.ADDRSIZE)))
                     t_it = ig_sd.get_item('sd_data')
-                    logger.info("Added SD frame with shape %s, dtype %s"%(str(t_it.shape),str(t_it.dtype)))
+                    logger.debug("Added SD frame with shape %s, dtype %s"%(str(t_it.shape),str(t_it.dtype)))
                     tx_sd.send_heap(ig_sd.get_heap())
 
-                    scale_factor=(meta['n_accs'] if meta.has_key('n_accs') else 1)
                     logger.info("Sending signal display frame with timestamp %i (%s). %s. Max: %i, Mean: %i"%(
                         sd_timestamp,
                         time.ctime(sd_timestamp),
                         "Unscaled" if not acc_scale else "Scaled by %i" % (scale_factor), 
-                        np.max(ig[name]),
-                        np.mean(ig[name])))
-                    ig_sd['sd_data'] = (ig[name].astype(np.float32)) if not acc_scale else ((ig[name] / float(scale_factor)).astype(np.float32))
-                    ig_sd['sd_timestamp'] = int(sd_timestamp * 100)
+                        np.max(scaled_data),
+                        np.mean(scaled_data)))
+                    ig_sd['sd_data'] = scaled_data
+                    ig_sd['sd_timestamp'] = sd_timestamp * 100
+                    #ig_sd['sd_timestamp'] = sd_timestamp
                     tx_sd.send_heap(ig_sd.get_heap())
 
                 f[name][datasets_index[name]] = ig[name]
