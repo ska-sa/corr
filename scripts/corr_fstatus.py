@@ -26,6 +26,8 @@ lookup = {'adc_overrange': '[ADC OVERRANGE]',
           'clk_err': '[SAMPLE CLOCK ERROR]',
           'xaui_over': '[XAUI TX OVERFLOW]'}
 
+ignore = ['sync_val']
+
 def exit_fail():
     print 'FAILURE DETECTED. Log entries:\n',lh.printMessages()
     print "Unexpected error:", sys.exc_info()
@@ -132,7 +134,7 @@ try:
                 printString = '    Cumulative errors: '
                 brd_err = False
                 for item, error in status[ant_str].items():
-                    if error == True: 
+                    if (error == True) and not (item in ignore): 
                         try:
                             printString += lookup[item]
                             if lookup[item][0]=='[': brd_err = True
