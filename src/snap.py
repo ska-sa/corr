@@ -178,14 +178,16 @@ def Swapped(subcon):
         resizer = lambda length: length
     )
 
-def get_rx_snapshot(correlator, xeng_ids, snapname = 'snap_rx0'):
-    "Grabs a snapshot of the decoded incomming packet stream. xeng_ids is a list of integers (xeng core numbers)."
-    if xeng_ids == '':
-       xeng_ids = range(len(correlator.xfpgas))
-    fpgas = []
-    for xeng_n in xeng_ids:    
-        (xfpga_n, xeng_core) = correlator.get_xeng_location(xeng_n)
-        fpgas.append(correlator.xfpgas[xfpga_n])
+def get_rx_snapshot(correlator, xfpga_ids, snapname = 'snap_rx0'):
+    "Grabs a snapshot of the decoded incomming packet stream. xfpga_ids is a list of integers (xeng FPGA numbers). Assumes only one 10GbE port per X engine!"
+    if xfpga_ids == '':
+       #xfpga_ids = range(len(correlator.config['n_xfpgas']))
+        fpgas=correlator.xfpgas
+    else:
+        fpgas = [correlator.xfpgas[fn] for fn in xfpga_ids]
+    #for xeng_n in xeng_ids:    
+    #    (xfpga_n, xeng_core) = correlator.get_xeng_location(xeng_n)
+    #    fpgas.append(correlator.xfpgas[xfpga_n])
     raw = snapshots_get(fpgas, snapname, wait_period = 2, circular_capture = False, man_trig = False)
     if correlator.is_wideband():
         rx_bf = corr.corr_wb.snap_xengine_rx
