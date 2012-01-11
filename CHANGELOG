@@ -1,5 +1,4 @@
 Changelog:
-
 Version 0.6.9 ()
     - Updates to several snap scripts to improve compatibility with narrow band.
     - Bugfix to xstatus to reset terminal after clean exit
@@ -11,6 +10,10 @@ Version 0.6.9 ()
     - corr_snap_descramble.py can analyse both descramble snap blocks on an x-engine board. Also plot the reassembled spectrum.
     - corr_snap_xaui_feng.py updated for new snapshot blocks.
     - corr_snap_xaui_feng_build_spectrum.py added. Rebuild and plot the spectrum from the snap_xaui block.
+    - corr_nb and corr_wb for functions specific to narrowband/wideband modes.
+    - Introduced corr_ddc placeholder.
+    - register description/bitfields now separate
+    - snapshots now unpacked by snap.py  
 
 Version 0.6.8 (2011-08-03):
     - Bugfix to n_accs calc with changes to acc_n_set/get

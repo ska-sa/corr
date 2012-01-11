@@ -1,3 +1,12 @@
+"""
+These functions help grab snapshot data and unpack the bitstreams.
+Author: Paul Prozesky
+
+Revs:
+2012-01-09: JRM rx_snap now accepts fpga_ids instead of xeng core ids.
+
+"""
+
 import corr, numpy, time, struct, construct
 from construct import *
 
@@ -210,7 +219,7 @@ def get_gbe_rx_snapshot(correlator, xfpgas = [], snapname = 'snap_gbe_rx0'):
     elif correlator.is_narrowband():
         rx_bf = corr.corr_nb.snap_xengine_gbe_rx
     else:
-        raise RuntimeError('Unknown mode. Cannot get rx snapshot.')
+        raise RuntimeError('Unknown mode. Cannot get gbe rx snapshot.')
     unp_rpt = construct.GreedyRepeater(rx_bf)
     rv = []
     for index, d in enumerate(raw['data']):

@@ -1,6 +1,7 @@
 """
-Setup and unique functionality for the narrow-band correlator modes.
-
+Setup and unique functionality for the narrow-band correlator modes. Here narrowband consists of two filterbanks, with the first one doing a coarse channelisation and the second further channelising one of those channels. As used by KAT-7's narrowband mode.
+"""
+"""
 Revisions:
 2011-07-07  PVP  Initial revision.
 """

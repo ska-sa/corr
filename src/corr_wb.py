@@ -1,6 +1,7 @@
 """
-Setup and unique functionality for the wide-band correlator modes.
-
+Setup and unique functionality for the wide-band correlator modes. A wideband correlator's FPGAs process all digitised data, which is a multiple of the FPGA clock rates.
+"""
+"""
 Revisions:
 2011-07-07  PVP  Initial revision.
 """
