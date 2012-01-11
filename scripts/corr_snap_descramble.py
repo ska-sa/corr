@@ -11,28 +11,27 @@ Rev:
                 Added more useful summary logging.
 
 '''
-import corr, time, numpy, struct, sys, logging
+import corr, time, numpy, struct, sys, logging, construct
+from construct import *
 
-# OOB signalling bit offsets:
-data_bit_width =16
-data_bit_offset = 16
-mcnt_bit_width = 13
-mcnt_bit_offset = 3
-valid_bit = 2
-flag_bit = 1
-rcvd_bit = 0
-
-mcnt_mask = (2**(mcnt_bit_width+mcnt_bit_offset)) -(2**mcnt_bit_offset)
-data_mask = (2**(data_bit_width+data_bit_offset)) -(2**data_bit_offset)
+# OOB signalling bit offsets - seem to be the same for wb and nb:
+data_bs = construct.BitStruct("oob",
+    BitField("data", 16),
+    BitField("mcnt", 13),
+    Flag("valid"),
+    Flag("flag"),
+    Flag("received"))
+data_rp = construct.GreedyRepeater(data_bs)
 
 dev_prefix = 'snap_descramble'
 
 def exit_fail():
-    print 'FAILURE DETECTED. Log entries:\n',c.log_handler.printMessages()
+    print 'FAILURE DETECTED. Log entries:\n', c.log_handler.printMessages()
     print "Unexpected error:", sys.exc_info()
     try:
         c.disconnect_all()
-    except: pass
+    except:
+        pass
     if verbose:
         raise
     exit()
@@ -40,16 +39,9 @@ def exit_fail():
 def exit_clean():
     try:
         c.disconnect_all()
-    except: pass
+    except:
+        pass
     exit()
-
-def ip2str(pkt_ip):
-    ip_4 = (pkt_ip&((2**32)-(2**24)))>>24
-    ip_3 = (pkt_ip&((2**24)-(2**16)))>>16
-    ip_2 = (pkt_ip&((2**16)-(2**8)))>>8
-    ip_1 = (pkt_ip&((2**8)-(2**0)))>>0
-    #print 'IP:%i. decoded to: %i.%i.%i.%i'%(pkt_ip,ip_4,ip_3,ip_2,ip_1)
-    return '%i.%i.%i.%i'%(ip_4,ip_3,ip_2,ip_1)    
 
 def xeng_in_unpack(oob, start_index):
     sum_polQ_r = 0
@@ -59,12 +51,12 @@ def xeng_in_unpack(oob, start_index):
     rcvd_errs = 0
     flag_errs = 0
     #average the packet contents from the very first entry
-    for slice_index in range(xeng_acc_len):
+    for slice_index in range(c.config['xeng_acc_len']):
         abs_index = start_index + slice_index
-        polQ_r = (oob['data'][abs_index] & ((2**(16)) - (2**(12))))>>(12)
-        polQ_i = (oob['data'][abs_index] & ((2**(12)) - (2**(8))))>>(8)
-        polI_r = (oob['data'][abs_index] & ((2**(8)) - (2**(4))))>>(4)
-        polI_i = (oob['data'][abs_index] & ((2**(4)) - (2**(0))))>>0
+        polQ_r = (oob[abs_index]['data'] & ((2**(16)) - (2**(12))))>>(12)
+        polQ_i = (oob[abs_index]['data'] & ((2**(12)) - (2**(8))))>>(8)
+        polI_r = (oob[abs_index]['data'] & ((2**(8)) - (2**(4))))>>(4)
+        polI_i = (oob[abs_index]['data'] & ((2**(4)) - (2**(0))))>>0
 
         #square each number and then sum it
         sum_polQ_r += (float(((numpy.int8(polQ_r << 4)>> 4)))/(2**binary_point))**2
@@ -72,10 +64,10 @@ def xeng_in_unpack(oob, start_index):
         sum_polI_r += (float(((numpy.int8(polI_r << 4)>> 4)))/(2**binary_point))**2
         sum_polI_i += (float(((numpy.int8(polI_i << 4)>> 4)))/(2**binary_point))**2
 
-        if not oob['rcvd'][abs_index]: rcvd_errs += 1
-        if oob['flag'][abs_index]: flag_errs += 1
+        if not oob[abs_index]['received']: rcvd_errs += 1
+        if oob[abs_index]['flag']: flag_errs += 1
 
-    num_accs = xeng_acc_len
+    num_accs = c.config['xeng_acc_len']
 
     level_polQ_r = numpy.sqrt(float(sum_polQ_r)/ num_accs)
     level_polQ_i = numpy.sqrt(float(sum_polQ_i)/ num_accs)
@@ -111,16 +103,18 @@ def xeng_in_unpack(oob, start_index):
             'ave_bits_used_I_r':ave_bits_used_I_r,\
             'ave_bits_used_I_i':ave_bits_used_I_i}
 
-def create_data(c, xeng_number):
+def grab_snap_data(c, dev_name):
+    """
+    Grab the required amount of data off the snap blocks on the x-engines.
+    """
     dmp = dict()
-    dev_name = '%s%1i' % (dev_prefix, xeng_number)
-    print 'Trying to retrieve %i words from %s for each x-engine...' % (exp_len_from_descr, dev_name)
+    print 'Trying to retrieve %i words from %s for each x-engine...' % (expected_length, dev_name)
     print '------------------------'
-    #dmp = [[0 for i in range(exp_len_from_descr*4)] for f in fpgas]
+    #dmp = [[0 for i in range(expected_length*4)] for f in fpgas]
     print 'Triggering and capturing from offset 0 ...',
     dmp = corr.snap.snapshots_get(c.xfpgas, dev_name, man_trig = man_trigger, man_valid = raw_capture, wait_period = 2, offset = 0, circular_capture = False)
     print 'done'
-    while (dmp['lengths'][0] / 4) < exp_len_from_descr:
+    while (dmp['lengths'][0] / 4) < expected_length:
         capture_offset = dmp['lengths'][0]
         print 'Triggering and capturing at offset %i...' % capture_offset,
         bram_tmp = corr.snap.snapshots_get(c.xfpgas, dev_name, man_trig = man_trigger, man_valid = raw_capture, wait_period = 1, offset = capture_offset, circular_capture = False)
@@ -134,54 +128,52 @@ def create_data(c, xeng_number):
         time.sleep(0.1)
     for f, fpga in enumerate(c.xfpgas):
         dmp['data'][f] = ''.join(dmp['data'][f])
-
     #print 'BRAM DUMPS:'
     #print dmp
-
     for f, fpga in enumerate(c.xfpgas):
         print 'Got %i bytes starting at offset %i from snapshot %s on device %s' % (dmp['lengths'][f], dmp['offsets'][f], dev_name, c.xsrvs[f])
-
     #print 'Total size for each x engine: %i bytes'%len(dmp[0])
+    return dmp
+
+def create_data(c, xeng_number):
+    
+    # get the data
+    dev_name = '%s%1i' % (dev_prefix, xeng_number)
+    snapdump = grab_snap_data(c, dev_name)
 
     print 'Unpacking bram contents...',
     sys.stdout.flush()
-    oob = dict()
+    oobdata = dict()
     for f, fpga in enumerate(c.xfpgas):
-        if dmp['lengths'][f] == 0:
+        if snapdump['lengths'][f] == 0:
             print 'Warning: got nothing back from snap block %s on %s.' % (dev_name, c.xsrvs[f])
         else:
-            oob[f] = {'raw': struct.unpack('>%iL' % (dmp['lengths'][f]/4), dmp['data'][f])}
-            oob[f].update({'rcvd':  [bool(i & (2**rcvd_bit)) for i in oob[f]['raw']]})
-            oob[f].update({'flag':  [bool(i & (2**flag_bit)) for i in oob[f]['raw']]})
-            oob[f].update({'valid': [bool(i & (2**valid_bit)) for i in oob[f]['raw']]})
-            oob[f].update({'mcnt':  [(i&mcnt_mask)>>mcnt_bit_offset for i in oob[f]['raw']]})
-            oob[f].update({'data':  [(i&data_mask)>>data_bit_offset for i in oob[f]['raw']]})
-            #print '\n\nFPGA %i, bramoob:'%f, oob
+            oobdata[f] = data_rp.parse(snapdump['data'][f])
     print 'done.'
 
     if opts.verbose:
-        for f, server in enumerate(servers):
-            i = dmp['offsets'][f]
-            for ir in range(dmp['lengths'][f] / 4):
-                pkt_mcnt = oob[f]['mcnt'][ir]
-                pkt_data = oob[f]['data'][ir]
-                exp_ant = (i/xeng_acc_len) % n_ants
-                xeng = (x_per_fpga)*f + xeng_number
+        for f, fpga in enumerate(c.xfpgas):
+            i = snapdump['offsets'][f]
+            for ir, oob in enumerate(oobdata[f]):
+                pkt_mcnt = oob['mcnt']
+                pkt_data = oob['data']
+                exp_ant = (i / c.config['xeng_acc_len']) % c.config['n_ants']
+                xeng = (c.config['x_per_fpga'])*f + xeng_number
                 if c.config['xeng_format'] == 'inter': 
-                    exp_mcnt = ((i/xeng_acc_len)/n_ants)*n_xeng + xeng
+                    exp_mcnt = ((i/c.config['xeng_acc_len'])/c.config['n_ants'])*c.config['n_xeng'] + xeng
                 else:
-                    exp_mcnt = ((i/xeng_acc_len)/n_ants)+ xeng*(n_chans/n_xeng)
+                    exp_mcnt = ((i/c.config['xeng_acc_len'])/c.config['n_ants'])+ xeng*(c.config['n_chans']/c.config['n_xeng'])
                 exp_freq = (exp_mcnt) % c.config['n_chans']
                 act_mcnt = (pkt_mcnt+xeng)
                 act_freq = act_mcnt%c.config['n_chans']
-                xeng_slice = i % xeng_acc_len+1
-                print '[%s] Xeng%i BRAM IDX: %6i Valid IDX: %10i Rounded MCNT: %6i. Global MCNT: %6i. Freq %4i, Data: 0x%04x. EXPECTING: slice %3i/%3i of ant %3i, freq %3i.' % (server, \
-                        xeng,ir, i, pkt_mcnt, act_mcnt, act_freq, pkt_data, xeng_slice, xeng_acc_len, exp_ant, exp_freq),
-                if oob[f]['valid'][ir]: 
+                xeng_slice = i % c.config['xeng_acc_len']+1
+                print '[%s] Xeng%i BRAM IDX: %6i Valid IDX: %10i Rounded MCNT: %6i. Global MCNT: %6i. Freq %4i, Data: 0x%04x. EXPECTING: slice %3i/%3i of ant %3i, freq %3i.' % (fpga.host, \
+                        xeng, ir, i, pkt_mcnt, act_mcnt, act_freq, pkt_data, xeng_slice, c.config['xeng_acc_len'], exp_ant, exp_freq),
+                if oob['valid']: 
                     print '[VALID]',
                     i = i + 1
-                if oob[f]['rcvd'][ir]: print '[RCVD]',
-                if oob[f]['flag'][ir]: print '[FLAG_BAD]',
+                if oob['received']:  print '[RCVD]',
+                if oob['flag']:      print '[FLAG_BAD]',
                 print ''
 
     #print len(dmp['data'][0])
@@ -197,23 +189,23 @@ def create_data(c, xeng_number):
             import numpy
             plot_data = []
             for i in range(0, c.config['n_ants']):
-                plot_data.append([numpy.zeros(n_chans), numpy.zeros(n_chans)])
+                plot_data.append([numpy.zeros(c.config['n_chans']), numpy.zeros(c.config['n_chans'])])
         else:
             plot_data = None
-        for f, server in enumerate(servers):
+        for f, fpga in enumerate(c.xfpgas):
             rep[f] = dict()
-            for i in range(0, dmp['lengths'][f] / 4, xeng_acc_len):        
-                pkt_mcnt = oob[f]['mcnt'][i]
-                pkt_data = oob[f]['data'][i]
-                exp_ant = (i / xeng_acc_len) % n_ants
-                xeng = (x_per_fpga) * f + xeng_number
+            for i in range(0, snapdump['lengths'][f] / 4, c.config['xeng_acc_len']):        
+                pkt_mcnt = oobdata[f][i]['mcnt']
+                pkt_data = oobdata[f][i]['data']
+                exp_ant = (i / c.config['xeng_acc_len']) % c.config['n_ants']
+                xeng = (c.config['x_per_fpga']) * f + xeng_number
                 if c.config['xeng_format'] == 'inter': 
-                    exp_mcnt = ((i/xeng_acc_len)/n_ants)*n_xeng + xeng
-                    exp_freq = (i/xeng_acc_len)/n_ants * n_xeng + ((x_per_fpga) * f + xeng_number)
+                    exp_mcnt = ((i/c.config['xeng_acc_len'])/c.config['n_ants'])*c.config['n_xeng'] + xeng
+                    exp_freq = (i/c.config['xeng_acc_len'])/c.config['n_ants'] * c.config['n_xeng'] + ((c.config['x_per_fpga']) * f + xeng_number)
                 else:
-                    exp_mcnt = ((i/xeng_acc_len)/n_ants)+ xeng*(n_chans/n_xeng)
-                    exp_freq = (exp_mcnt) % n_chans
-                xeng_unpkd = xeng_in_unpack(oob[f], i)
+                    exp_mcnt = ((i/c.config['xeng_acc_len'])/c.config['n_ants'])+ xeng*(c.config['n_chans']/c.config['n_xeng'])
+                    exp_freq = (exp_mcnt) % c.config['n_chans']
+                xeng_unpkd = xeng_in_unpack(oobdata[f], i)
                 if not freqs.__contains__(exp_freq):
                     if exp_freq != last_freq + 1:
                         print 'Frequency jumped from %d to %d' % (last_freq, exp_freq)
@@ -222,7 +214,7 @@ def create_data(c, xeng_number):
                 if opts.plot:
                     plot_data[exp_ant][0][exp_freq] = plot_data[exp_ant][0][exp_freq] + xeng_unpkd['rms_polQ']
                     plot_data[exp_ant][1][exp_freq] = plot_data[exp_ant][1][exp_freq] + xeng_unpkd['rms_polI']
-                print '[%s] IDX: %6i. XENG: %3i. ANT: %4i. FREQ: %4i. 4 bit power: PolQ: %4.2f, PolI: %4.2f' % (server, i, xeng, exp_ant, exp_freq, xeng_unpkd['rms_polQ'], xeng_unpkd['rms_polI']),
+                print '[%s] IDX: %6i. XENG: %3i. ANT: %4i. FREQ: %4i. 4 bit power: PolQ: %4.2f, PolI: %4.2f' % (fpga.host, i, xeng, exp_ant, exp_freq, xeng_unpkd['rms_polQ'], xeng_unpkd['rms_polI']),
                 if xeng_unpkd['rcvd_errs'] > 0: 
                     print '[%i RCV ERRS!]'%xeng_unpkd['rcvd_errs'],
                     if not rep[f].has_key('Rcv Errors'):
@@ -246,7 +238,7 @@ def create_data(c, xeng_number):
                     rep[f]['Total data received'] += 1
                 print ''
 
-    return dmp, oob, rep, plot_data
+    return snapdump, oobdata, rep, plot_data
 
 if __name__ == '__main__':
     from optparse import OptionParser
@@ -294,29 +286,23 @@ if __name__ == '__main__':
  
     desired_n_chans = opts.n_chans
 
-    if args==[]:
+    if args == []:
         config_file=None
     else:
         config_file=args[0]
-    verbose=opts.verbose
+    verbose = opts.verbose
 
 try:
     print 'Connecting...',
-    c=corr.corr_functions.Correlator(config_file = config_file, log_level = logging.DEBUG if verbose else logging.INFO, connect = False)
+    c = corr.corr_functions.Correlator(config_file = config_file, log_level = logging.DEBUG if verbose else logging.INFO, connect = False)
     c.connect()
     print 'done'
 
-    servers = c.xsrvs
     binary_point = c.config['feng_fix_pnt_pos']
     num_bits = c.config['feng_bits']
-    xeng_acc_len = c.config['xeng_acc_len']
-    n_ants = c.config['n_ants']
-    x_per_fpga = c.config['x_per_fpga']
-    n_ants_per_xaui = c.config['n_ants_per_xaui']
-    n_xeng = c.config['n_xeng']
-    n_chans = c.config['n_chans']
-    if desired_n_chans == 0: desired_n_chans = c.config['n_chans']
-    exp_len_from_descr = desired_n_chans/n_xeng * n_ants * xeng_acc_len
+    if desired_n_chans == 0:
+        desired_n_chans = c.config['n_chans']
+    expected_length = desired_n_chans / c.config['n_xeng'] * c.config['n_ants'] * c.config['xeng_acc_len']
 
     if opts.circ:
         bram_dmp = dict()
@@ -330,15 +316,16 @@ try:
         bram_oob = dict()
         report = dict()
         plot_data = dict()
+        # get x-engine data off all xfpgas, for x-engine 0, 1, ...
         for xeng_number in xeng_numbers:
             bram_dmp[xeng_number], bram_oob[xeng_number], report[xeng_number], plot_data[xeng_number] = create_data(c, xeng_number)
-        print '\n\nDone with all servers.\nSummary:\n=========================='
-        for s, srvr in enumerate(servers):
+        print '\n\nDone with all xFPGAs.\nSummary:\n=========================='
+        for f, fpga in enumerate(c.xfpgas):
             for x, xeng_number in enumerate(xeng_numbers):
                 print '------------------------'
-                print srvr, '%s%1i' % (dev_prefix, xeng_number)
+                print fpga.host, '%s%1i' % (dev_prefix, xeng_number)
                 print '------------------------'
-                for key in sorted(report[x][s].iteritems()):
+                for key in sorted(report[x][f].iteritems()):
                     print key[0], ': ', key[1]
         print '=========================='
 

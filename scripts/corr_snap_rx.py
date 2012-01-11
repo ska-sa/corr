@@ -128,7 +128,7 @@ try:
     print '------------------------'
 
     print 'Grabbing and unpacking snap data... ',
-    snap_data = corr.snap.get_rx_snapshot(c, range(len(c.xfpgas)))
+    snap_data = corr.snap.get_rx_snapshot(c)
     # returns an array, indexed from zero - but the elements are dictionaries that know their fpga's index
     print 'done.'
 
@@ -144,26 +144,26 @@ try:
     if opts.verbose:
         for s in snap_data:
             for l in range(len(s['data'])):
-                print '[%s]' % (servers[s['xfpga_index']]),
+                print '[%s]' % (servers[s['fpga_index']]),
                 print 'IDX: %6i IP: %s. MCNT: %6i. ANT: %4i.  Contents: %016x' % (l, corr.corr_functions.ip2str(s['data'][l].ip_addr), s['data'][l].mcnt, s['data'][l].ant, s['data'][l].data),
                 if s['data'][l].valid: print '[VALID]',
                 if s['data'][l].flag: print '[FLAG BAD]',
                 if s['data'][l].gbe_ack: print '[GBE]',
                 if s['data'][l].loop_ack: print '[Loop]',
-                if s['data'][l].eof: print '[EOF!]',
-                else: print ''
+                if s['data'][l].eof: print '[EOF]',
+                print ''
 
     report = dict()
     mcnts = dict()
     print 'Analysing packets:'
     for s in snap_data:
-        f = s['xfpga_index']
+        f = s['fpga_index']
         report[f] = dict()
         mcnts[f] = dict()
         report[f]['pkt_total'] = 0
         pkt_len = 0
         prev_eof_index = -1
-        report[f]['xfpga_index'] = f
+        report[f]['fpga_index'] = f
 
         for i in range(len(s['data'])):
             if s['data'][i].eof:
@@ -259,7 +259,7 @@ try:
     for k, r in report.iteritems():
         keys = report[k].keys()
         keys.sort()
-        srvr = servers[r['xfpga_index']]
+        srvr = servers[r['fpga_index']]
         print '------------------------'
         print srvr
         print '------------------------'

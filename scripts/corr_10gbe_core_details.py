@@ -26,14 +26,6 @@ def exit_clean():
     except: pass
     exit()
 
-def ip2str(pkt_ip):
-    ip_4 = (pkt_ip&((2**32)-(2**24)))>>24
-    ip_3 = (pkt_ip&((2**24)-(2**16)))>>16
-    ip_2 = (pkt_ip&((2**16)-(2**8)))>>8
-    ip_1 = (pkt_ip&((2**8)-(2**0)))>>0
-    #print 'IP:%i. decoded to: %i.%i.%i.%i'%(pkt_ip,ip_4,ip_3,ip_2,ip_1)
-    return '%i.%i.%i.%i'%(ip_4,ip_3,ip_2,ip_1)    
-
 if __name__ == '__main__':
     from optparse import OptionParser
 
