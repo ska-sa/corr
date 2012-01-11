@@ -6,6 +6,7 @@ Author: Jason Manley
 """
 """
 Revisions:
+2012-01-11: JRM Cleanup of SPEAD metadata to match new documentation.
 2011-07-06: PVP New functions to read/write/pulse bitfields within registers. Remove a bit of duplicate code for doing that.
 2011-06-23: JMR Moved all snapshot stuff into new file (snap.py)
 2011-05-xx: JRM change ant,pol handling to be arbitrary strings.
@@ -2048,10 +2049,16 @@ class Correlator:
             shape=[],fmt=spead.mkfmt(('f',64)),
             init_val=self.config['ddc_mix_freq'])
 
-        ig.add_item(name="ddc_decimation",id=0x1044,
-            description="Frequency decimation of the digital downconverter (determines how much bandwidth is processed) eg: 4",
-            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-            init_val=self.config['ddc_decimation'])
+#        ig.add_item(name="ddc_bandwidth",id=0x1044,
+#            description="Digitally processed bandwidth, post DDC, in Hz.",
+#            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+#            init_val=self.config['bandwidth']) #/self.config['ddc_decimation']) config's bandwidth is already divided by ddc decimation
+
+#0x1044 should be ddc_bandwidth, not ddc_decimation.
+#        ig.add_item(name="ddc_decimation",id=0x1044,
+#            description="Frequency decimation of the digital downconverter (determines how much bandwidth is processed) eg: 4",
+#            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+#            init_val=self.config['ddc_decimation'])
 
         ig.add_item(name="adc_bits",id=0x1045,
             description="ADC quantisation (bits).",
