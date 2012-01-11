@@ -291,7 +291,7 @@ class DeviceExampleServer(katcp.DeviceServer):
         if self.c is None:
             return ("fail","... you haven't connected yet!")
         fstat = self.c.feng_status_get_all()
-        self.c.rst_fstat()
+        self.c.rst_fstatus()
         for i in fstat:
             out_str=[]
             for ent in fstat[i]: 

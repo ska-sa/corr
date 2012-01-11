@@ -81,7 +81,7 @@ try:
             amps = c.adc_amplitudes_get()
             stats = c.feng_status_get_all()
             if autoClear or clearOnce:
-                c.rst_fstat()
+                c.rst_fstatus()
                 clearOnce = False
             screenData.append('IBOB: ADC0 is furthest from power port, ADC1 is closest to power port.')
             screenData.append('ROACH: ADC0 is right, ADC1 is left (when viewed from front).')

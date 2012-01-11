@@ -108,6 +108,9 @@ try:
         print 'done.'
     else: print ' Skipped programming FPGAs.'
 
+    # pause
+    time.sleep(2)
+
     if c.tx_status_get():
         print ' Stopping transmission of data...',
         c.tx_stop()
@@ -127,7 +130,6 @@ try:
 
     print ''' Syncing the F engines...''',
     sys.stdout.flush()
-    time.sleep(1)
     trig_time = c.arm()
     print 'Armed. Expect trigg at %s local (%s UTC).' % (time.strftime('%H:%M:%S', time.localtime(trig_time)), time.strftime('%H:%M:%S', time.gmtime(trig_time))),
     print 'SPEAD packet sent.'

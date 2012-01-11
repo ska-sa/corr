@@ -120,7 +120,7 @@ try:
             if c.config['adc_type'] == 'katadc':
                 rf_status = c.rf_status_get_all()
             if autoClear or clearOnce:
-                c.rst_fstat()
+                c.rst_fstatus()
                 clearOnce = False
             for in_n, ant_str in enumerate(c.config._get_ant_mapping_list()):
                 ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input = c.get_ant_str_location(ant_str)
