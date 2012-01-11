@@ -1,3 +1,12 @@
+"""
+These functions help grab snapshot data and unpack the bitstreams.
+Author: Paul Prozesky
+
+Revs:
+2012-01-09: JRM rx_snap now accepts fpga_ids instead of xeng core ids.
+
+"""
+
 import corr, numpy, time, struct, construct
 from construct import *
 
@@ -178,9 +187,9 @@ def Swapped(subcon):
         resizer = lambda length: length
     )
 
-def get_rx_snapshot(correlator, xfpga_ids, snapname = 'snap_rx0'):
+def get_rx_snapshot(correlator, xfpga_ids=[], snapname = 'snap_rx0'):
     "Grabs a snapshot of the decoded incomming packet stream. xfpga_ids is a list of integers (xeng FPGA numbers). Assumes only one 10GbE port per X engine!"
-    if xfpga_ids == '':
+    if xfpga_ids == []:
        #xfpga_ids = range(len(correlator.config['n_xfpgas']))
         fpgas=correlator.xfpgas
     else:
@@ -203,14 +212,16 @@ def get_rx_snapshot(correlator, xfpga_ids, snapname = 'snap_rx0'):
         rv.append(v)
     return rv
 
-def get_gbe_rx_snapshot(correlator, xeng_ids = [], snapname = 'snap_gbe_rx0'):
-    """Returns a list of dictionaries from 10GbE cores' RX outputs. xeng_ids is a list of integers (xeng core numbers)."""
-    if xeng_ids == []:
-       xeng_ids = range(len(correlator.xfpgas))
-    fpgas = []
-    for xeng_n in xeng_ids:    
-        (xfpga_n, xeng_core) = correlator.get_xeng_location(xeng_n)
-        fpgas.append(correlator.xfpgas[xfpga_n])
+def get_gbe_rx_snapshot(correlator, xfpga_ids = [], snapname = 'snap_gbe_rx0'):
+    """Returns a list of dictionaries from 10GbE cores' RX outputs. xfpga_ids is a list of integers (xeng fpga numbers)."""
+    if xfpga_ids == []:
+       #xfpga_ids = range(len(correlator.config['n_xfpgas']))
+        fpgas=correlator.xfpgas
+    else:
+        fpgas = [correlator.xfpgas[fn] for fn in xfpga_ids]
+    #for xeng_n in xeng_ids:    
+    #    (xfpga_n, xeng_core) = correlator.get_xeng_location(xeng_n)
+    #    fpgas.append(correlator.xfpgas[xfpga_n])
     raw = snapshots_get(fpgas, snapname, wait_period = 3, circular_capture = False, man_trig = False)
     if correlator.is_wideband():
         rx_bf = corr.corr_wb.snap_xengine_gbe_rx

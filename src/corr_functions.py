@@ -1,10 +1,9 @@
 #! /usr/bin/env python
 """ 
-Selection of commonly-used correlator control functions.
+Selection of commonly-used correlator control functions. This is the top-level file used to communicate with correlators.
 
 Author: Jason Manley
 """
-
 """
 Revisions:
 2011-07-06: PVP New functions to read/write/pulse bitfields within registers. Remove a bit of duplicate code for doing that.
@@ -1731,7 +1730,8 @@ class Correlator:
         self.floggers[ffpga_n].info("KATADC %i RF gain set to %2.1f." % (feng_input, round(gain * 2) / 2))
 
     def rf_status_get(self,ant_str):
-        """Grabs the current value of the RF attenuators and RF switch state for KATADC boards. return (enabled,gain in dB)"""
+        """Grabs the current value of the RF attenuators and RF switch state for KATADC boards. 
+            Returns (enabled,gain in dB)"""
         #RF switch is in MSb.
         if self.config['adc_type'] != 'katadc' : 
             self.syslogger.warn("Unsupported ADC type of %s. Only katadc is supported."%self.config['adc_type'])

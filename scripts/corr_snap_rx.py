@@ -168,10 +168,11 @@ try:
 
         for i in range(len(s['data'])):
             if opts.verbose:
-                print '[%s]' % (servers[s['xfpga_index']]),
-                print 'IDX: %6i IP: %s. MCNT: %6i. ANT: %4i.  Contents: %016x' % (i, 
+                print ' [%s]' % (servers[s['xfpga_index']]),
+                print 'IDX: %6i IP: %s. MCNT: %6i. FREQ: %5i. ANT: %4i.  Contents: %016x' % (i, 
                     corr.corr_functions.ip2str(s['data'][i].ip_addr), 
                     s['data'][i].mcnt, 
+                    s['data'][i].mcnt%n_chans,
                     s['data'][i].ant, 
                     s['data'][i].data),
                 if s['data'][i].valid: print '[VALID]',
@@ -179,7 +180,7 @@ try:
                 if s['data'][i].gbe_ack: print '[GBE]',
                 if s['data'][i].loop_ack: print '[Loop]',
                 if s['data'][i].eof: print '[EOF!]',
-                else: print ''
+                print ''
 
             if s['data'][i].eof:
                 pkt_ip_str = corr.corr_functions.ip2str(s['data'][i].ip_addr)
