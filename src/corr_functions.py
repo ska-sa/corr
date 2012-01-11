@@ -64,13 +64,18 @@ def statsmode(inlist):
             count = inlist.count(i)
     return value 
 
-def ip2str(pkt_ip):
-    ip_4 = (pkt_ip&((2**32)-(2**24)))>>24
-    ip_3 = (pkt_ip&((2**24)-(2**16)))>>16
-    ip_2 = (pkt_ip&((2**16)-(2**8)))>>8
-    ip_1 = (pkt_ip&((2**8)-(2**0)))>>0
-    #print 'IP:%i. decoded to: %i.%i.%i.%i'%(pkt_ip,ip_4,ip_3,ip_2,ip_1)
-    return '%i.%i.%i.%i'%(ip_4,ip_3,ip_2,ip_1)
+def ip2str(pkt_ip, verbose = False):
+    """
+    Returns a dot notation IPv4 address given a 32-bit number.
+    """
+    ip_4 = (pkt_ip & ((2**32) - (2**24))) >> 24
+    ip_3 = (pkt_ip & ((2**24) - (2**16))) >> 16
+    ip_2 = (pkt_ip & ((2**16) - (2**8)))  >> 8
+    ip_1 = (pkt_ip & ((2**8)  - (2**0)))  >> 0
+    ipstr = '%i.%i.%i.%i' % (ip_4, ip_3, ip_2, ip_1)
+    if verbose:
+        print 'IP(%i) decoded to:' % pkt_ip, ipstr
+    return ipstr
     
 def write_masked_register(device_list, bitstruct, names = None, **kwargs):
     """
@@ -491,7 +496,7 @@ class Correlator:
         self.gbe_reset_release_x()
 
         time.sleep(len(self.xfpgas)/2)
-        self.rst_cnt()
+        self.rst_status_and_count()
         time.sleep(1)
 
         if self.config['feng_out_type'] == 'xaui':
@@ -503,7 +508,7 @@ class Correlator:
             if not self.check_loopback_mcnt_wait(n_retries=n_retries): raise RuntimeError("Loopback muxes didn't sync.")
         if not self.check_x_miss(): raise RuntimeError("X engines are missing data.")
         self.acc_time_set()
-        self.rst_cnt()
+        self.rst_status_and_count()
         self.syslogger.info("Waiting %i seconds for an integration to finish so we can test the VACCs."%self.config['int_time'])
         time.sleep(self.config['int_time']+0.1)
         if not self.check_vacc(): raise RuntimeError("Vector accumulators are broken.")
@@ -727,17 +732,21 @@ class Correlator:
         mac = (2<<40) + (2<<32) + ip
         return (mac,ip,port)
 
-    def rst_cnt(self):
+    def rst_status_and_count(self):
         """Resets all status registers and error counters on all connected boards."""
-        self.rst_fstat()
-        self.rst_xstat()
+        self.rst_fstatus()
+        self.rst_xstatus()
 
-    def rst_xstat(self):
+    def rst_xstatus(self):
         """Clears the status registers and counters on all connected X engines."""
-        #self.xeng_ctrl_set_all(cnt_rst='pulse', clr_status='pulse')
-        pulse_masked_register(self.xfpgas, corr.corr_wb.register_xengine_control, ['cnt_rst', 'clr_status'])
+        if self.is_wideband():
+            pulse_masked_register(self.xfpgas, corr.corr_wb.register_xengine_control, ['cnt_rst', 'clr_status'])
+        elif self.is_narrowband():
+            pulse_masked_register(self.xfpgas, corr.corr_nb.register_xengine_control, ['cnt_rst', 'clr_status'])
+        else:
+            raise RuntimeError('Unknown mode. Cannot reset X-engine status and error counters.')
 
-    def rst_fstat(self):
+    def rst_fstatus(self):
         """Clears the status registers on all connected F engines."""
         #self.feng_ctrl_set_all(clr_status='pulse')
         if self.is_wideband():
@@ -745,12 +754,17 @@ class Correlator:
         elif self.is_narrowband():
             pulse_masked_register(self.ffpgas, corr.corr_nb.register_fengine_control, ['clr_status'])
         else:
-            raise RuntimeError('Unknown mode. Cannot reset F-engine status.')
+            raise RuntimeError('Unknown mode. Cannot reset F-engine status and error counters.')
 
     def rst_vaccs(self):
         """Resets all Xengine Vector Accumulators."""
         #self.xeng_ctrl_set_all(vacc_rst='pulse')
-        pulse_masked_register(self.xfpgas, corr.corr_wb.register_xengine_control, ['vacc_rst'])
+        if self.is_wideband():
+            pulse_masked_register(self.xfpgas, corr.corr_wb.register_xengine_control, ['vacc_rst'])
+        elif self.is_narrowband():
+            pulse_masked_register(self.xfpgas, corr.corr_nb.register_xengine_control, ['vacc_rst'])
+        else:
+            raise RuntimeError('Unknown mode. Cannot reset vector accumulators.')
 
     def xeng_clks_get(self):
         """Returns the approximate clock rate of each X engine FPGA in MHz."""
@@ -780,11 +794,11 @@ class Correlator:
         """Returns boolean pass/fail to indicate if any X engine has missed any data, or if the descrambler is stalled."""
         rv = True
         for x in range(self.config['x_per_fpga']):
-            err_check = self.xread_uint_all('pkt_reord_err%i'%(x))
-            cnt_check = self.xread_uint_all('pkt_reord_cnt%i'%(x))
+            err_check = self.xread_uint_all('pkt_reord_err%i' % x)
+            cnt_check = self.xread_uint_all('pkt_reord_cnt%i' % x)
             for xbrd, xsrv in enumerate(self.xsrvs):
                 if (err_check[xbrd] != 0) or (cnt_check[xbrd] == 0) :
-                    self.xloggers[xbrd].error("Missing X engine data on this xeng(%i,%i) - (err,cnt)-(%i,%i)." % (x, xbrd, err_check[xbrd], cnt_check[xbrd]))
+                    self.xloggers[xbrd].error("Missing X engine data on this xeng(%i,%i) - %s %s." % (x, xbrd, "(ERR == %8i, 0b%s != 0)" % (err_check[xbrd], numpy.binary_repr(err_check[xbrd],32)) if err_check[xbrd] != 0 else "", "(CNT==0)" if cnt_check[xbrd] == 0 else ""))
                     rv = False
                 else:
                     self.xloggers[xbrd].info("All X engine data on this xeng(%i,%i) OK." % (x, xbrd))
@@ -877,6 +891,25 @@ class Correlator:
         if rv == True: self.syslogger.info("All 10GbE cores are receiving data.")
         else: self.syslogger.error("Some 10GbE cores aren't receiving data.")
         return rv
+
+    def decode_10gbe_header(self, headerdata):
+        """
+        Returns a dictionary with the header fields decoded from the 64-bit word passed in.
+        {mcnt, antbase, timestamp, pcnt, freq_chan, x_eng}
+        Currently only valid for contiguous mode.
+        """
+        if self.config['xeng_format'] != "cont":
+            raise RuntimeError("Only valid for contiguous mode at the moment. Is interleaved mode even valid anymore?!")
+        import math
+        fbits = int(math.log(self.config['n_chans'], 2))
+        header = {}
+        header['mcnt'] = headerdata >> 16
+        header['antbase'] = headerdata & ((2**16) - 1)
+        header['timestamp'] = header['mcnt'] >> fbits
+        header['pcnt'] = header['mcnt'] & (self.config['n_chans'] - 1)
+        header['freq_chan'] = header['mcnt'] % self.config['n_chans']
+        header['x_eng'] = header['freq_chan'] / (self.config['n_chans'] / self.config['n_xeng'])
+        return header
 
     def check_loopback_mcnt_wait(self,n_retries=40):
         """Waits up to n_retries for loopback muxes to sync before returning false if it is still failing."""
@@ -1381,7 +1414,7 @@ class Correlator:
         self.syslogger.info("Set number of VACC accumulations to %5i."%n_accs_vacc)
         self.vacc_sync() #this is needed in case we decrease the accumulation period on a new_acc transition where some vaccs would then be out of sync
         time.sleep(self.acc_time_get()+0.1)
-        self.rst_cnt() #reset all errors (resyncing VACC will introduce some)
+        self.rst_status_and_count() #reset all errors (resyncing VACC will introduce some)
         if spead_update: 
             self.spead_time_meta_issue()
 

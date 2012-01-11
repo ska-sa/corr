@@ -187,17 +187,11 @@ def Swapped(subcon):
         resizer = lambda length: length
     )
 
-def get_rx_snapshot(correlator, xfpga_ids=[], snapname = 'snap_rx0'):
-    "Grabs a snapshot of the decoded incomming packet stream. xfpga_ids is a list of integers (xeng FPGA numbers). Assumes only one 10GbE port per X engine!"
-    if xfpga_ids == []:
-       #xfpga_ids = range(len(correlator.config['n_xfpgas']))
-        fpgas=correlator.xfpgas
-    else:
-        fpgas = [correlator.xfpgas[fn] for fn in xfpga_ids]
-    #for xeng_n in xeng_ids:    
-    #    (xfpga_n, xeng_core) = correlator.get_xeng_location(xeng_n)
-    #    fpgas.append(correlator.xfpgas[xfpga_n])
-    raw = snapshots_get(fpgas, snapname, wait_period = 2, circular_capture = False, man_trig = False)
+def get_rx_snapshot(correlator, xfpgas = [], snapname = 'snap_rx0'):
+    "Grabs a snapshot of the decoded incomming packet stream. xeng_ids is a list of integers (xeng core numbers)."
+    if xfpgas == []:
+       xfpgas = correlator.xfpgas
+    raw = snapshots_get(xfpgas, snapname, wait_period = 3, circular_capture = False, man_trig = False)
     if correlator.is_wideband():
         rx_bf = corr.corr_wb.snap_xengine_rx
     elif correlator.is_narrowband():
@@ -207,27 +201,25 @@ def get_rx_snapshot(correlator, xfpga_ids=[], snapname = 'snap_rx0'):
     rv = []
     for index, d in enumerate(raw['data']):
         v= {}
-        v['xfpga_index'] = index
+        v['fpga_index'] = index
         v['data'] = unp_rpt.parse(d)
         rv.append(v)
     return rv
 
-def get_gbe_rx_snapshot(correlator, xfpga_ids = [], snapname = 'snap_gbe_rx0'):
-    """Returns a list of dictionaries from 10GbE cores' RX outputs. xfpga_ids is a list of integers (xeng fpga numbers)."""
-    if xfpga_ids == []:
-       #xfpga_ids = range(len(correlator.config['n_xfpgas']))
-        fpgas=correlator.xfpgas
-    else:
-        fpgas = [correlator.xfpgas[fn] for fn in xfpga_ids]
-    #for xeng_n in xeng_ids:    
-    #    (xfpga_n, xeng_core) = correlator.get_xeng_location(xeng_n)
-    #    fpgas.append(correlator.xfpgas[xfpga_n])
-    raw = snapshots_get(fpgas, snapname, wait_period = 3, circular_capture = False, man_trig = False)
+def get_gbe_rx_snapshot(correlator, xfpgas = [], snapname = 'snap_gbe_rx0'):
+    """
+    Takes a list of X-ENGINE fpgas and returns the contents of the snap_gbe_rx0 block for each of them in a list.
+    The list contents is a dictionary of the decoded data.
+    """
+    if xfpgas == []:
+       xfpgas = correlator.xfpgas
+    raw = snapshots_get(xfpgas, snapname, wait_period = 3, circular_capture = False, man_trig = False)
     if correlator.is_wideband():
         rx_bf = corr.corr_wb.snap_xengine_gbe_rx
     elif correlator.is_narrowband():
         rx_bf = corr.corr_nb.snap_xengine_gbe_rx
-    else: raise RuntimeError('Unknown mode. Cannot get rx snapshot.')
+    else:
+        raise RuntimeError('Unknown mode. Cannot get gbe rx snapshot.')
     unp_rpt = construct.GreedyRepeater(rx_bf)
     rv = []
     for index, d in enumerate(raw['data']):
@@ -245,11 +237,6 @@ def get_gbe_tx_snapshot_xeng(correlator, snapnames = 'snap_gbe_tx0', offset = -1
 
 def get_gbe_tx_snapshot(devices, snapnames, offset = -1, man_trigger = False, man_valid = False):
     raw = snapshots_get(devices, dev_names = snapnames, wait_period = 3, circular_capture = False, man_trig = man_trigger, offset = offset, man_valid = man_valid)
-    #for xeng_n in xeng_ids:
-    #    (xfpga_n,xeng_core) = correlator.get_xeng_location(xeng_n)
-    #    fpgas.append(correlator.xfpgas[xfpga_n])
-    #    dev_names.append('snap_gbe_tx%i'%xeng_core)
-    #raw=snapshots_get(fpgas,dev_names,wait_period=2,circular_capture=False,man_trig=False)
     rx_bf = construct.BitStruct("oob",
         Padding(128 - 64 - 32 - 6),
         Flag("eof"),

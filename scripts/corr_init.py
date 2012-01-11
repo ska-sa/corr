@@ -127,6 +127,7 @@ try:
 
     print ''' Syncing the F engines...''',
     sys.stdout.flush()
+    time.sleep(1)
     trig_time = c.arm()
     print 'Armed. Expect trigg at %s local (%s UTC).' % (time.strftime('%H:%M:%S', time.localtime(trig_time)), time.strftime('%H:%M:%S', time.gmtime(trig_time))),
     print 'SPEAD packet sent.'
@@ -211,7 +212,7 @@ try:
 
     print(''' Resetting error counters...'''),
     sys.stdout.flush()
-    c.rst_cnt()
+    c.rst_status_and_count()
     print '''done'''
 
     time.sleep(1)
@@ -263,7 +264,7 @@ try:
 
     print ''' Checking that all X engines are receiving all their packets...''',
     sys.stdout.flush()
-    c.rst_cnt()
+    c.rst_status_and_count()
     time.sleep(2)
     if c.check_x_miss(): print 'ok'
     else: raise RuntimeError('FAILURES detected!')
@@ -271,7 +272,7 @@ try:
     print (''' Setting the number of accumulations to %i (%5.3f seconds) and syncing VACCs...'''%(c.config['n_accs'], c.config['int_time'])),
     sys.stdout.flush()
     c.acc_time_set()
-    c.rst_cnt()
+    c.rst_status_and_count()
     print 'done'
 
     print(''' Checking vector accumulators...'''),
@@ -308,7 +309,7 @@ try:
 
     print(''' Resetting error counters...'''),
     sys.stdout.flush()
-    c.rst_cnt()
+    c.rst_status_and_count()
     print '''done'''
 
     print(''' Enabling KITT...'''),

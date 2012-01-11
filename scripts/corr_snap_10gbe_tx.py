@@ -24,12 +24,11 @@ def exit_clean():
     exit()
 
 def feng_unpack(f, hdr_index, pkt_len):
-    pkt_64bit = snap_data[f]['data'][hdr_index].data
-#    pkt_mcnt = (pkt_64bit&((2**64)-(2**16)))>>16
-    pkt_mcnt = (pkt_64bit) >> 16
-    pkt_ant = pkt_64bit & ((2**16) - 1)
-    pkt_freq = pkt_mcnt % n_chans
-    exp_xeng = pkt_freq / (n_chans / n_xengs)
+    hdr_64bit = snap_data[f]['data'][hdr_index].data
+    pkt_mcnt = (hdr_64bit) >> 16
+    pkt_ant = hdr_64bit & ((2**16) - 1)
+    pkt_freq = pkt_mcnt % c.config['n_chans']
+    exp_xeng = pkt_freq / (c.config['n_chans'] / c.config['n_xeng'])
 
     sum_polQ_r = 0
     sum_polQ_i = 0
@@ -39,8 +38,7 @@ def feng_unpack(f, hdr_index, pkt_len):
     # average the packet contents - ignore first entry (header)
     for pkt_index in range(1, pkt_len):
         pkt_64bit = snap_data[f]['data'][hdr_index + pkt_index].data
-
-        for offset in range(0,64,16):
+        for offset in range(0, 64, 16):
             polQ_r = (pkt_64bit & ((2**(offset+16)) - (2**(offset+12))))>>(offset+12)
             polQ_i = (pkt_64bit & ((2**(offset+12)) - (2**(offset+8))))>>(offset+8)
             polI_r = (pkt_64bit & ((2**(offset+8)) - (2**(offset+4))))>>(offset+4)
@@ -127,8 +125,6 @@ try:
     num_bits = c.config['feng_bits']
     packet_len=c.config['10gbe_pkt_len']
     n_ants = c.config['n_ants']
-    n_chans = c.config['n_chans']
-    n_xengs = c.config['n_xeng']
 
     print 'Grabbing and unpacking snap data from F engines... ',
 
@@ -190,7 +186,7 @@ try:
                     #    mcnts[f][feng_unpkd_pkt['pkt_mcnt']]=numpy.zeros(n_ants,numpy.int)
                     #    mcnts[f][feng_unpkd_pkt['pkt_mcnt']][feng_unpkd_pkt['pkt_ant']]=i
                     #print mcnts
-                    print 'HDR @ %4i. MCNT %12u. Freq: %4i (X:%i). Ant: %3i. 4 bit power: PolQ: %4.2f, PolI: %4.2f' % (hdr_index, feng_unpkd_pkt['pkt_mcnt'], feng_unpkd_pkt['pkt_freq'],feng_unpkd_pkt['exp_xeng'], feng_unpkd_pkt['pkt_ant'], feng_unpkd_pkt['rms_polQ'], feng_unpkd_pkt['rms_polI'])
+                    print 'HDR @ %4i. MCNT %12u. Freq: %4i (X:%3i). Ant: %3i. 4 bit power: PolQ: %4.2f, PolI: %4.2f' % (hdr_index, feng_unpkd_pkt['pkt_mcnt'], feng_unpkd_pkt['pkt_freq'],feng_unpkd_pkt['exp_xeng'], feng_unpkd_pkt['pkt_ant'], feng_unpkd_pkt['rms_polQ'], feng_unpkd_pkt['rms_polI'])
 
                     if not report[f].has_key('Antenna%i' % feng_unpkd_pkt['pkt_ant']):
                         report[f]['Antenna%i' % feng_unpkd_pkt['pkt_ant']] = 1

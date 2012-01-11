@@ -1,5 +1,6 @@
 Changelog:
 Version 0.6.9 ()
+    - Updates to several snap scripts to improve compatibility with narrow band.
     - Bugfix to xstatus to reset terminal after clean exit
     - Bugfix to corr_snap_10gbe_tx.py which decoded frequencies incorrectly.
     - X-engine 10gbe cores were not being reset correctly in corr_functions.initialise and in the corr_init script (which should use corr_functions.init?).

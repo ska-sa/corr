@@ -57,7 +57,7 @@ try:
 
     print('Resetting error counters...'),
     sys.stdout.flush()
-    c.rst_cnt()
+    c.rst_status_and_count()
     print 'done.'
 
 except KeyboardInterrupt:

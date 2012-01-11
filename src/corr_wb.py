@@ -71,6 +71,14 @@ register_xengine_status = construct.BitStruct('xstatus0',
     construct.Flag('pkt_reord_err'),    # 1
     construct.Flag('pack_err'))         # 0
 
+# x-engine tvg control
+register_xengine_tvg_sel = construct.BitStruct('tvg_sel',
+    construct.Padding(32 - 1 - 2 - 2 - 6),  # 11 - 31
+    construct.BitField("vacc_tvg_sel", 6),  # 5 - 10
+    construct.BitField("xeng_tvg_sel", 2),  # 3 - 4
+    construct.BitField("descr_tvg_sel", 2), # 1 - 2
+    construct.Flag('xaui_tvg_sel'))         # 0
+
 snap_xengine_rx = construct.BitStruct("snap_rx0",
     construct.Padding(128 - 64 - 16 - 5 - 28 - 15),
     construct.BitField("ant", 15), 
@@ -95,6 +103,10 @@ snap_xengine_gbe_rx = construct.BitStruct("snap_gbe_rx0",
     construct.BitField("ip_addr", 32),
     construct.BitField("data", 64))
 
+# the snap block immediately after the x-engine
+snap_xengine_vacc = construct.BitStruct("snap_vacc0", construct.BitField("data", 32))
+
+# the xaui snap block on the f-engine - this is just after packetisation
 snap_fengine_xaui = construct.BitStruct("snap_xaui0",
     construct.Padding(128 - 1 - 3 - 1 - 1 - 3 - 64),
     construct.Flag("link_down"),

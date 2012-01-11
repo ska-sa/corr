@@ -29,12 +29,12 @@ def exit_clean():
     except: pass
     exit()
 
-def feng_unpack(f, hdr_index, pkt_len):
-    pkt_64bit = snap_data[f]['data'][hdr_index].data
-    pkt_mcnt = (pkt_64bit & ((2**64) - (2**16))) >> 16
-    pkt_ant = pkt_64bit & ((2**16) - 1)
+def unpack(f, hdr_index, pkt_len):
+    hdr_64bit = snap_data[f]['data'][hdr_index].data
+    pkt_mcnt = hdr_64bit >> 16
+    pkt_ant = hdr_64bit & ((2**16) - 1)
     pkt_freq = pkt_mcnt % c.config['n_chans']
-    pkt_xeng = pkt_freq % (c.config['x_per_fpga'] * len(c.xsrvs))
+    pkt_xeng = pkt_freq / (c.config['n_chans'] / c.config['n_xeng'])
 
     sum_polQ_r = 0
     sum_polQ_i = 0
@@ -44,8 +44,7 @@ def feng_unpack(f, hdr_index, pkt_len):
     # average the packet contents - ignore first entry (header)
     for pkt_index in range(1, pkt_len):
         pkt_64bit = snap_data[f]['data'][hdr_index + pkt_index].data
-
-        for offset in range(0,64,16):
+        for offset in range(0, 64, 16):
             polQ_r = (pkt_64bit & ((2**(offset+16)) - (2**(offset+12))))>>(offset+12)
             polQ_i = (pkt_64bit & ((2**(offset+12)) - (2**(offset+8))))>>(offset+8)
             polI_r = (pkt_64bit & ((2**(offset+8)) - (2**(offset+4))))>>(offset+4)
@@ -87,15 +86,15 @@ def feng_unpack(f, hdr_index, pkt_len):
         ave_bits_used_I_i = numpy.log2(level_polI_i*(2**binary_point))
 
     return {'pkt_mcnt': pkt_mcnt,\
-            'pkt_ant':pkt_ant,\
-            'pkt_freq':pkt_freq,\
-            'pkt_xeng':pkt_xeng,\
-            'rms_polQ':rms_polQ,\
-            'rms_polI':rms_polI,\
-            'ave_bits_used_Q_r':ave_bits_used_Q_r,\
-            'ave_bits_used_Q_i':ave_bits_used_Q_i,\
-            'ave_bits_used_I_r':ave_bits_used_I_r,\
-            'ave_bits_used_I_i':ave_bits_used_I_i}
+            'pkt_ant':  pkt_ant,\
+            'pkt_freq': pkt_freq,\
+            'pkt_xeng': pkt_xeng,\
+            'rms_polQ': rms_polQ,\
+            'rms_polI': rms_polI,\
+            'ave_bits_used_Q_r':    ave_bits_used_Q_r,\
+            'ave_bits_used_Q_i':    ave_bits_used_Q_i,\
+            'ave_bits_used_I_r':    ave_bits_used_I_r,\
+            'ave_bits_used_I_i':    ave_bits_used_I_i}
 
 if __name__ == '__main__':
     from optparse import OptionParser
@@ -191,7 +190,7 @@ try:
 
             if s['data'][i].eof and not opts.raw:
                 pkt_ip_str = corr.corr_functions.ip2str(s['data'][i].ip_addr)
-                print '[%s] EOF at %4i. Src: %12s. Len: %3i. '%(c.xsrvs[f], i, pkt_ip_str, i - prev_eof_index),
+                print '[%s] EOF at %4i. Src: %12s. Len: %3i. ' % (c.xsrvs[f], i, pkt_ip_str, i - prev_eof_index),
                 report[f]['pkt_total'] += 1
                 hdr_index = prev_eof_index + 1
                 pkt_len = i - prev_eof_index
@@ -211,21 +210,21 @@ try:
                     else:
                         report[f]['bad_pkt_len'] += 1
                 else:
-                    feng_unpkd_pkt = feng_unpack(f, hdr_index, pkt_len)
+                    unpkd_pkt = unpack(f, hdr_index, pkt_len)
                     
                     # Record the reception of the packet for this antenna, with this mcnt
-                    try: mcnts[f][feng_unpkd_pkt['pkt_mcnt']][feng_unpkd_pkt['pkt_ant']] = i
+                    try: mcnts[f][unpkd_pkt['pkt_mcnt']][unpkd_pkt['pkt_ant']] = i
                     except: 
-                        mcnts[f][feng_unpkd_pkt['pkt_mcnt']] = numpy.ones(n_ants,numpy.int) * (-1)
-                        mcnts[f][feng_unpkd_pkt['pkt_mcnt']][feng_unpkd_pkt['pkt_ant']] = i
+                        mcnts[f][unpkd_pkt['pkt_mcnt']] = numpy.ones(n_ants,numpy.int) * (-1)
+                        mcnts[f][unpkd_pkt['pkt_mcnt']][unpkd_pkt['pkt_ant']] = i
                     #print mcnts
 
-                    print 'HDR @ %4i. MCNT %12u. Ant: %3i. Freq: %4i. Xeng: %2i, 4 bit power: PolQ: %4.2f, PolI: %4.2f' % (hdr_index, feng_unpkd_pkt['pkt_mcnt'], feng_unpkd_pkt['pkt_ant'], feng_unpkd_pkt['pkt_freq'],feng_unpkd_pkt['pkt_xeng'], feng_unpkd_pkt['rms_polQ'], feng_unpkd_pkt['rms_polI'])
+                    print 'HDR @ %4i. MCNT %12u. Ant: %3i. Freq: %4i. Xeng: %2i, 4 bit power: PolQ: %4.2f, PolI: %4.2f' % (hdr_index, unpkd_pkt['pkt_mcnt'], unpkd_pkt['pkt_ant'], unpkd_pkt['pkt_freq'], unpkd_pkt['pkt_xeng'], unpkd_pkt['rms_polQ'], unpkd_pkt['rms_polI'])
 
-                    if not report[f].has_key('Antenna%i'%feng_unpkd_pkt['pkt_ant']):
-                        report[f]['Antenna%i'%feng_unpkd_pkt['pkt_ant']] = 1
+                    if not report[f].has_key('Antenna%i' % unpkd_pkt['pkt_ant']):
+                        report[f]['Antenna%i' % unpkd_pkt['pkt_ant']] = 1
                     else:
-                        report[f]['Antenna%i'%feng_unpkd_pkt['pkt_ant']] += 1
+                        report[f]['Antenna%i' % unpkd_pkt['pkt_ant']] += 1
 
         rcvd_mcnts = mcnts[f].keys()
         rcvd_mcnts.sort()
@@ -239,7 +238,8 @@ try:
                 # simulate the reception of the loopback antenna's mcnts, but only for the x engines that actually have connected f engines:
                 if f < x_with_connected_cables:
                     print 'Replacing antennas on FPGA %s for mcnt %i' % (c.xsrvs[f], mcnt)
-                    for a in range(base_ants[f][opts.core_n],base_ants[f][opts.core_n] + c.config['n_ants_per_xaui']): mcnts[f][mcnt][a] = mcnts[f][mcnt].max()
+                    for a in range(base_ants[f][opts.core_n],base_ants[f][opts.core_n] + c.config['n_ants_per_xaui']):
+                        mcnts[f][mcnt][a] = mcnts[f][mcnt].max()
 
             # find the min and max indices of each mcnt:
             max_mcnt = mcnts[f][mcnt].max() / pkt_len
