@@ -495,7 +495,7 @@ class Correlator:
         self.gbe_reset_release_x()
 
         time.sleep(len(self.xfpgas)/2)
-        self.rst_cnt()
+        self.rst_status_and_count()
         time.sleep(1)
 
         if self.config['feng_out_type'] == 'xaui':
@@ -507,7 +507,7 @@ class Correlator:
             if not self.check_loopback_mcnt_wait(n_retries=n_retries): raise RuntimeError("Loopback muxes didn't sync.")
         if not self.check_x_miss(): raise RuntimeError("X engines are missing data.")
         self.acc_time_set()
-        self.rst_cnt()
+        self.rst_status_and_count()
         self.syslogger.info("Waiting %i seconds for an integration to finish so we can test the VACCs."%self.config['int_time'])
         time.sleep(self.config['int_time']+0.1)
         if not self.check_vacc(): raise RuntimeError("Vector accumulators are broken.")
@@ -731,17 +731,21 @@ class Correlator:
         mac = (2<<40) + (2<<32) + ip
         return (mac,ip,port)
 
-    def rst_cnt(self):
+    def rst_status_and_count(self):
         """Resets all status registers and error counters on all connected boards."""
-        self.rst_fstat()
-        self.rst_xstat()
+        self.rst_fstatus()
+        self.rst_xstatus()
 
-    def rst_xstat(self):
+    def rst_xstatus(self):
         """Clears the status registers and counters on all connected X engines."""
-        #self.xeng_ctrl_set_all(cnt_rst='pulse', clr_status='pulse')
-        pulse_masked_register(self.xfpgas, corr.corr_wb.register_xengine_control, ['cnt_rst', 'clr_status'])
+        if self.is_wideband():
+            pulse_masked_register(self.xfpgas, corr.corr_wb.register_xengine_control, ['cnt_rst', 'clr_status'])
+        elif self.is_narrowband():
+            pulse_masked_register(self.xfpgas, corr.corr_nb.register_xengine_control, ['cnt_rst', 'clr_status'])
+        else:
+            raise RuntimeError('Unknown mode. Cannot reset X-engine status and error counters.')
 
-    def rst_fstat(self):
+    def rst_fstatus(self):
         """Clears the status registers on all connected F engines."""
         #self.feng_ctrl_set_all(clr_status='pulse')
         if self.is_wideband():
@@ -749,7 +753,7 @@ class Correlator:
         elif self.is_narrowband():
             pulse_masked_register(self.ffpgas, corr.corr_nb.register_fengine_control, ['clr_status'])
         else:
-            raise RuntimeError('Unknown mode. Cannot reset F-engine status.')
+            raise RuntimeError('Unknown mode. Cannot reset F-engine status and error counters.')
 
     def rst_vaccs(self):
         """Resets all Xengine Vector Accumulators."""
@@ -759,7 +763,7 @@ class Correlator:
         elif self.is_narrowband():
             pulse_masked_register(self.xfpgas, corr.corr_nb.register_xengine_control, ['vacc_rst'])
         else:
-            raise RuntimeError('Unknown mode. Cannot reset F-engine status.')
+            raise RuntimeError('Unknown mode. Cannot reset vector accumulators.')
 
     def xeng_clks_get(self):
         """Returns the approximate clock rate of each X engine FPGA in MHz."""
@@ -1409,7 +1413,7 @@ class Correlator:
         self.syslogger.info("Set number of VACC accumulations to %5i."%n_accs_vacc)
         self.vacc_sync() #this is needed in case we decrease the accumulation period on a new_acc transition where some vaccs would then be out of sync
         time.sleep(self.acc_time_get()+0.1)
-        self.rst_cnt() #reset all errors (resyncing VACC will introduce some)
+        self.rst_status_and_count() #reset all errors (resyncing VACC will introduce some)
         if spead_update: 
             self.spead_time_meta_issue()
 
