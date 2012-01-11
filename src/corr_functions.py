@@ -793,7 +793,7 @@ class Correlator:
             cnt_check = self.xread_uint_all('pkt_reord_cnt%i' % x)
             for xbrd, xsrv in enumerate(self.xsrvs):
                 if (err_check[xbrd] != 0) or (cnt_check[xbrd] == 0) :
-                    self.xloggers[xbrd].error("Missing X engine data on this xeng(%i,%i) - %s %s." % (x, xbrd, "(ERR==%s!=0)"%err_check[xbrd] if err_check[xbrd] != 0 else "", "(CNT==0)" if cnt_check[xbrd] == 0 else ""))
+                    self.xloggers[xbrd].error("Missing X engine data on this xeng(%i,%i) - %s %s." % (x, xbrd, "(ERR == %8i, 0b%s != 0)" % (err_check[xbrd], numpy.binary_repr(err_check[xbrd],32)) if err_check[xbrd] != 0 else "", "(CNT==0)" if cnt_check[xbrd] == 0 else ""))
                     rv = False
                 else:
                     self.xloggers[xbrd].info("All X engine data on this xeng(%i,%i) OK." % (x, xbrd))
