@@ -5,6 +5,7 @@ Grabs the contents of "snap_rx" for analysis.
 
 Rev:
 2011-06-29  PVP Port to use new snapshot blocks.
+2012-01-09  JRM Only good for one interface per xengine.
 '''
 
 import corr, time, numpy, struct, sys, logging
@@ -152,7 +153,6 @@ try:
                 if s['data'][l].loop_ack: print '[Loop]',
                 if s['data'][l].eof: print '[EOF]',
                 print ''
-
     report = dict()
     mcnts = dict()
     print 'Analysing packets:'
@@ -166,6 +166,20 @@ try:
         report[f]['fpga_index'] = f
 
         for i in range(len(s['data'])):
+            if opts.verbose:
+                print '[%s]' % (servers[s['xfpga_index']]),
+                print 'IDX: %6i IP: %s. MCNT: %6i. ANT: %4i.  Contents: %016x' % (i, 
+                    corr.corr_functions.ip2str(s['data'][i].ip_addr), 
+                    s['data'][i].mcnt, 
+                    s['data'][i].ant, 
+                    s['data'][i].data),
+                if s['data'][i].valid: print '[VALID]',
+                if s['data'][i].flag: print '[FLAG BAD]',
+                if s['data'][i].gbe_ack: print '[GBE]',
+                if s['data'][i].loop_ack: print '[Loop]',
+                if s['data'][i].eof: print '[EOF!]',
+                else: print ''
+
             if s['data'][i].eof:
                 pkt_ip_str = corr.corr_functions.ip2str(s['data'][i].ip_addr)
                 pkt_mcnt = s['data'][i].mcnt
