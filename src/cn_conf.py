@@ -1,4 +1,4 @@
-import iniparse,exceptions,socket,struct,numpy,os
+import iniparse, exceptions, socket, struct, numpy, os
 """
 Library for parsing CASPER correlator configuration files
 
@@ -26,12 +26,13 @@ Revs:
 LISTDELIMIT = ','
 PORTDELIMIT = ':'
 
-VAR_RUN='/var/run/corr'
+VAR_RUN = '/var/run/corr'
 
 class CorrConf:    
     def __init__(self, config_file):
         self.config_file = config_file
-        self.cp = iniparse.INIConfig(open(self.config_file,'rb'))
+        self.config_file_name = os.path.split(self.config_file)[1]
+        self.cp = iniparse.INIConfig(open(self.config_file, 'rb'))
         self.config = dict()
         self.read_mode()
         if self.config['mode'] == 0:
@@ -44,15 +45,15 @@ class CorrConf:
             raise RuntimeError('Unknown correlator mode, %i' % self.config['mode'])
         self.read_common()
 
-    def __getitem__(self,item):
+    def __getitem__(self, item):
         if item == 'sync_time':
-            fp=open(VAR_RUN+'/'+item,'r')
-            val=float(fp.readline())
+            fp = open(VAR_RUN + '/' + item + '.' + self.config_file_name, 'r')
+            val = float(fp.readline())
             fp.close()
             return val
-        elif item =='antenna_mapping':
-            fp=open(VAR_RUN+'/'+item,'r')
-            val=(fp.readline()).split(LISTDELIMIT)
+        elif item == 'antenna_mapping':
+            fp = open(VAR_RUN + '/' + item + '.' + self.config_file_name, 'r')
+            val = (fp.readline()).split(LISTDELIMIT)
             fp.close()
             return val
         else:
@@ -64,7 +65,7 @@ class CorrConf:
     def file_exists(self):
         try:
             #f = open(self.config_file)
-            f = open(self.config_file,'r')
+            f = open(self.config_file, 'r')
         except IOError:
             exists = False
             raise RuntimeError('Error opening config file at %s.'%self.config_file)
@@ -72,13 +73,13 @@ class CorrConf:
             exists = True
             f.close()
 
-        #check for runtime files and create if necessary:
+        # check for runtime files and create if necessary:
         if not os.path.exists(VAR_RUN):
             os.mkdir(VAR_RUN)
             #os.chmod(VAR_RUN,0o777)
-        for item in ['antenna_mapping','sync_time']:
-            if not os.path.exists(VAR_RUN+'/' + item):
-                f= open(VAR_RUN+'/' + item,'w')
+        for item in ['antenna_mapping', 'sync_time']:
+            if not os.path.exists(VAR_RUN + '/' + item + '.' + self.config_file_name):
+                f = open(VAR_RUN + '/' + item + '.' + self.config_file_name, 'w')
                 f.write(chr(0))
                 f.close()
                 #os.chmod(VAR_RUN+'/' + item,0o777)
@@ -303,21 +304,21 @@ class CorrConf:
     def write(self,section,variable,value):
         print 'Writing to the config file. Mostly, this is a bad idea. Mostly. Doing nothing.'
         return
-        self.config[variable]=value
-        self.cp[section][variable]=str(value)
-        fpw=open(self.config_file,'w')
+        self.config[variable] = value
+        self.cp[section][variable] = str(value)
+        fpw=open(self.config_file, 'w')
         print >>fpw,self.cp
         fpw.close()
 
-    def write_var(self,filename,value):
-        fp=open(VAR_RUN+'/'+filename,'w')
+    def write_var(self, filename, value):
+        fp=open(VAR_RUN + '/' + filename + '.' + self.config_file_name, 'w')
         fp.write(value)
         fp.close()
 
-    def write_var_list(self,filename,list_to_store):
-        fp=open(VAR_RUN+'/'+filename,'w')
+    def write_var_list(self, filename, list_to_store):
+        fp=open(VAR_RUN + '/' + filename + '.' + self.config_file_name, 'w')
         for v in list_to_store:
-            fp.write(v+LISTDELIMIT)
+            fp.write(v + LISTDELIMIT)
         fp.close()
 
     def get_line(self,section,variable):
