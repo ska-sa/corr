@@ -52,7 +52,7 @@ Revisions:
 
 import corr, time, sys, numpy, os, logging, katcp, struct, construct
 
-DEFAULT_CONFIG='/etc/corr/config'
+DEFAULT_CONFIG='/etc/corr/default'
 
 def statsmode(inlist):
     """Very rudimentarily calculates the mode of an input list. Only returns one value, the first mode. Can't deal with ties!"""

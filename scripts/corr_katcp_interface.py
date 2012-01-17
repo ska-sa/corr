@@ -28,7 +28,7 @@ class DeviceExampleServer(katcp.DeviceServer):
         super(DeviceExampleServer, self).__init__(*args, **kwargs)
         self.c = None
 
-    @request(Str(default='/etc/corr/config'), Int(default=100))
+    @request(Str(default='/etc/corr/default'), Int(default=100))
     @return_reply()
     def request_connect(self, sock, config_file, log_len):
         """Connect to all the ROACH boards. Please specify the config file and the log length. Clears any existing log. Call this again if you make external changes to the config file to reload it."""
