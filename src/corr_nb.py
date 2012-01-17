@@ -38,7 +38,8 @@ register_fengine_coarse_control = construct.BitStruct('coarse_ctrl',
 
 # f-engine fine control
 register_fengine_fine_control = construct.BitStruct('fine_ctrl',
-    construct.Padding(32 - 13 - 2 - 2 - 1),     # 18 - 31
+    construct.Padding(32 - 1 - 13 - 2 - 2 - 1), # 19 - 31
+    construct.Flag('skip_window'),              # 18
     construct.BitField('fft_shift', 13),        # 5 - 17
     construct.BitField('quant_snap_select', 2), # 3 - 4
     construct.BitField('snap_data_select', 2),  # 1 - 2
@@ -183,6 +184,9 @@ def feng_status_get(c, ant_str):
         rv['lru_state']='ok'
     return rv
 
+def raw2fp(num, nbits = 16): 
+    return float(numpy.int32(num << nbits) >> nbits) / (2**(nbits-1))
+
 def get_coarse_fft_snap(correlator, ant_str):
     # interpret the ant_string
     (ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input) = correlator.get_ant_str_location(ant_str)
@@ -202,8 +206,10 @@ def get_coarse_fft_snap(correlator, ant_str):
     coarse_d  = []
     for ctr in range(0, len(unpacked)):
         num = unpacked[ctr]
-        numR = numpy.int16(num >> 16)
-        numI = numpy.int16(num & 0x0000ffff)
+        #numR = numpy.int16(num >> 16)
+        #numI = numpy.int16(num & 0x0000ffff)
+        numR = raw2fp(num >> 16)
+        numI = raw2fp(num & 0x0000ffff)
         coarse_d.append(numR + (1j * numI))
     return coarse_d
 

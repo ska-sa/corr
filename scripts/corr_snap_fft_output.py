@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 '''
-Grabs the contents of "snap_xaui" for a given antenna and plots successive accumulations.
+Grabs the contents of snap blocks after the ffts, given antenna, and plots successive accumulations.
 
 Author: Paul Prozesky
 Date: 2011-09-07
@@ -63,7 +63,9 @@ def get_data(pol):
     else:
         raise RuntimeError('Mode not supported.')
     print 'done.'
-    print ' Accumulating...', 
+    print ' Accumulating chans...', 
+    for a in exclusion_list:
+        unpacked_vals[0][a] = 0
     pol['accumulations'] = numpy.sum([pol['accumulations'], numpy.sum(numpy.abs(unpacked_vals), axis = 0)], axis = 0)
     pol['num_accs'] += unpacked_vals.shape[0]
     print 'done.'
@@ -84,6 +86,8 @@ if __name__ == '__main__':
         help='Update rate, in ms.')
     p.add_option('-n', '--nbsel', dest='fine', action='store_true', default=False,
         help='Select which FFT to plot in narrowband mode. False for Coarse, True for Fine.')
+    p.add_option('-x', '--exclude', dest='exclude', type='string', default='',
+        help='COMMA-DELIMITED list of channels to exclude from the plot.')
     opts, args = p.parse_args(sys.argv[1:])
 
     if opts.man_trigger: man_trigger = True
@@ -94,6 +98,11 @@ if __name__ == '__main__':
     else:
         config_file=args[0]
     verbose=opts.verbose
+
+    exclusion_list = []
+    if opts.exclude.strip() != '':
+        for a in opts.exclude.split(','):
+            exclusion_list.append(int(a))
 
 lh = corr.log_handlers.DebugLogHandler(35)
 if opts.ant != None:

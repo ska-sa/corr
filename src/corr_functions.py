@@ -1916,7 +1916,7 @@ class Correlator:
             rv.append((ant_str,input_n,self.fsrvs[ffpga_n],feng_input))
         return rv
 
-    def adc_amplitudes_get(self,antpols=[]):
+    def adc_amplitudes_get(self, antpols=[]):
         """Gets the ADC RMS amplitudes from the F engines. If no antennas are specified, return all."""
         #Removed 'bits' cnt. Wasn't using it anywhere 'cos it wasn't exactly accurate. Rather use get_adc_snapshot and calc std-dev.
         #2011-04-20: JRM Changed "ants" to antpol so can specify any individual input.
@@ -1925,15 +1925,15 @@ class Correlator:
         rv = {}
         for ant_str in antpols:
             ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_ant_str_location(ant_str)
-            rv[ant_str]={}
-            rv[ant_str]['rms_raw']=numpy.sqrt(self.ffpgas[ffpga_n].read_uint('adc_sum_sq%i'%(feng_input))/float(self.config['adc_levels_acc_len']))
-            rv[ant_str]['rms_v'] =rv[ant_str]['rms_raw']*self.config['adc_v_scale_factor']
-            rv[ant_str]['adc_rms_dbm'] =v_to_dbm(rv[ant_str]['rms_v'])
+            rv[ant_str] = {}
+            rv[ant_str]['rms_raw'] = numpy.sqrt(self.ffpgas[ffpga_n].read_uint('adc_sum_sq%i'%(feng_input))/float(self.config['adc_levels_acc_len']))
+            rv[ant_str]['rms_v'] = rv[ant_str]['rms_raw']*self.config['adc_v_scale_factor']
+            rv[ant_str]['adc_rms_dbm'] = v_to_dbm(rv[ant_str]['rms_v'])
             rf_status=self.rf_status_get(ant_str) 
-            rv[ant_str]['analogue_gain']=rf_status[1]
-            rv[ant_str]['input_rms_dbm']=rv[ant_str]['adc_rms_dbm']-rv[ant_str]['analogue_gain']
-            rv[ant_str]['low_level_warn']=True if (rv[ant_str]['adc_rms_dbm']<self.config['adc_low_level_warning']) else False
-            rv[ant_str]['high_level_warn']=True if (rv[ant_str]['adc_rms_dbm']>self.config['adc_high_level_warning']) else False
+            rv[ant_str]['analogue_gain'] = rf_status[1]
+            rv[ant_str]['input_rms_dbm'] = rv[ant_str]['adc_rms_dbm']-rv[ant_str]['analogue_gain']
+            rv[ant_str]['low_level_warn'] = True if (rv[ant_str]['adc_rms_dbm']<self.config['adc_low_level_warning']) else False
+            rv[ant_str]['high_level_warn'] = True if (rv[ant_str]['adc_rms_dbm']>self.config['adc_high_level_warning']) else False
         return rv
 
     def spead_labelling_issue(self):
