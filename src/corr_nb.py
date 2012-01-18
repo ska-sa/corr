@@ -7,8 +7,8 @@ Revisions:
 """
 import numpy, struct, construct, corr_functions, snap
 
-coarse_snap_name = 'crs_snap_d'
-fine_snap_name = 'fine_snap_d'
+def raw2fp(num, bits = 16, point = 15): 
+    return float(numpy.int64(num << bits) >> bits) / (2**point)
 
 # f-engine status
 register_fengine_fstatus = construct.BitStruct('fstatus0',
@@ -184,34 +184,57 @@ def feng_status_get(c, ant_str):
         rv['lru_state']='ok'
     return rv
 
-def raw2fp(num, nbits = 16): 
-    return float(numpy.int32(num << nbits) >> nbits) / (2**(nbits-1))
+def coarse_channel_select(c, mixer_sel = -1, channel_sel = -1):
+    """
+    Select a coarse channel to process further with the fine FFT.
+    """
+    if mixer_sel > -1:
+        corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, mixer_select = True if mixer_sel == 1 else False)
+    if channel_sel > -1:
+        corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = channel_sel)
 
-def get_coarse_fft_snap(correlator, ant_str):
-    # interpret the ant_string
-    (ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input) = correlator.get_ant_str_location(ant_str)
-    # select the data from the coarse fft
-    fpga = correlator.ffpgas[ffpga_n]
-    corr_functions.write_masked_register([fpga], register_fengine_coarse_control, snap_data_select = 0)
-    data = fpga.snapshot_get(dev_name = coarse_snap_name, man_trig = False, man_valid = False, wait_period = 3, offset = -1, circular_capture = False, get_extra_val = False)
-    unpacked_scrambled = list(struct.unpack('>%iI' % (len(data['data']) / 4), data['data']))
-    # re-arrange the data sensibly - for FFT data it's complex 16.15 fixed point signed data
-    unpacked = []
-    for ctr in range(0, len(unpacked_scrambled), 4):
-        unpacked.append(unpacked_scrambled[ctr + 0])
-        unpacked.append(unpacked_scrambled[ctr + 1])
-        unpacked.append(unpacked_scrambled[ctr + 2])
-        unpacked.append(unpacked_scrambled[ctr + 3])
-    # make the actual complex numbers
-    coarse_d  = []
-    for ctr in range(0, len(unpacked)):
-        num = unpacked[ctr]
-        #numR = numpy.int16(num >> 16)
-        #numI = numpy.int16(num & 0x0000ffff)
-        numR = raw2fp(num >> 16)
-        numI = raw2fp(num & 0x0000ffff)
-        coarse_d.append(numR + (1j * numI))
-    return coarse_d
+"""
+SNAP blocks in the narrowband system
+"""
+
+snap_name_coarse = 'crs_snap_d'
+snap_name_fine = 'fine_snap_d'
+
+def get_snap_adc(c, fpgas = []):
+    data = []
+    return data
+
+def get_snap_coarse_fft(c, fpgas = []):
+    """
+    Read and return data from the coarse FFT.
+    """
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    # select the correct snap block with the control register
+    corr_functions.write_masked_register(fpgas, register_fengine_coarse_control, snap_data_select = 0)
+    # get the data
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_name_coarse, wait_period = 3)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        l = snap_data['lengths'][ctr]
+        scrambled = list(struct.unpack('>%iI' % (l / 4), d))
+        # re-arrange the data sensibly - for FFT data it's complex 16.15 fixed point signed data
+        unpacked = []
+        for ctr in range(0, len(scrambled), 4):
+            unpacked.append(scrambled[ctr + 0])
+            unpacked.append(scrambled[ctr + 1])
+            unpacked.append(scrambled[ctr + 2])
+            unpacked.append(scrambled[ctr + 3])
+        # make the actual complex numbers
+        coarse_d  = []
+        for ctr in range(0, len(unpacked)):
+            num = unpacked[ctr]
+            numR = raw2fp(num >> 16, bits = 16, point = 15)
+            numI = raw2fp(num & 0x0000ffff, bits = 16, point = 15)
+            coarse_d.append(numR + (1j * numI))
+        rd.append(coarse_d)
+    return rd
 
 def get_fine_fft_snap(correlator, ant_str):
     # interpret the ant_string

@@ -16,7 +16,7 @@ import optparse
 
 options = optparse.OptionParser()
 options.add_option("--verbose",         "-v", action="store_true",  help="Print extra info.", default = False)
-options.add_option("--ant",             "",     type="string",      help="Which antenna (use antenna string, e.g. '2x').", default = '0x')
+options.add_option("--fpga",            "",     type="int",         help="Which f-engine FPGA? 0, 1, 2...", default = 0)
 options.add_option("--pol",             "-p",   type="int",         help="Which pol? 0 or 1.", default = 0)
 options.add_option("--coarse_chans",    "-c",   type="string",      help="A comma-delimited list of coarse channels to process.", default = "")
 options.add_option("--accumulations",   "-a",   type="int",         help="How many accumulations must be done? Default: continue indefinitely.", default = -1)
@@ -75,9 +75,9 @@ def get_coarse_data(c, channels, snaps):
     while ctr < snaps_per_fine_fft:
         print 11 * '\b', '%4i/%4i' % (ctr, snaps),
         sys.stdout.flush()
-        allchans = corr.corr_nb.get_coarse_fft_snap(c, opts.ant)
+        coarse_fft_data = corr.corr_nb.get_snap_coarse_fft(c, [c.ffpgas[opts.fpga]])[0]
         for chan in channels:
-            d = allchans[chan::(c.config['coarse_chans'] * 2)]
+            d = coarse_fft_data[chan::(c.config['coarse_chans'] * 2)]
             data[chan].extend(d)
         ctr+=1
     print ''

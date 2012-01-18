@@ -52,14 +52,11 @@ try:
     print 'done'
 
     if opts.mixer_sel > -1:
-        print 'Setting mixer to %i...' % opts.mixer_sel,
-        corr.corr_functions.write_masked_register(c.ffpgas, corr.corr_nb.register_fengine_coarse_control, mixer_select = True if opts.mixer_sel == 1 else False)
-        print 'done.'
-
+        print 'Setting mixer to %i...' % opts.mixer_sel
     if opts.channel_sel > -1:
-        print 'Setting coarse channel to %i...' % opts.channel_sel,
-        corr.corr_functions.write_masked_register(c.ffpgas, corr.corr_nb.register_fengine_coarse_control, channel_select = opts.channel_sel)
-        print 'done.'
+        print 'Setting coarse channel to %i...' % opts.channel_sel
+
+    corr.corr_nb.coarse_channel_select(c, mixer_sel = opts.mixer_sel, channel_sel = opts.channel_sel)
 
     # print the setup on the fengines
     rv = corr.corr_functions.read_masked_register(c.ffpgas, corr.corr_nb.register_fengine_coarse_control)

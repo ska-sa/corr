@@ -11,7 +11,7 @@ Revisions:
 '''
 import corr, time, numpy, struct, sys, logging, pylab, matplotlib
 
-polList = []
+pol_list = []
 report = []
 
 def exit_fail():
@@ -31,7 +31,7 @@ def exit_clean():
     exit()
 
 def drawDataCallback():
-    for p, pol in enumerate(polList):
+    for p, pol in enumerate(pol_list):
         get_data(pol)
         pol['plot'].cla()
         pol['plot'].set_xlim(0, n_chans + 1)
@@ -50,20 +50,20 @@ def parseAntenna(antArg):
 
 def get_data(pol):
     print 'Integrating data %i from %s:' % (pol['num_accs'], pol['ant_str'])
-    print ' Grabbing data off snap blocks...',
+    print '\tGrabbing data off snap blocks...',
     if c.is_wideband():
         #unpacked_vals = c.get_quant_snapshot(pol['ant_str'], n_spectra = 8)
         raise RuntimeError('not yet implemented')
     elif c.is_narrowband():
         if opts.fine == False:
-            unpacked_vals = numpy.array(corr.corr_nb.get_coarse_fft_snap(c, pol['ant_str']))
+            unpacked_vals = numpy.array(corr.corr_nb.get_snap_coarse_fft(c, [pol['fpga']]))[0]
         else:
-            unpacked_vals = numpy.array(corr.corr_nb.get_fine_fft_snap(c, pol['ant_str']))
+            unpacked_vals = numpy.array(corr.corr_nb.get_fine_fft_snap(c, [pol['ant_str']]))[0]
         unpacked_vals.shape = (len(unpacked_vals) / n_chans, n_chans)
     else:
         raise RuntimeError('Mode not supported.')
     print 'done.'
-    print ' Accumulating chans...', 
+    print '\tAccumulating chans...', 
     for a in exclusion_list:
         unpacked_vals[0][a] = 0
     pol['accumulations'] = numpy.sum([pol['accumulations'], numpy.sum(numpy.abs(unpacked_vals), axis = 0)], axis = 0)
@@ -76,18 +76,12 @@ if __name__ == '__main__':
     p = OptionParser()
     p.set_usage('%prog [options] CONFIG_FILE')
     p.set_description(__doc__)
-    p.add_option('-t', '--man_trigger', dest='man_trigger', action='store_true',
-        help='Trigger the snap block manually')   
-    p.add_option('-v', '--verbose', dest='verbose', action='store_true',
-        help='Print raw output.')  
-    p.add_option('-a', '--ant', dest='ant', type='str', default=None,
-        help='Select antenna to query.')
-    p.add_option('-u', '--update_rate', dest='update_rate', type='int', default=100,
-        help='Update rate, in ms.')
-    p.add_option('-n', '--nbsel', dest='fine', action='store_true', default=False,
-        help='Select which FFT to plot in narrowband mode. False for Coarse, True for Fine.')
-    p.add_option('-x', '--exclude', dest='exclude', type='string', default='',
-        help='COMMA-DELIMITED list of channels to exclude from the plot.')
+    p.add_option('-t', '--man_trigger', dest='man_trigger', action='store_true',        help = 'Trigger the snap block manually')   
+    p.add_option('-v', '--verbose',     dest='verbose',     action='store_true',        help = 'Print raw output.')  
+    p.add_option('-a', '--ant',         dest='ant',         type='str',                 help = 'Select antenna to query.', default = None)
+    p.add_option('-u', '--update_rate', dest='update_rate', type='int',                 help = 'Update rate, in ms.', default = 100)
+    p.add_option('-n', '--nbsel',       dest='fine',        action='store_true',        help = 'Select which FFT to plot in narrowband mode. False for Coarse, True for Fine.', default = False)
+    p.add_option('-x', '--exclude',     dest='exclude',     type='string',              help = 'COMMA-DELIMITED list of channels to exclude from the plot.', default = '')
     opts, args = p.parse_args(sys.argv[1:])
 
     if opts.man_trigger: man_trigger = True
@@ -130,13 +124,12 @@ try:
     # set up the figure with a subplot for each polarisation to be plotted
     fig = matplotlib.pyplot.figure()
     for p, ant_str in enumerate(ant_strs):
-        if not ant_str in c.config._get_ant_mapping_list():
-            print 'Unrecognised input %s. Must be in ' %(pol),c.config._get_ant_mapping_list()
-            exit_clean()
-        polList.append({'ant_str':ant_str})
-        polList[p]['accumulations'] = numpy.zeros(n_chans)
-        polList[p]['num_accs'] = 0
-        polList[p]['plot'] = fig.add_subplot(len(ant_strs), 1, p + 1)
+        ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input = c.get_ant_str_location(ant_str)
+        pol_list.append({'ant_str': ant_str})
+        pol_list[p]['fpga'] = c.ffpgas[ffpga_n]
+        pol_list[p]['accumulations'] = numpy.zeros(n_chans)
+        pol_list[p]['num_accs'] = 0
+        pol_list[p]['plot'] = fig.add_subplot(len(ant_strs), 1, p + 1)
 
     # start the process    
     fig.canvas.manager.window.after(opts.update_rate, drawDataCallback)
