@@ -66,7 +66,7 @@ else:
 
 import corr, logging, numpy, time, sys
 
-def get_coarse_data(c, channels, snaps):
+def get_coarse_data(c, channels, snaps, pol):
     data = {}
     for chan in channels:
         data[chan] = []
@@ -75,7 +75,7 @@ def get_coarse_data(c, channels, snaps):
     while ctr < snaps_per_fine_fft:
         print 11 * '\b', '%4i/%4i' % (ctr, snaps),
         sys.stdout.flush()
-        coarse_fft_data = corr.corr_nb.get_snap_coarse_fft(c, [c.ffpgas[opts.fpga]])[0]
+        coarse_fft_data = corr.corr_nb.get_snap_coarse_fft(c, [c.ffpgas[opts.fpga]], pol)[0]
         for chan in channels:
             d = coarse_fft_data[chan::(c.config['coarse_chans'] * 2)]
             data[chan].extend(d)
@@ -123,12 +123,12 @@ try:
     print 'Loading coarse data for one fine FFT. Need to read snap %i times.' % snaps_per_fine_fft
 
     channels = []
-    for s in opts.coarse_chans.strip().split(','):
-        channels.append(int(s))
+    if opts.coarse_chans == "all":
+        channels = range(0, c.config['coarse_chans'])
+    else: 
+        for s in opts.coarse_chans.strip().split(','):
+            channels.append(int(s))
     print 'Will get data for', channels
-
-    print 'Selecting pol', opts.pol
-    corr.corr_functions.write_masked_register(c.ffpgas, corr.corr_nb.register_fengine_coarse_control, snap_pol_select = opts.pol, snap_data_select = 0)
 
     if plot:
         import pylab
@@ -147,7 +147,7 @@ try:
         if readfile != "":
             data = get_data_from_file(readfile, channels)
         else:
-            data = get_coarse_data(c, channels, snaps_per_fine_fft)
+            data = get_coarse_data(c, channels, snaps_per_fine_fft, opts.pol)
 
         # write data to file
         if writefile != "":
@@ -169,6 +169,8 @@ try:
                 d = data[chan][ctr*n_chans : (ctr+1)*n_chans]
                 fftd = numpy.fft.fft(d)
                 accumulated[chan] += numpy.array(abs(fftd))
+                #pwr = (fftd.real**2 + fftd.imag**2) ** 0.5
+                #accumulated[chan] += numpy.array(pwr)
         del data
         print 'done.'
 
@@ -180,7 +182,11 @@ try:
         sys.stdout.flush()
         pylab.cla()
         for chan in channels:
-            pylab.plot(accumulated[chan])
+            length = len(accumulated[chan])
+            swapped = accumulated[chan][length/2:].tolist()
+            swapped.extend(accumulated[chan][0:length/2].tolist())
+            swapped = numpy.array(swapped)
+            pylab.plot(swapped / accum_counter)
         pylab.show()
         print 'done.'
 

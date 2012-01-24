@@ -52,14 +52,9 @@ def get_data(pol):
     print 'Integrating data %i from %s:' % (pol['num_accs'], pol['ant_str'])
     print '\tGrabbing data off snap blocks...',
     if c.is_wideband():
-        #unpacked_vals = c.get_quant_snapshot(pol['ant_str'], n_spectra = 8)
-        raise RuntimeError('not yet implemented')
+        unpacked_vals = get_data_wb(pol)
     elif c.is_narrowband():
-        if opts.fine == False:
-            unpacked_vals = numpy.array(corr.corr_nb.get_snap_coarse_fft(c, [pol['fpga']]))[0]
-        else:
-            unpacked_vals = numpy.array(corr.corr_nb.get_fine_fft_snap(c, [pol['ant_str']]))[0]
-        unpacked_vals.shape = (len(unpacked_vals) / n_chans, n_chans)
+        unpacked_vals = get_data_nb(pol)
     else:
         raise RuntimeError('Mode not supported.')
     print 'done.'
@@ -71,6 +66,22 @@ def get_data(pol):
     print 'done.'
     return
 
+def get_data_nb(pol):
+    #unpacked_vals = c.get_quant_snapshot(pol['ant_str'], n_spectra = 8)
+    raise RuntimeError('not yet implemented')
+
+def get_data_nb(pol):
+    if opts.fine == False:
+        unpacked_vals = numpy.array(corr.corr_nb.get_snap_coarse_fft(c, [pol['fpga']]))[0]
+    else:
+        unpacked_vals = []
+        while len(unpacked_vals) < n_chans:
+            temp = corr.corr_nb.get_snap_fine_fft(c, fpgas = [pol['fpga']])
+            unpacked_vals.extend(temp[0][pol['pol']])
+        unpacked_vals = numpy.array(unpacked_vals)
+    unpacked_vals.shape = (len(unpacked_vals) / n_chans, n_chans)
+    return unpacked_vals
+
 if __name__ == '__main__':
     from optparse import OptionParser
     p = OptionParser()
@@ -79,6 +90,7 @@ if __name__ == '__main__':
     p.add_option('-t', '--man_trigger', dest='man_trigger', action='store_true',        help = 'Trigger the snap block manually')   
     p.add_option('-v', '--verbose',     dest='verbose',     action='store_true',        help = 'Print raw output.')  
     p.add_option('-a', '--ant',         dest='ant',         type='str',                 help = 'Select antenna to query.', default = None)
+    p.add_option('-p', '--pol',         dest='pol',         type='int',                 help = 'Polarisation to plot, default 0.', default = 0)
     p.add_option('-u', '--update_rate', dest='update_rate', type='int',                 help = 'Update rate, in ms.', default = 100)
     p.add_option('-n', '--nbsel',       dest='fine',        action='store_true',        help = 'Select which FFT to plot in narrowband mode. False for Coarse, True for Fine.', default = False)
     p.add_option('-x', '--exclude',     dest='exclude',     type='string',              help = 'COMMA-DELIMITED list of channels to exclude from the plot.', default = '')
@@ -129,6 +141,7 @@ try:
         pol_list[p]['fpga'] = c.ffpgas[ffpga_n]
         pol_list[p]['accumulations'] = numpy.zeros(n_chans)
         pol_list[p]['num_accs'] = 0
+        pol_list[p]['pol'] = opts.pol
         pol_list[p]['plot'] = fig.add_subplot(len(ant_strs), 1, p + 1)
 
     # start the process    
