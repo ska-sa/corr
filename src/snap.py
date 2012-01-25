@@ -252,8 +252,7 @@ def get_gbe_tx_snapshot_feng(correlator, snap_name = 'snap_gbe_tx0', offset = -1
         v['data'] = unp_rpt.parse(d)
         #add some fake values to make it look like a XAUI snap block so we can use the same functions on this data interchangeably:
         for dp in v['data']:
-            print dp
-            dp['link_down'] = not v['data']['linkup']
+            dp['link_down'] = not dp['link_up']
             dp['hdr_valid'] = False
             dp['mrst'] = False
             dp['sync'] = False
@@ -276,6 +275,13 @@ def get_xaui_snapshot(correlator, offset = -1, man_trigger = False):
         v = {}
         v['fpga_index'] = index
         v['data'] = unpack_repeater.parse(d)
+        for dp in v['data']:
+            dp['ip_addr'] =0
+            dp['link_up'] = not dp['link_down']
+            dp['tx_over']= False
+            dp['tx_full']= False
+            dp['led_tx']= False
+            dp['link_up'] = False
         rv.append(v)
     return rv
 
