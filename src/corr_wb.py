@@ -103,6 +103,17 @@ snap_xengine_gbe_rx = construct.BitStruct("snap_gbe_rx0",
     construct.BitField("ip_addr", 32),
     construct.BitField("data", 64))
 
+snap_xengine_gbe_tx = construct.BitStruct("snap_gbe_tx0",
+        construct.Padding(128 - 64 - 32 - 6), 
+        construct.Flag("eof"),
+        construct.Flag("link_up"),
+        construct.Flag("led_tx"),
+        construct.Flag("tx_full"),
+        construct.Flag("tx_over"),
+        construct.Flag("valid"),
+        construct.BitField("ip_addr", 32),
+        construct.BitField("data", 64))
+
 # the snap block immediately after the x-engine
 snap_xengine_vacc = construct.BitStruct("snap_vacc0", construct.BitField("data", 32))
 
@@ -117,6 +128,18 @@ snap_fengine_xaui = construct.BitStruct("snap_xaui0",
     construct.Flag("sync"),
     construct.Flag("hdr_valid"),
     construct.BitField("data", 64))
+
+snap_fengine_gbe_tx = construct.BitStruct("snap_gbe_tx0",
+    construct.Padding(128 - 64 - 32 - 6), 
+    construct.Flag("eof"),
+    construct.Flag("link_up"),
+    construct.Flag("led_tx"),
+    construct.Flag("tx_full"),
+    construct.Flag("tx_over"),
+    construct.Flag("valid"),
+    construct.BitField("ip_addr", 32),
+    construct.BitField("data", 64))
+
 
 def feng_status_get(c, ant_str):
     """Reads and decodes the status register for a given antenna. Adds some other bits 'n pieces relating to Fengine status."""

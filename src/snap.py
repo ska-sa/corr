@@ -229,25 +229,10 @@ def get_gbe_rx_snapshot(correlator, xfpgas = [], snapname = 'snap_gbe_rx0'):
         rv.append(v)
     return rv
 
-def get_gbe_tx_snapshot_feng(correlator, snapnames = 'snap_gbe_tx0', offset = -1, man_trigger = False, man_valid = False):
-    return get_gbe_tx_snapshot(correlator.ffpgas, snapnames = snapnames, offset = offset, man_trigger = man_trigger, man_valid = man_valid)
 
 def get_gbe_tx_snapshot_xeng(correlator, snapnames = 'snap_gbe_tx0', offset = -1, man_trigger = False, man_valid = False):
-    return get_gbe_tx_snapshot(correlator.xfpgas, snapnames = snapnames, offset = offset, man_trigger = man_trigger, man_valid = man_valid)
-
-def get_gbe_tx_snapshot(devices, snapnames, offset = -1, man_trigger = False, man_valid = False):
-    raw = snapshots_get(devices, dev_names = snapnames, wait_period = 3, circular_capture = False, man_trig = man_trigger, offset = offset, man_valid = man_valid)
-    rx_bf = construct.BitStruct("oob",
-        Padding(128 - 64 - 32 - 6),
-        Flag("eof"),
-        Flag("link_up"),
-        Flag("led_tx"),
-        Flag("tx_full"),
-        Flag("tx_over"),
-        Flag("valid"),
-        BitField("ip_addr", 32),
-        BitField("data", 64))
-    unp_rpt = construct.GreedyRepeater(rx_bf)
+    raw = snapshots_get(correlator.xfpgas, dev_names = snapnames, wait_period = 3, circular_capture = False, man_trig = man_trigger, offset = offset, man_valid = man_valid)
+    unp_rpt = construct.GreedyRepeater(corr.corr_wb.snap_xengine_gbe_tx)
     rv = []
     for index, d in enumerate(raw['data']):
         v = {}
@@ -256,14 +241,34 @@ def get_gbe_tx_snapshot(devices, snapnames, offset = -1, man_trigger = False, ma
         rv.append(v)
     return rv
 
+def get_gbe_tx_snapshot_feng(correlator, snap_name = 'snap_gbe_tx0', offset = -1, man_trigger = False, man_valid = False):
+    raw = snapshots_get(correlator.ffpgas, dev_names = snap_name, wait_period = 3, circular_capture = False, man_trig = man_trigger, offset = offset)
+    unp_rpt = construct.GreedyRepeater(corr.corr_wb.snap_fengine_gbe_tx)
+    rv = []
+    #step though each FPGA for which we got snap data:
+    for index, d in enumerate(raw['data']):
+        v = {}
+        v['fpga_index'] = index
+        v['data'] = unp_rpt.parse(d)
+        #add some fake values to make it look like a XAUI snap block so we can use the same functions on this data interchangeably:
+        for dp in v['data']:
+            print dp
+            dp['link_down'] = not v['data']['linkup']
+            dp['hdr_valid'] = False
+            dp['mrst'] = False
+            dp['sync'] = False
+        rv.append(v)
+    return rv
+
 def get_xaui_snapshot(correlator, offset = -1, man_trigger = False):
+    """Grabs data from fengines' TX xaui blocks"""
     if correlator.is_wideband():
         snap_bitfield = corr.corr_wb.snap_fengine_xaui
         dev_name = 'snap_xaui0'
     elif correlator.is_narrowband():
         snap_bitfield = corr.corr_nb.snap_fengine_xaui
         dev_name = 'snap_xaui'
-    else: raise RuntimeError('Unsupported mode.')
+    else: raise RuntimeError('Unsupported correlator type.')
     raw = snapshots_get(correlator.ffpgas, dev_names = dev_name, wait_period = 3, circular_capture = False, man_trig = man_trigger, offset = offset)
     unpack_repeater = construct.GreedyRepeater(snap_bitfield)
     rv = []
