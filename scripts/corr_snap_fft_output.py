@@ -54,7 +54,12 @@ def get_data(pol):
     if c.is_wideband():
         unpacked_vals = get_data_wb(pol)
     elif c.is_narrowband():
-        unpacked_vals = get_data_nb(pol)
+        if opts.buffer and opts.fine:
+            unpacked_vals = get_data_nb_buffered(pol)
+        elif opts.window and opts.fine:
+            unpacked_vals = get_data_nb_windowed(pol)
+        else:
+            unpacked_vals = get_data_nb(pol)
     else:
         raise RuntimeError('Mode not supported.')
     print 'done.'
@@ -66,7 +71,7 @@ def get_data(pol):
     print 'done.'
     return
 
-def get_data_nb(pol):
+def get_data_wb(pol):
     #unpacked_vals = c.get_quant_snapshot(pol['ant_str'], n_spectra = 8)
     raise RuntimeError('not yet implemented')
 
@@ -75,10 +80,48 @@ def get_data_nb(pol):
         unpacked_vals = numpy.array(corr.corr_nb.get_snap_coarse_fft(c, [pol['fpga']]))[0]
     else:
         unpacked_vals = []
+        offset = 0
         while len(unpacked_vals) < n_chans:
-            temp = corr.corr_nb.get_snap_fine_fft(c, fpgas = [pol['fpga']])
-            unpacked_vals.extend(temp[0][pol['pol']])
-        unpacked_vals = numpy.array(unpacked_vals)
+            temp = corr.corr_nb.get_snap_fine_fft(c, fpgas = [pol['fpga']], offset = offset)
+            temp = temp[0][pol['pol']]
+            unpacked_vals.extend(temp)
+            offset += (len(temp) * 128/8)
+        length = len(unpacked_vals)
+        swapped = unpacked_vals[length/2:]
+        swapped.extend(unpacked_vals[0:length/2])
+        unpacked_vals = numpy.array(swapped)
+    unpacked_vals.shape = (len(unpacked_vals) / n_chans, n_chans)
+    return unpacked_vals
+
+def get_data_nb_buffered(pol):
+    unpacked_vals = []
+    offset = 0
+    while len(unpacked_vals) < n_chans:
+        temp = corr.corr_nb.get_snap_fine_buffer(c, fpgas = [pol['fpga']], offset = offset)
+        temp = temp[0][pol['pol']]
+        unpacked_vals.extend(temp)
+        offset += (len(temp) * 128/8)
+    fftd = numpy.fft.fft(unpacked_vals, n = n_chans).tolist()
+    length = len(fftd)
+    swapped = fftd[length/2:]
+    swapped.extend(fftd[0:length/2])
+    unpacked_vals = numpy.array(swapped)
+    unpacked_vals.shape = (len(unpacked_vals) / n_chans, n_chans)
+    return unpacked_vals
+
+def get_data_nb_windowed(pol):
+    unpacked_vals = []
+    offset = 0
+    while len(unpacked_vals) < n_chans:
+        temp = corr.corr_nb.get_snap_fine_window(c, fpgas = [pol['fpga']], offset = offset)
+        temp = temp[0][pol['pol']]
+        unpacked_vals.extend(temp)
+        offset += (len(temp) * 128/8)
+    fftd = numpy.fft.fft(unpacked_vals, n = n_chans).tolist()
+    length = len(fftd)
+    swapped = fftd[length/2:]
+    swapped.extend(fftd[0:length/2])
+    unpacked_vals = numpy.array(swapped)
     unpacked_vals.shape = (len(unpacked_vals) / n_chans, n_chans)
     return unpacked_vals
 
@@ -94,6 +137,8 @@ if __name__ == '__main__':
     p.add_option('-u', '--update_rate', dest='update_rate', type='int',                 help = 'Update rate, in ms.', default = 100)
     p.add_option('-n', '--nbsel',       dest='fine',        action='store_true',        help = 'Select which FFT to plot in narrowband mode. False for Coarse, True for Fine.', default = False)
     p.add_option('-x', '--exclude',     dest='exclude',     type='string',              help = 'COMMA-DELIMITED list of channels to exclude from the plot.', default = '')
+    p.add_option('-b', '--buffer',      dest='buffer',      action='store_true',        help = 'Use the output of the fine buffer and do a soft FFT on it. Accumulate that.', default = False)
+    p.add_option('-w', '--window',      dest='window',      action='store_true',        help = 'Use the output of the fine buffer, WINDOWED, and do a soft FFT on it. Accumulate that.', default = False)
     opts, args = p.parse_args(sys.argv[1:])
 
     if opts.man_trigger: man_trigger = True

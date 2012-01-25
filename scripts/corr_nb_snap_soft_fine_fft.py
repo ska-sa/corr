@@ -11,19 +11,21 @@
 #
 
 snap_len = 1024
+snap_len_bytes = 8192
 
 import optparse
 
 options = optparse.OptionParser()
-options.add_option("--verbose",         "-v", action="store_true",  help="Print extra info.", default = False)
-options.add_option("--fpga",            "",     type="int",         help="Which f-engine FPGA? 0, 1, 2...", default = 0)
-options.add_option("--pol",             "-p",   type="int",         help="Which pol? 0 or 1.", default = 0)
-options.add_option("--coarse_chans",    "-c",   type="string",      help="A comma-delimited list of coarse channels to process.", default = "")
-options.add_option("--accumulations",   "-a",   type="int",         help="How many accumulations must be done? Default: continue indefinitely.", default = -1)
-options.add_option("--finechans",       "-f",   type="int",         help="Specify a different number of fine chans to that in the config file.", default = -1)
-options.add_option("--readfile",        "-r",   type="string",      help="Read data from a file instead of from the devices.", default = "")
-options.add_option("--writefile",       "-w",   type="string",      help="Write data to file.", default = "")
-options.add_option("--noplot",          "", action="store_true",    help="Don't plot the data.", default = False)
+options.add_option("--verbose",         "-v", action="store_true",      help="Print extra info.", default = False)
+options.add_option("--fpga",            "",     type="int",             help="Which f-engine FPGA? 0, 1, 2...", default = 0)
+options.add_option("--pol",             "-p",   type="int",             help="Which pol? 0 or 1.", default = 0)
+options.add_option("--coarse_chans",    "-c",   type="string",          help="A comma-delimited list of coarse channels to process.", default = "")
+options.add_option("--accumulations",   "-a",   type="int",             help="How many accumulations must be done? Default: continue indefinitely.", default = -1)
+options.add_option("--finechans",       "-f",   type="int",             help="Specify a different number of fine chans to that in the config file.", default = -1)
+options.add_option("--readfile",        "-r",   type="string",          help="Read data from a file instead of from the devices.", default = "")
+options.add_option("--writefile",       "-w",   type="string",          help="Write data to file.", default = "")
+options.add_option("--buffer",          "-b",   action="store_true",    help="Use the hardware buffer output. Can only do preselected channel then.", default = False)
+options.add_option("--noplot",          "",     action="store_true",    help="Don't plot the data.", default = False)
 opts, args = options.parse_args()
 
 opts.coarse_chans = opts.coarse_chans.strip()
@@ -72,13 +74,28 @@ def get_coarse_data(c, channels, snaps, pol):
         data[chan] = []
     ctr = 0
     print '\tGrabbing snapshot: %4i/%4i' % (ctr, snaps),
-    while ctr < snaps_per_fine_fft:
+    while ctr < snaps:
         print 11 * '\b', '%4i/%4i' % (ctr, snaps),
         sys.stdout.flush()
         coarse_fft_data = corr.corr_nb.get_snap_coarse_fft(c, [c.ffpgas[opts.fpga]], pol)[0]
         for chan in channels:
             d = coarse_fft_data[chan::(c.config['coarse_chans'] * 2)]
             data[chan].extend(d)
+        ctr+=1
+    print ''
+    return data
+
+def get_buffer_data(c, channel, pol):
+    data = {}
+    data[channel] = []
+    ctr = 0
+    snaps_to_get = c.config['n_chans'] / snap_len
+    print '\tGrabbing snapshot: %4i/%4i' % (ctr, snaps_to_get),
+    while ctr < snaps_to_get:
+        print 11 * '\b', '%4i/%4i' % (ctr, snaps_to_get),
+        sys.stdout.flush()
+        snap_data = corr.corr_nb.get_snap_fine_buffer(c = c, fpgas = [c.ffpgas[opts.fpga]], offset = ctr * snap_len_bytes)[0]
+        data[channel].extend(snap_data[pol])
         ctr+=1
     print ''
     return data
@@ -147,7 +164,10 @@ try:
         if readfile != "":
             data = get_data_from_file(readfile, channels)
         else:
-            data = get_coarse_data(c, channels, snaps_per_fine_fft, opts.pol)
+            if opts.buffer:
+                data = get_buffer_data(c, channels[0], opts.pol)
+            else:
+                data = get_coarse_data(c, channels, snaps_per_fine_fft, opts.pol)
 
         # write data to file
         if writefile != "":
@@ -167,7 +187,7 @@ try:
             print 'chan(%i,%i)' % (chan, accums),
             for ctr in range(0, accums):
                 d = data[chan][ctr*n_chans : (ctr+1)*n_chans]
-                fftd = numpy.fft.fft(d)
+                fftd = numpy.fft.fft(d, n = n_chans)
                 accumulated[chan] += numpy.array(abs(fftd))
                 #pwr = (fftd.real**2 + fftd.imag**2) ** 0.5
                 #accumulated[chan] += numpy.array(pwr)

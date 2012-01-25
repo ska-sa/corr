@@ -273,12 +273,16 @@ snap_fengine_debug_fine_fft = construct.BitStruct(snap_debug,
     construct.BitField("p0_i", 18),
     construct.BitField("p1_r", 18),
     construct.BitField("p1_i", 18))
-def get_snap_fine(fpgas, bitstruct):
-    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, man_trig = 1)
+def get_snap_fine(c, debug_select, fpgas, offset = -1):
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1)
+    corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = debug_select)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
     rd = []
     for ctr in range(0, len(snap_data['data'])):
         d = snap_data['data'][ctr]
-        repeater = construct.GreedyRepeater(bitstruct)
+        repeater = construct.GreedyRepeater(snap_fengine_debug_fine_fft)
         up = repeater.parse(d)
         fdata_p0 = []
         fdata_p1 = []
@@ -289,33 +293,87 @@ def get_snap_fine(fpgas, bitstruct):
             fdata_p1.append(p1c)
         rd.append([fdata_p0, fdata_p1])
     return rd
-def get_snap_fine_fft(c, fpgas = []):
+def get_snap_fine_fft(c, fpgas = [], offset = -1):
     """
-    Read and return data from the fine FFT.
+    Read and return data from the fine FFT. Both pols are returned.
+    """
+    return get_snap_fine(c = c, debug_select = 2, fpgas = fpgas, offset = offset)
+def get_snap_fine_buffer(c, fpgas = [], offset = -1):
+    """
+    Read and return data from the buffer before the fine FFT. Both pols are returned.
+    """
+    return get_snap_fine(c = c, debug_select = 0, fpgas = fpgas, offset = offset)
+def get_snap_fine_window(c, fpgas = [], offset = -1):
+    """
+    Read and return data from the window output inside the fine FFT block. Both pols are returned.
+    """
+    return get_snap_fine(c = c, debug_select = 1, fpgas = fpgas, offset = offset)
+
+snap_fengine_debug_quant = construct.BitStruct(snap_debug,
+    construct.Padding(128 - 16),
+    construct.BitField("p0_r", 4),
+    construct.BitField("p0_i", 4),
+    construct.BitField("p1_r", 4),
+    construct.BitField("p1_i", 4))
+def get_snap_quant(c, fpgas = []):
+    """
+    Read and return data from the quantiser. Both pols are returned.
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1)
-    corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = 2)
-    return get_snap_fine(fpgas, snap_fengine_debug_fine_fft)
-def get_snap_fine_buffer(c, fpgas = []):
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 2)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        repeater = construct.GreedyRepeater(snap_fengine_debug_quant)
+        up = repeater.parse(d)
+        fdata_p0 = []
+        fdata_p1 = []
+        for a in up:
+            p0c = bin2fp(a['p0_r'], 4, 3) + (1j * bin2fp(a['p0_i'], 4, 3))
+            p1c = bin2fp(a['p1_r'], 4, 3) + (1j * bin2fp(a['p1_i'], 4, 3))
+            fdata_p0.append(p0c)
+            fdata_p1.append(p1c)
+        rd.append([fdata_p0, fdata_p1])
+    return rd
+
+snap_fengine_debug_ct = construct.BitStruct(snap_debug,
+    construct.Padding(128 - 64),
+    construct.BitField("p00_r", 4), construct.BitField("p00_i", 4), construct.BitField("p10_r", 4), construct.BitField("p10_i", 4),
+    construct.BitField("p01_r", 4), construct.BitField("p01_i", 4), construct.BitField("p11_r", 4), construct.BitField("p11_i", 4),
+    construct.BitField("p02_r", 4), construct.BitField("p02_i", 4), construct.BitField("p12_r", 4), construct.BitField("p12_i", 4),
+    construct.BitField("p03_r", 4), construct.BitField("p03_i", 4), construct.BitField("p13_r", 4), construct.BitField("p13_i", 4))
+def get_snap_ct(c, fpgas = []):
     """
-    Read and return data from the buffer before the fine FFT.
+    Read and return data from the corner turner. Both pols are returned.
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1)
-    corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = 0)
-    return get_snap_fine(fpgas, snap_fengine_debug_fine_fft)
-def get_snap_fine_window(c, fpgas = []):
-    """
-    Read and return data from the fine FFT.
-    """
-    if len(fpgas) == 0:
-        fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1)
-    corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = 1)
-    return get_snap_fine(fpgas, snap_fengine_debug_fine_fft)
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 3)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        repeater = construct.GreedyRepeater(snap_fengine_debug_ct)
+        up = repeater.parse(d)
+        fdata_p0 = []
+        fdata_p1 = []
+        for a in up:
+            p0 = []
+            p1 = []
+            p0.append(bin2fp(a['p00_r'], 4, 3) + (1j * bin2fp(a['p00_i'], 4, 3)))
+            p0.append(bin2fp(a['p01_r'], 4, 3) + (1j * bin2fp(a['p01_i'], 4, 3)))
+            p0.append(bin2fp(a['p02_r'], 4, 3) + (1j * bin2fp(a['p02_i'], 4, 3)))
+            p0.append(bin2fp(a['p03_r'], 4, 3) + (1j * bin2fp(a['p03_i'], 4, 3)))
+            p1.append(bin2fp(a['p10_r'], 4, 3) + (1j * bin2fp(a['p10_i'], 4, 3)))
+            p1.append(bin2fp(a['p11_r'], 4, 3) + (1j * bin2fp(a['p11_i'], 4, 3)))
+            p1.append(bin2fp(a['p12_r'], 4, 3) + (1j * bin2fp(a['p12_i'], 4, 3)))
+            p1.append(bin2fp(a['p13_r'], 4, 3) + (1j * bin2fp(a['p13_i'], 4, 3)))
+            fdata_p0.extend(p0)
+            fdata_p1.extend(p1)
+        rd.append([fdata_p0, fdata_p1])
+    return rd
 
 def DONE_get_fine_fft_snap(correlator):
     # interpret the ant_string
