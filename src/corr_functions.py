@@ -50,7 +50,7 @@ Revisions:
 2009-06-26  JRM UNDER CONSTRUCTION.
 \n"""
 
-import corr, time, sys, numpy, os, logging, katcp, struct, construct
+import corr, time, sys, numpy, os, logging, katcp, struct, construct, socket
 
 DEFAULT_CONFIG='/etc/corr/default'
 
@@ -547,15 +547,10 @@ class Correlator:
         self.syslogger.info("F engine 10GbE cores released from reset.")
 
     def tx_start(self):
-        """Start outputting SPEAD products. Only works for systems with 10GbE output atm."""
-        #if ip<0:
-        #    ip=self.config['rx_udp_ip']
-        #else:
-        #    self.config.write('receiver','rx_udp_ip_str',socket.inet_ntoa(ip))
-        #    self.config['rx_udp_ip']=ip
+        """Start outputting SPEAD products. Only works for systems with 10GbE output atm.""" 
         if self.config['out_type'] == '10gbe':
             self.xeng_ctrl_set_all(gbe_out_enable = True)
-            self.syslogger.info("Correlator output started to %s:%i." % (self.config['rx_udp_ip_str'], self.config['rx_udp_port']))
+            self.syslogger.info("Correlator output started.")
         else:
             self.syslogger.error('Sorry, your output type is not supported. Could not enable output.')
             #raise RuntimeError('Sorry, your output type is not supported.')
@@ -1551,10 +1546,24 @@ class Correlator:
 #                # Assign an IP address to each XAUI port's associated 10GbE core.
 #                fpga.write_int('gbe_ip%i'%x, ip)
 
-    def config_udp_output(self):
-        """Configures the X engine 10GbE output cores. CURRENTLY DISABLED."""
-        self.xwrite_int_all('gbe_out_ip',self.config['rx_udp_ip'])
-        self.xwrite_int_all('gbe_out_port',self.config['rx_udp_port'])
+    def config_udp_output(self,dest_ip_str=None,dest_port=None):
+        """Configures the destination IP and port for X engine output. dest_port and dest_ip are optional parameters to override the config file defaults. dest_ip is string in dotted-quad notation."""
+        if dest_ip_str==None:
+            dest_ip_str=self.config['rx_udp_ip_str']
+        else:
+            self.config['rx_udp_ip_str']=dest_ip_str
+            self.config['rx_udp_ip']=struct.unpack('>L',socket.inet_aton(dest_ip_str))[0]
+            self.config['rx_meta_ip_str']=dest_ip_str
+            self.config['rx_meta_ip']=struct.unpack('>L',socket.inet_aton(dest_ip_str))[0]
+
+        if dest_port==None:
+            dest_port=self.config['rx_udp_port']
+        else:
+            self.config['rx_udp_port']=dest_port
+
+        self.xwrite_int_all('gbe_out_ip',struct.unpack('>L',socket.inet_aton(dest_ip_str))[0])
+        self.xwrite_int_all('gbe_out_port',dest_port)
+        self.syslogger.info("Correlator output configured to %s:%i." % (dest_ip_str, dest_port))
         #self.xwrite_int_all('gbe_out_pkt_len',self.config['rx_pkt_payload_len']) now a compile-time option
 
         #Temporary for correlators with separate gbe core for output data:

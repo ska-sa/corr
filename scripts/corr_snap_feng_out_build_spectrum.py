@@ -167,16 +167,20 @@ def process_packets(c, f_index, data, spectrum, report):
         elif d.eof:
             # skip the first packet entry which has no header (snap block triggered on sync)
             if pkt_hdr_idx < 0:
+                pkt_hdr_idx=i+1
+                skip_indices = []
                 continue
             pkt_len = i - pkt_hdr_idx + 1
             feng_unpkd_pkt = feng_unpack(f_index, pkt_hdr_idx, pkt_len, skip_indices)
-            print feng_unpkd_pkt['raw_packets']
+            #print feng_unpkd_pkt['raw_packets']
             print_packet_info(server = fsrv, header_index = pkt_hdr_idx, length = pkt_len - len(skip_indices), unpacked = feng_unpkd_pkt, mcount = n_chans)
             if feng_unpkd_pkt['pkt_ant'] != f_index:
                 raise RuntimeError('How did we get a packet from fengine %i read from fengine %i?' % (feng_unpkd_pkt['pkt_ant'], f_index))
             spectrum[0][feng_unpkd_pkt['pkt_freq']] += feng_unpkd_pkt['rms_polQ']
             spectrum[1][feng_unpkd_pkt['pkt_freq']]+= feng_unpkd_pkt['rms_polI']
             if opts.verbose: print ''
+            pkt_hdr_idx=i+1
+            skip_indices = []
             # packet_len is length of data, not including header
             if pkt_len - len(skip_indices) != (packet_len + 1):
                 print 'MALFORMED PACKET! of length %i starting at index %i' % (pkt_len - len(skip_indices), i)
@@ -209,7 +213,6 @@ if __name__ == '__main__':
     opts, args = p.parse_args(sys.argv[1:])
     if opts.man_trigger: man_trigger=True
     else: man_trigger=False
-    dev_name = 'snap_xaui%i'%opts.xaui_port
     if args==[]:
         config_file=None
     else:
@@ -230,12 +233,6 @@ try:
         print 'This script is only written to work with 4 bit quantised values.'
         raise KeyboardInterrupt
     print 'You should have %i XAUI cables connected to each F engine FPGA.' % (c.config['n_xaui_ports_per_ffpga'])
-    if feng_out_type=='10gbe':
-        get_snap_funct=corr.snap.get_gbe_tx_snapshot_feng
-        print 'Grabbing and processing the spectrum data from 10GbE TX snap blocks.',
-    elif feng_out_typte == 'xaui':
-        get_snap_funct=corr.snap.get_xaui_snapshot
-        print 'Grabbing and processing the spectrum data from XAUI snap blocks.',
     report = []
     for f in c.ffpgas: report.append(dict())
     spectrum = dict()
@@ -248,7 +245,12 @@ try:
     for i in range(0, iterations):
         offset = int(i * fsets_per_snap * bytes_per_fset)
         print '%i/%i - capturing from offset %i.' % (i, iterations, offset)
-        data = get_snap_funct(c, offset = offset)
+        if feng_out_type=='10gbe':
+            data = corr.snap.get_gbe_tx_snapshot_feng(c, offset = offset,snap_name = 'snap_gbe_tx%i'%opts.xaui_port)
+            #print 'Grabbing and processing the spectrum data from 10GbE TX snap blocks.',
+        elif feng_out_typte == 'xaui':
+            data = corr.snap.get_xaui_snapsho(c, offset = offset,snap_name = 'snap_gbe_tx%i'%opts.xaui_port)
+            #print 'Grabbing and processing the spectrum data from XAUI snap blocks.',
         for d in data:
             process_packets(c, d['fpga_index'], d['data'], spectrum[d['fpga_index']], report[d['fpga_index']])
     #print 'Done.\nGot %i 64-bit packets from %i f-engines.' % (len(data[0]['data']), len(data))
@@ -264,11 +266,16 @@ try:
 
     import matplotlib, pylab
     for i in range(0, len(spectrum)):
+        ant_str=c.map_input_to_ant(i*2)
         matplotlib.pyplot.figure()
         matplotlib.pyplot.subplot(2, 1, 1)
         matplotlib.pyplot.plot(spectrum[i][0])
+        matplotlib.pyplot.title('Antenna %s'%ant_str)
+
+        ant_str=c.map_input_to_ant(i*2+1)
         matplotlib.pyplot.subplot(2, 1, 2)
         matplotlib.pyplot.plot(spectrum[i][1])
+        matplotlib.pyplot.title('Antenna %s'%ant_str)
     matplotlib.pyplot.show()
 
 except KeyboardInterrupt:

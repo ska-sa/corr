@@ -104,24 +104,32 @@ class DeviceExampleServer(katcp.DeviceServer):
         else:
             #return("fail","it broke.")
             return("fail","Sorry, your input number is invalid. Valid range: 0 to %i."%(self.c.config['n_inputs']-1))
-            
+           
 
-    @request()
     @return_reply(Str(),Str())
-    def request_tx_start(self, sock):
-        """Start transmission to the IP address given in the config file."""
+    def request_tx_start(self, sock, orgmsg):
+        """Start transmission to the given IP address and port, or use the defaults from the config file if not specified. The first argument should be the IP address in dotted-quad notation. The second is the port."""
         if self.c is None:
             return ("fail","... you haven't connected yet!")
         try:
+            if len(orgmsg.arguments)>1:
+                dest_port=int(orgmsg.arguments[1])
+            else:
+                dest_port=None
+            if len(orgmsg.arguments)>1:
+                dest_ip_str=orgmsg.arguments[0]
+            else:
+                dest_ip_str=None
+            self.c.config_udp_output(dest_ip_str=dest_ip_str,dest_port=dest_port)
             self.c.spead_issue_all()
             self.c.tx_start()
             return ("ok",
             "data %s:%i"%(self.c.config['rx_udp_ip_str'],self.c.config['rx_udp_port']),
             "meta %s:%i"%(self.c.config['rx_meta_ip_str'],self.c.config['rx_udp_port'])
-            )
+            )   
         except:
             return ("fail","Something broke. Check the log.")
-            
+      
     @request()
     @return_reply(Str())
     def request_spead_issue(self, sock):
