@@ -241,14 +241,20 @@ def get_gbe_tx_snapshot_feng(correlator, snap_name = 'snap_gbe_tx0', offset = -1
         rv.append(v)
     return rv
 
-def get_xaui_snapshot(correlator, offset = -1, man_trigger = False):
+def get_xaui_snapshot(correlator, snap_name = None, offset = -1, man_trigger = False):
     """Grabs data from fengines' TX xaui blocks"""
     if correlator.is_wideband():
         snap_bitfield = corr.corr_wb.snap_fengine_xaui
-        dev_name = 'snap_xaui0'
+        if snap_name == None:
+            dev_name = 'snap_xaui0'
+        else:
+            dev_name=snap_name
     elif correlator.is_narrowband():
         snap_bitfield = corr.corr_nb.snap_fengine_xaui
-        dev_name = 'snap_xaui'
+        if snap_name == None:
+            dev_name = 'snap_xaui'
+        else:
+            dev_name=snap_name
     else: raise RuntimeError('Unsupported correlator type.')
     raw = snapshots_get(correlator.ffpgas, dev_names = dev_name, wait_period = 3, circular_capture = False, man_trig = man_trigger, offset = offset)
     unpack_repeater = construct.GreedyRepeater(snap_bitfield)
