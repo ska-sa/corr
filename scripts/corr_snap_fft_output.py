@@ -35,10 +35,18 @@ def drawDataCallback():
         get_data(pol)
         pol['plot'].cla()
         pol['plot'].set_xlim(0, n_chans + 1)
-        pol['plot'].set_title('FFT amplitude output for input %s, averaged over %i spectra.' % (pol['ant_str'], pol['num_accs']))
         pol['plot'].set_xlabel('Frequency channel')
         pol['plot'].set_ylabel('Average level')
-        pol['plot'].plot(numpy.divide(pol['accumulations'], pol['num_accs']))
+        if opts.noaccum:
+            pol['plot'].set_title('FFT amplitude output for input %s, single spectrum.' % pol['ant_str'])
+            dtp = pol['last_spectrum']
+        else:
+            pol['plot'].set_title('FFT amplitude output for input %s, averaged over %i spectra.' % (pol['ant_str'], pol['num_accs']))
+            dtp = numpy.divide(pol['accumulations'], pol['num_accs'])
+        if opts.logplot == True:
+            pol['plot'].semilogy(dtp)
+        else:
+            pol['plot'].plot(dtp)
         fig.canvas.draw()
         fig.canvas.manager.window.after(opts.update_rate, drawDataCallback)
 
@@ -58,6 +66,8 @@ def get_data(pol):
             unpacked_vals = get_data_nb_buffered(pol)
         elif opts.window and opts.fine:
             unpacked_vals = get_data_nb_windowed(pol)
+        elif opts.quant and opts.fine:
+            unpacked_vals = get_data_nb_quant(pol)
         else:
             unpacked_vals = get_data_nb(pol)
     else:
@@ -66,6 +76,7 @@ def get_data(pol):
     print '\tAccumulating chans...', 
     for a in exclusion_list:
         unpacked_vals[0][a] = 0
+    pol['last_spectrum'] = numpy.abs(unpacked_vals[0])
     pol['accumulations'] = numpy.sum([pol['accumulations'], numpy.sum(numpy.abs(unpacked_vals), axis = 0)], axis = 0)
     pol['num_accs'] += unpacked_vals.shape[0]
     print 'done.'
@@ -125,6 +136,21 @@ def get_data_nb_windowed(pol):
     unpacked_vals.shape = (len(unpacked_vals) / n_chans, n_chans)
     return unpacked_vals
 
+def get_data_nb_quant(pol):
+    unpacked_vals = []
+    offset = 0
+    while len(unpacked_vals) < n_chans:
+        temp = corr.corr_nb.get_snap_quant(c, fpgas = [pol['fpga']], offset = offset)
+        temp = temp[0][pol['pol']]
+        unpacked_vals.extend(temp)
+        offset += (len(temp) * 128/8)
+    length = len(unpacked_vals)
+    swapped = unpacked_vals[length/2:]
+    swapped.extend(unpacked_vals[0:length/2])
+    unpacked_vals = numpy.array(swapped)
+    unpacked_vals.shape = (len(unpacked_vals) / n_chans, n_chans)
+    return unpacked_vals
+
 if __name__ == '__main__':
     from optparse import OptionParser
     p = OptionParser()
@@ -139,6 +165,9 @@ if __name__ == '__main__':
     p.add_option('-x', '--exclude',     dest='exclude',     type='string',              help = 'COMMA-DELIMITED list of channels to exclude from the plot.', default = '')
     p.add_option('-b', '--buffer',      dest='buffer',      action='store_true',        help = 'Use the output of the fine buffer and do a soft FFT on it. Accumulate that.', default = False)
     p.add_option('-w', '--window',      dest='window',      action='store_true',        help = 'Use the output of the fine buffer, WINDOWED, and do a soft FFT on it. Accumulate that.', default = False)
+    p.add_option('-l', '--logplot',     dest='logplot',     action='store_true',        help = 'Use a log scale for the y axis.', default = False)
+    p.add_option('-q', '--quant',       dest='quant',       action='store_true',        help = 'Use quantised output instead.', default = False)
+    p.add_option('', '--noaccum',       dest='noaccum',     action='store_true',        help = 'Do not accumulate, just output individual spectra.', default = False)
     opts, args = p.parse_args(sys.argv[1:])
 
     if opts.man_trigger: man_trigger = True
@@ -185,6 +214,7 @@ try:
         pol_list.append({'ant_str': ant_str})
         pol_list[p]['fpga'] = c.ffpgas[ffpga_n]
         pol_list[p]['accumulations'] = numpy.zeros(n_chans)
+        pol_list[p]['last_spectrum'] = numpy.zeros(n_chans)
         pol_list[p]['num_accs'] = 0
         pol_list[p]['pol'] = opts.pol
         pol_list[p]['plot'] = fig.add_subplot(len(ant_strs), 1, p + 1)
