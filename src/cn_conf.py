@@ -224,7 +224,7 @@ class CorrConf:
         else:
             if self.config['mode'] == MODE_WB:
                 self.config['bandwidth'] = self.config['adc_clk'] / 2.
-                self.config['center_freq'] = self.config['adc_clk'] / 4.
+                self.config['center_freq'] = self.config['bandwidth'] / 2.
             elif self.config['mode'] == MODE_NB:
                 self.config['bandwidth'] = (self.config['adc_clk'] / 2.) / self.config['coarse_chans']
                 self.config['center_freq'] = self.config['bandwidth'] / 2.

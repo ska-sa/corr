@@ -201,10 +201,11 @@ def coarse_channel_select(c, mixer_sel = -1, channel_sel = -1):
         corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, mixer_select = True if mixer_sel == 1 else False)
     elif channel_sel > -1:
         corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = channel_sel)
+        self.config['center_freq'] = (channel_sel * self.config['bandwidth']) + (self.config['bandwidth'] / 2.)
     else:
         return
     # force a SPEAD update
-    c.spead_issue_all()
+    c.spead_static_meta_issue()
 
 """
 SNAP blocks in the narrowband system.
