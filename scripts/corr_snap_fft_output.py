@@ -88,7 +88,8 @@ def get_data_wb(pol):
 
 def get_data_nb(pol):
     if opts.fine == False:
-        unpacked_vals = numpy.array(corr.corr_nb.get_snap_coarse_fft(c, [pol['fpga']]))[0]
+        snap_data = corr.corr_nb.get_snap_coarse_fft(c, [pol['fpga']])[0]
+        unpacked_vals = numpy.array(snap_data)
     else:
         unpacked_vals = []
         offset = 0

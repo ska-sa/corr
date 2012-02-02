@@ -195,10 +195,16 @@ def coarse_channel_select(c, mixer_sel = -1, channel_sel = -1):
     """
     Select a coarse channel to process further with the fine FFT.
     """
-    if mixer_sel > -1:
+    if (mixer_sel > -1) and (channel_sel > -1):
+        corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, mixer_select = True if mixer_sel == 1 else False, channel_select = channel_sel)
+    elif mixer_sel > -1:
         corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, mixer_select = True if mixer_sel == 1 else False)
-    if channel_sel > -1:
+    elif channel_sel > -1:
         corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = channel_sel)
+    else:
+        return
+    # force a SPEAD update
+    c.spead_issue_all()
 
 """
 SNAP blocks in the narrowband system.
