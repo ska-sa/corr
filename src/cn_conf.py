@@ -28,6 +28,10 @@ PORTDELIMIT = ':'
 
 VAR_RUN = '/var/run/corr'
 
+MODE_WB  = 'wbc'
+MODE_NB  = 'nbc'
+MODE_DDC = 'ddc'
+
 class CorrConf:    
     def __init__(self, config_file):
         self.config_file = config_file
@@ -35,14 +39,16 @@ class CorrConf:
         self.cp = iniparse.INIConfig(open(self.config_file, 'rb'))
         self.config = dict()
         self.read_mode()
-        if self.config['mode'] == 0:
+        available_modes = [MODE_WB, MODE_NB, MODE_DDC]
+        if self.config['mode'] == MODE_WB:
             self.read_wideband()
-        elif self.config['mode'] == 1:
+        elif self.config['mode'] == MODE_NB:
             self.read_narrowband()
-        elif self.config['mode'] == 2:
+        elif self.config['mode'] == MODE_DDC:
             self.read_narrowband_ddc()
         else:
-            raise RuntimeError('Unknown correlator mode, %i' % self.config['mode'])
+            print "Available modes are", available_modes
+            raise RuntimeError('Unknown correlator mode,', self.config['mode'])
         self.read_common()
 
     def __getitem__(self, item):
@@ -130,7 +136,7 @@ class CorrConf:
     def read_mode(self):
         if not self.file_exists():
             raise RuntimeError('Error opening config file or runtime variables.')
-        self.read_int('correlator', 'mode')
+        self.read_str('correlator', 'mode')
 
     def read_common(self):
         if not self.file_exists():
@@ -210,18 +216,18 @@ class CorrConf:
         self.config['rf_bandwidth'] = self.config['adc_clk'] / 2.
         # is a DDC being used in the F engine?
         if self.config['ddc_mix_freq'] > 0:
-            if self.config['mode'] == 0:
+            if self.config['mode'] == MODE_WB:
                 self.config['bandwidth'] = float(self.config['adc_clk']) / self.config['ddc_decimation']
                 self.config['center_freq'] = float(self.config['adc_clk']) * self.config['ddc_mix_freq']
             else:
                 raise RuntimeError("Undefined for other modes.")
         else:
-            if self.config['mode'] == 0:
+            if self.config['mode'] == MODE_WB:
                 self.config['bandwidth'] = self.config['adc_clk'] / 2.
-                self.config['center_freq'] = self.config['adc_clk'] / 4.
-            elif self.config['mode'] == 1:
+                self.config['center_freq'] = self.config['bandwidth'] / 2.
+            elif self.config['mode'] == MODE_NB:
                 self.config['bandwidth'] = (self.config['adc_clk'] / 2.) / self.config['coarse_chans']
-                self.config['center_freq'] = 0 #self.config['bandwidth'] / 2.
+                self.config['center_freq'] = self.config['bandwidth'] / 2.
             else:
                 raise RuntimeError("Undefined for other modes.")
 

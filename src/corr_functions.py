@@ -143,35 +143,31 @@ def pulse_masked_register(device_list, bitstruct, fields):
 class Correlator:
 
     def __init__(self, connect=True, config_file=None, log_handler = None, log_level = logging.INFO):
-        self.MODE_WB = 0
-        self.MODE_NB = 1
-        self.MODE_DDC = 2
-        if log_handler == None: log_handler=corr.log_handlers.DebugLogHandler(100)
-        self.log_handler = log_handler
-        self.syslogger=logging.getLogger('corrsys')
+        self.MODE_WB = 'wbc'
+        self.MODE_NB = 'nbc'
+        self.MODE_DDC = 'ddc'
+        self.log_handler = log_handler if log_handler != None else corr.log_handlers.DebugLogHandler(100)
+        self.syslogger = logging.getLogger('corrsys')
         self.syslogger.addHandler(self.log_handler)
         self.syslogger.setLevel(log_level)
 
         if config_file == None: 
             config_file=DEFAULT_CONFIG
-            self.syslogger.warn('Defaulting to config file %s.'%DEFAULT_CONFIG)
+            self.syslogger.warn('Defaulting to config file %s.' % DEFAULT_CONFIG)
         self.config = corr.cn_conf.CorrConf(config_file)
-
-        if not (self.config['mode'] == self.MODE_WB or self.config['mode'] == self.MODE_NB or self.config['mode'] == self.MODE_DDC):
-            raise RuntimeError('Unknown mode assigned: %i' % mode)
 
         self.xsrvs = self.config['servers_x']
         self.fsrvs = self.config['servers_f']
         self.allsrvs = self.fsrvs + self.xsrvs
 
-        self.floggers=[logging.getLogger(s) for s in self.fsrvs]
-        self.xloggers=[logging.getLogger(s) for s in self.xsrvs]
-        self.loggers=self.floggers + self.xloggers
+        self.floggers = [logging.getLogger(s) for s in self.fsrvs]
+        self.xloggers = [logging.getLogger(s) for s in self.xsrvs]
+        self.loggers = self.floggers + self.xloggers
         for logger in (self.loggers): 
             logger.addHandler(self.log_handler)
             logger.setLevel(log_level)
 
-        self.syslogger.info('Configuration file %s parsed ok.'%config_file)
+        self.syslogger.info('Configuration file %s parsed ok.' % config_file)
 
         if connect == True:
             self.connect()
@@ -2188,7 +2184,6 @@ class Correlator:
 
         if self.config['xeng_sample_bits'] != 32: raise RuntimeError("Invalid bitwidth of X engine output. You specified %i, but I'm hardcoded for 32."%self.config['xeng_sample_bits'])
 
-
         if self.config['xeng_format'] == 'cont':
             ig.add_item(name=('timestamp'), id=0x1600,
                 description='Timestamp of start of this integration. uint counting multiples of ADC samples since last sync (sync_time, id=0x1027). Divide this number by timestamp_scale (id=0x1046) to get back to seconds since last sync when this integration was actually started. Note that the receiver will need to figure out the centre timestamp of the accumulation (eg, by adding half of int_time, id 0x1016).',
@@ -2198,7 +2193,6 @@ class Correlator:
             ig.add_item(name=("xeng_raw"),id=0x1800,
                 description="Raw data for %i xengines in the system. This item represents a full spectrum (all frequency channels) assembled from lowest frequency to highest frequency. Each frequency channel contains the data for all baselines (n_bls given by SPEAD ID 0x100B). Each value is a complex number -- two (real and imaginary) unsigned integers."%(self.config['n_xeng']),
             ndarray=(numpy.dtype(numpy.int32),(self.config['n_chans'],self.config['n_bls'],2)))
-
 
         elif self.config['xeng_format'] =='inter':
             for x in range(self.config['n_xeng']):

@@ -148,25 +148,7 @@ def get_quant_snapshot(correlator, ant_str, n_spectra = 1, pol = 0):
                 # cast up to signed numbers:
                 unpacked_vals.append(float(((numpy.int8(pol_r_bits << 4)>> 4))) + 1j * float(((numpy.int8(pol_i_bits << 4)>> 4))))
         elif correlator.is_narrowband():
-            # select the quant data path in the fine snapshot block
-            corr.corr_functions.write_masked_register([fpga], corr.corr_nb.register_fengine_fine_control, snap_data_select = 0, quant_snap_select = 1)
-            # get the data and unpack it
-            bram_data = fpga.snapshot_get(dev_name = 'fine_snap_d', man_trig = False, man_valid = False, wait_period = 3, offset = -1, circular_capture = False, get_extra_val = False)
-            up32 = list(struct.unpack('>%iI' % (len(bram_data['data'])/4), bram_data['data']))
-            up4 = [[], []]
-            quant_format = [correlator.config['feng_bits'], correlator.config['feng_fix_pnt_pos']]
-            def raw2fp(num, nbits = quant_format[0]):
-                return float(((numpy.int8(num << nbits) >> nbits))) / (2**(nbits-1))
-            for ctr in range(0, len(up32)):
-                #up4[0].append(raw2fp((up32[ctr] >> 28) & 0x0f) + (1j * raw2fp((up32[ctr] >> 24) & 0x0f)))
-                up4[0].append(raw2fp((up32[ctr] >> 12) & 0x0f) + (1j * raw2fp((up32[ctr] >>  8) & 0x0f)))
-                #up4[1].append(raw2fp((up32[ctr] >> 20) & 0x0f) + (1j * raw2fp((up32[ctr] >> 16) & 0x0f)))
-                up4[1].append(raw2fp((up32[ctr] >>  4) & 0x0f) + (1j * raw2fp((up32[ctr] >>  0) & 0x0f)))
-                #up4[0].append((float((up32[ctr] >> 28) & 0x0f) / (2**quant_format[1])) + (1j * (float((up32[ctr] >> 24) & 0x0f) / (2**quant_format[1]))))
-                #up4[0].append((float((up32[ctr] >> 12) & 0x0f) / (2**quant_format[1])) + (1j * (float((up32[ctr] >>  8) & 0x0f) / (2**quant_format[1]))))
-                #up4[1].append((float((up32[ctr] >> 20) & 0x0f) / (2**quant_format[1])) + (1j * (float((up32[ctr] >> 16) & 0x0f) / (2**quant_format[1]))))
-                #up4[1].append((float((up32[ctr] >>  4) & 0x0f) / (2**quant_format[1])) + (1j * (float((up32[ctr] >>  0) & 0x0f) / (2**quant_format[1]))))
-            unpacked_vals.extend(up4[pol])
+            unpacked_vals = corr.corr_nb.get_snap_quant(correlator, [fpga])[0][pol]            
         else:
             raise RuntimeError('Unknown mode.')
         ns = len(unpacked_vals) / correlator.config['n_chans']

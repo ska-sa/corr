@@ -195,10 +195,17 @@ def coarse_channel_select(c, mixer_sel = -1, channel_sel = -1):
     """
     Select a coarse channel to process further with the fine FFT.
     """
-    if mixer_sel > -1:
+    if (mixer_sel > -1) and (channel_sel > -1):
+        corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, mixer_select = True if mixer_sel == 1 else False, channel_select = channel_sel)
+    elif mixer_sel > -1:
         corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, mixer_select = True if mixer_sel == 1 else False)
-    if channel_sel > -1:
+    elif channel_sel > -1:
         corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = channel_sel)
+        self.config['center_freq'] = (channel_sel * self.config['bandwidth']) + (self.config['bandwidth'] / 2.)
+    else:
+        return
+    # force a SPEAD update
+    c.spead_static_meta_issue()
 
 """
 SNAP blocks in the narrowband system.
@@ -267,12 +274,17 @@ def get_snap_coarse_fft(c, fpgas = [], pol = 0):
         rd.append(coarsed)
     return rd
 
+#snap_fengine_debug_fine_fft = construct.BitStruct(snap_debug,
+#    construct.Padding(128 - 72),
+#    construct.BitField("p0_r", 18),
+#    construct.BitField("p0_i", 18),
+#    construct.BitField("p1_r", 18),
+#    construct.BitField("p1_i", 18))
 snap_fengine_debug_fine_fft = construct.BitStruct(snap_debug,
-    construct.Padding(128 - 72),
-    construct.BitField("p0_r", 18),
-    construct.BitField("p0_i", 18),
-    construct.BitField("p1_r", 18),
-    construct.BitField("p1_i", 18))
+    construct.BitField("p0_r", 32),
+    construct.BitField("p0_i", 32),
+    construct.BitField("p1_r", 32),
+    construct.BitField("p1_i", 32))
 def get_snap_fine(c, debug_select, fpgas, offset = -1):
     if len(fpgas) == 0:
         fpgas = c.ffpgas
@@ -287,8 +299,10 @@ def get_snap_fine(c, debug_select, fpgas, offset = -1):
         fdata_p0 = []
         fdata_p1 = []
         for a in up:
-            p0c = bin2fp(a['p0_r'], 18, 17) + (1j * bin2fp(a['p0_i'], 18, 17))
-            p1c = bin2fp(a['p1_r'], 18, 17) + (1j * bin2fp(a['p1_i'], 18, 17))
+            #p0c = bin2fp(a['p0_r'], 18, 17) + (1j * bin2fp(a['p0_i'], 18, 17))
+            #p1c = bin2fp(a['p1_r'], 18, 17) + (1j * bin2fp(a['p1_i'], 18, 17))
+            p0c = bin2fp(a['p0_r'], 32, 17) + (1j * bin2fp(a['p0_i'], 32, 17))
+            p1c = bin2fp(a['p1_r'], 32, 17) + (1j * bin2fp(a['p1_i'], 32, 17))
             fdata_p0.append(p0c)
             fdata_p1.append(p1c)
         rd.append([fdata_p0, fdata_p1])
@@ -315,14 +329,14 @@ snap_fengine_debug_quant = construct.BitStruct(snap_debug,
     construct.BitField("p0_i", 4),
     construct.BitField("p1_r", 4),
     construct.BitField("p1_i", 4))
-def get_snap_quant(c, fpgas = []):
+def get_snap_quant(c, fpgas = [], offset = -1):
     """
     Read and return data from the quantiser. Both pols are returned.
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
     corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 2)
-    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
     rd = []
     for ctr in range(0, len(snap_data['data'])):
         d = snap_data['data'][ctr]
@@ -344,14 +358,14 @@ snap_fengine_debug_ct = construct.BitStruct(snap_debug,
     construct.BitField("p01_r", 4), construct.BitField("p01_i", 4), construct.BitField("p11_r", 4), construct.BitField("p11_i", 4),
     construct.BitField("p02_r", 4), construct.BitField("p02_i", 4), construct.BitField("p12_r", 4), construct.BitField("p12_i", 4),
     construct.BitField("p03_r", 4), construct.BitField("p03_i", 4), construct.BitField("p13_r", 4), construct.BitField("p13_i", 4))
-def get_snap_ct(c, fpgas = []):
+def get_snap_ct(c, fpgas = [], offset = -1):
     """
     Read and return data from the corner turner. Both pols are returned.
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
     corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 3)
-    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
     rd = []
     for ctr in range(0, len(snap_data['data'])):
         d = snap_data['data'][ctr]
