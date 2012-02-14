@@ -17,7 +17,7 @@ import h5py
 import corr
 
 class CorrRx(threading.Thread):
-    def __init__(self, mode = 'cont', log_handler = None, log_level = logging.INFO, spead_log_level = spead.logging.WARN, **kwargs):
+    def __init__(self, mode = 'cont', port=7148, log_handler = None, log_level = logging.INFO, spead_log_level = spead.logging.WARN, **kwargs):
         if log_handler == None: 
             log_handler=corr.log_handlers.DebugLogHandler(100)
         self.log_handler = log_handler

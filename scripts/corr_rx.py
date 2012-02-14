@@ -55,7 +55,7 @@ print "Data reception on port",data_port
 print "Sending Signal Display data to %s:%i."%(sd_ip,sd_port)
 print "Storing to file %s"%filename
 
-crx=corr.rx.CorrRx(mode=mode,sd_ip=sd_ip,sd_port=sd_port,acc_scale=acc_scale,filename=filename,log_level=logging.DEBUG if verbose else logging.INFO)
+crx=corr.rx.CorrRx(mode=mode,data_port=data_port,sd_ip=sd_ip,sd_port=sd_port,acc_scale=acc_scale,filename=filename,log_level=logging.DEBUG if verbose else logging.INFO)
 try:
     crx.daemon=True
     crx.start()
