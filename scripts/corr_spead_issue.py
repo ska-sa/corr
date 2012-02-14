@@ -65,6 +65,12 @@ try:
     c.spead_eq_meta_issue()
     print 'SPEAD packet sent.'
 
+    print ''' Issuing input labelling and mapping metadata...''',
+    sys.stdout.flush()
+    c.spead_labelling_issue()
+    print 'SPEAD packet sent.'
+
+
 
 except KeyboardInterrupt:
     exit_clean()

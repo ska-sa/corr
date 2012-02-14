@@ -551,15 +551,18 @@ class Correlator:
             self.syslogger.error('Sorry, your output type is not supported. Could not enable output.')
             #raise RuntimeError('Sorry, your output type is not supported.')
 
-    def tx_stop(self):
+    def tx_stop(self,spead_stop=True):
         """Stops outputting SPEAD data over 10GbE links."""
         if self.config['out_type'] == '10gbe':
             self.xeng_ctrl_set_all(gbe_out_enable = False)
             self.syslogger.info("Correlator output paused.")
-            import spead
-            tx = spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
-            tx.end()
-            self.syslogger.info("Sent SPEAD end-of-stream notification.")
+            if spead_stop:
+                import spead
+                tx = spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
+                tx.end()
+                self.syslogger.info("Sent SPEAD end-of-stream notification.")
+            else:
+                self.syslogger.info("Did not send SPEAD end-of-stream notification.")
         else:
             #raise RuntimeError('Sorry, your output type is not supported.')
             self.syslogger.warn("Sorry, your output type is not supported. Cannot disable output.")
@@ -2110,7 +2113,6 @@ class Correlator:
 
         tx.send_heap(ig.get_heap())
         self.syslogger.info("Issued misc SPEAD metadata to %s:%i."%(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
-        self.spead_labelling_issue()
 
     def spead_time_meta_issue(self):
         """Issues a SPEAD packet to notify the receiver that we've resync'd the system, acc len has changed etc."""
@@ -2214,6 +2216,7 @@ class Correlator:
         self.spead_static_meta_issue()
         self.spead_time_meta_issue()
         self.spead_eq_meta_issue()
+        self.spead_labelling_issue()
 
     def is_wideband(self):
         return self.config['mode'] == self.MODE_WB
