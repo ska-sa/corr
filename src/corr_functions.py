@@ -495,6 +495,30 @@ class Correlator:
         self.rst_status_and_count()
         time.sleep(1)
 
+        stat=self.check_all(details=True)
+        for in_n,ant_str in enumerate(self.config._get_ant_mapping_list()):
+            ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_ant_str_location(ant_str)
+            try:
+                # This is not quite right... Both ROACH's QDRs are used in a single corner-turn for both inputs. HARDCODED to check two QDRs per board!
+                if stat['ant_str']['ct_error']==True:
+                    self.floggers[ffpga_n].warn("Corner-Turn is in error.")
+                    for qdr_n in range(2):
+                        loop_retry_cnt=0
+                        while (c.ffpgas[ffpga_n].qdr_status(qdr_n)['calfail']==True) and (loop_retry_cnt< n_retries):
+                            time.sleep(0.2)
+                            loop_retry_cnt+=1
+                            self.floggers[ffpga_n].warn("SRAM calibration failed. Forcing software reset/recalibration... retry %i"%loop_retry_cnt)
+                            c.ffpgas[ffpga_n].qdr_rst(qdr_n)
+                        if c.ffpgas[ffpga_n].qdr_status(qdr_n)['calfail']==True:
+                            raise RuntimeError("Could not calibrate QDR%i after %i retries. Giving up."%(qdr_n,n_retries))
+
+                if (stat['ant_str']['adc_disabled']==True) or (stat['ant_str']['adc_overrange']==True):
+                    self.floggers[ffpga_n].warn("%s input levels are too high!"%ant_str)
+                if stat['ant_str']['fft_overrange']==True:
+                    self.floggers[ffpga_n].warn("%s FFT is overranging. Spectrum output is garbage."%ant_str)
+            except:
+                pass 
+
         if self.config['feng_out_type'] == 'xaui':
             if not self.check_xaui_error(): raise RuntimeError("XAUI checks failed.")
             if not self.check_xaui_sync(): raise RuntimeError("Fengines appear to be out of sync.")
@@ -503,11 +527,21 @@ class Correlator:
         if self.config['feng_out_type'] == 'xaui':
             if not self.check_loopback_mcnt_wait(n_retries=n_retries): raise RuntimeError("Loopback muxes didn't sync.")
         if not self.check_x_miss(): raise RuntimeError("X engines are missing data.")
-        self.acc_time_set()
-        self.rst_status_and_count()
+        self.acc_time_set()   #self.rst_status_and_count() is done as part of this setup
         self.syslogger.info("Waiting %i seconds for an integration to finish so we can test the VACCs."%self.config['int_time'])
         time.sleep(self.config['int_time']+0.1)
-        if not self.check_vacc(): raise RuntimeError("Vector accumulators are broken.")
+        if not self.check_vacc(): 
+            for x in range(self.config['x_per_fpga']):
+                for nx,xsrv in enumerate(self.xsrvs):
+                    while (c.xfpgas[nx].qdr_status(x)['calfail']==True) and (loop_retry_cnt< n_retries):
+                        time.sleep(0.2)
+                        loop_retry_cnt+=1
+                        self.xloggers[nx].warn("SRAM calibration failed. Forcing software reset/recalibration... retry %i"%loop_retry_cnt)
+                        c.xfpgas[nx].qdr_rst(x)
+                    if c.xfpgas[nx].qdr_status(x)['calfail']==True:
+                        raise RuntimeError("Could not calibrate QDR%i."%x)
+            
+            raise RuntimeError("Vector accumulators are broken.")
 
         if send_spead:
             self.spead_issue_all()
