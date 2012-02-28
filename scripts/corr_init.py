@@ -61,8 +61,8 @@ if __name__ == '__main__':
         help='Skip configuration of the equaliser in the F engines.  Default: set the EQ according to config file.')
     p.add_option('-c', '--skip_core_init', dest='prog_10gbe_cores',action='store_false', default=True, 
         help='Skip configuring the 10GbE cores (ie starting tgtap drivers).  Default: start all drivers')
-    p.add_option('-o', '--skip_output_config', dest='config_output',action='store_false', default=True, 
-        help='Do not begin outputting packetised data.  Default: start the output.')
+    p.add_option('-o', '--start_output', dest='start_output',action='store_false', default=True, 
+        help='Begin outputting packetised data immediately.  Default: Do not start the output.')
     p.add_option('-k', '--clk_chk', dest='clk_chk',action='store_false', default=True, 
         help='Skip the F engine clock checks.')
     p.add_option('-v', '--verbose', dest='verbose',action='store_true', default=False, 
@@ -298,14 +298,14 @@ try:
 
     print ' Configuring output to %s:%i...'%(c.config['rx_udp_ip_str'],c.config['rx_udp_port']),
     sys.stdout.flush()
-    if opts.config_output and (c.config['out_type'] == '10gbe'): 
+    if (c.config['out_type'] == '10gbe'): 
         c.config_udp_output()
         print 'done'
     else: print 'skipped.'
 
-    print ' Starting transmission of data...',
-    sys.stdout.flush()
-    if opts.config_output: 
+    if opts.start_output: 
+        print ' Starting transmission of data...',
+        sys.stdout.flush()
         c.tx_start()
         print 'done'
     else: print 'skipped.'
