@@ -51,7 +51,7 @@ def drawDataCallback():
         fig.canvas.manager.window.after(opts.update_rate, drawDataCallback)
 
 def parseAntenna(antArg):
-    import re
+    #import re
     #regExp = re.compile('^[0-9]{1,4}[xy]{0,2}$')
     ants = antArg.lower().replace(' ','').split(',')
     return ants
@@ -174,11 +174,12 @@ if __name__ == '__main__':
     if opts.man_trigger: man_trigger = True
     else: man_trigger = False
 
-    if args==[]:
-        config_file=None
+    if args == []:
+        config_file = None
     else:
-        config_file=args[0]
-    verbose=opts.verbose
+        config_file = args[0]
+
+    verbose = opts.verbose
 
     exclusion_list = []
     if opts.exclude.strip() != '':
@@ -186,6 +187,7 @@ if __name__ == '__main__':
             exclusion_list.append(int(a))
 
 lh = corr.log_handlers.DebugLogHandler(35)
+
 if opts.ant != None:
     ant_strs = parseAntenna(opts.ant)
 else:
@@ -193,7 +195,7 @@ else:
     exit_fail()
 
 try:
-    print 'Connecting...',
+    print 'Connecting with config %s...' % config_file,
     c = corr.corr_functions.Correlator(config_file = config_file, log_level = logging.DEBUG if verbose else logging.INFO, connect = False)
     c.connect()
     print 'done'
@@ -202,7 +204,7 @@ try:
         n_chans = c.config['n_chans']
     elif c.is_narrowband():
         if opts.fine == False:
-            n_chans = c.config['coarse_chans'] * 2
+            n_chans = c.config['coarse_chans'] #* 2
         else:
             n_chans = c.config['n_chans']
     else:

@@ -142,7 +142,7 @@ def pulse_masked_register(device_list, bitstruct, fields):
 
 class Correlator:
 
-    def __init__(self, connect=True, config_file=None, log_handler = None, log_level = logging.INFO):
+    def __init__(self, connect = True, config_file = None, log_handler = None, log_level = logging.INFO):
         self.MODE_WB = 'wbc'
         self.MODE_NB = 'nbc'
         self.MODE_DDC = 'ddc'
@@ -152,7 +152,7 @@ class Correlator:
         self.syslogger.setLevel(log_level)
 
         if config_file == None: 
-            config_file=DEFAULT_CONFIG
+            config_file = DEFAULT_CONFIG
             self.syslogger.warn('Defaulting to config file %s.' % DEFAULT_CONFIG)
         self.config = corr.cn_conf.CorrConf(config_file)
 
@@ -881,7 +881,6 @@ class Correlator:
                 elif stat[(ant_str)]['xaui_over'] == True:
                     self.floggers[ffpga_n].error('10GbE core %i for antenna %s is overflowing.'%(fxaui_n,ant_str))
                     rv = False
-                
             for x in range(self.config['n_xaui_ports_per_ffpga']):
                 firstpass_check = self.fread_uint_all('gbe_tx_cnt%i'%x)
                 time.sleep(0.01)
@@ -892,7 +891,6 @@ class Correlator:
                         rv = False
                     else:
                         self.floggers[f].info('10GbE core %i is sending data.'%(x))
-
         else:
             self.syslogger.error("Skipped 10GbE TX check")
 

@@ -249,14 +249,16 @@ def get_xaui_snapshot(correlator, snap_name = None, offset = -1, man_trigger = F
             dev_name = 'snap_xaui0'
         else:
             dev_name=snap_name
+        raw = snapshots_get(correlator.ffpgas, dev_names = dev_name, wait_period = 3, circular_capture = False, man_trig = man_trigger, offset = offset)
     elif correlator.is_narrowband():
         snap_bitfield = corr.corr_nb.snap_fengine_xaui
         if snap_name == None:
             dev_name = 'snap_xaui'
         else:
             dev_name=snap_name
-    else: raise RuntimeError('Unsupported correlator type.')
-    raw = snapshots_get(correlator.ffpgas, dev_names = dev_name, wait_period = 3, circular_capture = False, man_trig = man_trigger, offset = offset)
+        raw = corr.corr_nb.get_snap_xaui(correlator, correlator.ffpgas, offset = offset)
+    else:
+        raise RuntimeError('Unsupported correlator type.')
     unpack_repeater = construct.GreedyRepeater(snap_bitfield)
     rv = []
     for index, d in enumerate(raw['data']):
@@ -264,11 +266,11 @@ def get_xaui_snapshot(correlator, snap_name = None, offset = -1, man_trigger = F
         v['fpga_index'] = index
         v['data'] = unpack_repeater.parse(d)
         for dp in v['data']:
-            dp['ip_addr'] =0
+            dp['ip_addr'] = 0
             dp['link_up'] = not dp['link_down']
-            dp['tx_over']= False
-            dp['tx_full']= False
-            dp['led_tx']= False
+            dp['tx_over'] = False
+            dp['tx_full'] = False
+            dp['led_tx'] = False
             dp['link_up'] = False
         rv.append(v)
     return rv

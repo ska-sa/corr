@@ -135,17 +135,6 @@ snap_xengine_gbe_rx = construct.BitStruct("snap_gbe_rx0",
 # the snap block immediately after the x-engine
 snap_xengine_vacc = construct.BitStruct("snap_vacc0", construct.BitField("data", 32))
 
-# the xaui snap block on the f-engine - this is just after packetisation
-snap_fengine_xaui = construct.BitStruct("snap_xaui",
-    construct.Padding(128 - 1 - 3 - 1 - 1 - 3 - 64),
-    construct.Flag("link_down"),
-    construct.Padding(3),
-    construct.Flag("mrst"),
-    construct.Padding(1),
-    construct.Flag("eof"),
-    construct.Flag("sync"),
-    construct.Flag("hdr_valid"),
-    construct.BitField("data", 64))
 
 def fft_shift_coarse_set_all(correlator, shift = -1):
     """
@@ -244,7 +233,7 @@ def get_snap_adc(c, fpgas = []):
         rv.append(v)
     return rv
 
-snap_fengine_debug_coarse_fft = construct.BitStruct(snap_debug,
+snap_fengine_debug_coarse_fft_old = construct.BitStruct(snap_debug,
     construct.BitField("d0_r", 16),
     construct.BitField("d0_i", 16),
     construct.BitField("d1_r", 16),
@@ -253,7 +242,7 @@ snap_fengine_debug_coarse_fft = construct.BitStruct(snap_debug,
     construct.BitField("d2_i", 16),
     construct.BitField("d3_r", 16),
     construct.BitField("d3_i", 16))
-def get_snap_coarse_fft(c, fpgas = [], pol = 0):
+def get_snap_coarse_fft_old(c, fpgas = [], pol = 0):
     """
     Read and return data from the coarse FFT.
     """
@@ -270,6 +259,33 @@ def get_snap_coarse_fft(c, fpgas = [], pol = 0):
         for a in up:
             for b in range(0,4):
                 num = bin2fp(a['d%i_r'%b], 16, 15) + (1j * bin2fp(a['d%i_i'%b], 16, 15))
+                coarsed.append(num)
+        rd.append(coarsed)
+    return rd
+
+snap_fengine_debug_coarse_fft = construct.BitStruct(snap_debug,
+    construct.Padding(128 - (4*18)),
+    construct.BitField("d0_r", 18),
+    construct.BitField("d0_i", 18),
+    construct.BitField("d1_r", 18),
+    construct.BitField("d1_i", 18))
+def get_snap_coarse_fft(c, fpgas = [], pol = 0):
+    """
+    Read and return data from the coarse FFT.
+    """
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 0, debug_pol_select = pol)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        repeater = construct.GreedyRepeater(snap_fengine_debug_coarse_fft)
+        up = repeater.parse(d)
+        coarsed = []
+        for a in up:
+            for b in range(0,2):
+                num = bin2fp(a['d%i_r'%b], 18, 17) + (1j * bin2fp(a['d%i_i'%b], 18, 17))
                 coarsed.append(num)
         rd.append(coarsed)
     return rd
@@ -388,6 +404,27 @@ def get_snap_ct(c, fpgas = [], offset = -1):
             fdata_p1.extend(p1)
         rd.append([fdata_p0, fdata_p1])
     return rd
+
+# the xaui snap block on the f-engine - this is just after packetisation
+snap_fengine_xaui = construct.BitStruct("snap_debug",
+    construct.Padding(128 - 1 - 3 - 1 - 1 - 3 - 64),
+    construct.Flag("link_down"),
+    construct.Padding(3),
+    construct.Flag("mrst"),
+    construct.Padding(1),
+    construct.Flag("eof"),
+    construct.Flag("sync"),
+    construct.Flag("hdr_valid"),
+    construct.BitField("data", 64))
+def get_snap_xaui(c, fpgas = [], offset = -1):
+    """
+    Read the XAUI data out of the general debug snap block.
+    """
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 4)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+    return snap_data
 
 def DONE_get_fine_fft_snap(correlator):
     # interpret the ant_string
