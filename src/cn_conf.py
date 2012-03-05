@@ -187,6 +187,7 @@ class CorrConf:
         self.read_int('correlator','n_xaui_ports_per_ffpga')
         self.read_int('correlator','adc_bits')
         self.read_int('correlator','adc_levels_acc_len')
+        self.read_int('correlator','feng_sync_period')
         #self.read_int('correlator','sync_time') #moved to /var/run/...
         self.config['10gbe_ip']=struct.unpack('>I',socket.inet_aton(self.get_line('correlator','10gbe_ip')))[0]
         #print '10GbE IP address is %i'%self.config['10gbe_ip']

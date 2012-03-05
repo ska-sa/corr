@@ -116,6 +116,11 @@ if __name__ == '__main__':
 try:        
     print 'Connecting...',
     c = corr.corr_functions.Correlator(config_file = config_file, log_level = logging.DEBUG if verbose else logging.INFO, connect = False)
+
+    if not c.is_wideband():
+        raise RuntimeError('Only valid for wideband.')
+        exit_fail()
+
     c.connect()
     print 'done'
     print '------------------------'
@@ -131,6 +136,7 @@ try:
     #TODO: add check to make sure this is a 10gbe design (as opposed to a xaui link)
     servers = c.fsrvs
     snap_data = corr.snap.get_gbe_tx_snapshot_feng(c, offset = opts.offset, man_trigger = opts.man_trigger, man_valid = opts.raw)
+    #snap_data = corr.corr_nb.get_snap_feng_10gbe(c, offset = opts.offset,  man_trigger = opts.man_trigger, man_valid = opts.raw)
     print 'done.'
 
     report = dict()

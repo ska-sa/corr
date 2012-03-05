@@ -13,8 +13,8 @@ bitstream_f = r_128w_1024_11_1a_r418_2011_Jul_21_1621.bof
 bitstream_x = r_1f_2x_8a_1k_r352_2011_Jun_29_1057.bof
 
 [correlator]
-# the correlator mode - 0 = wideband, 1 = narrowband, 2 = narrowband_ddc
-mode = 0
+# the correlator mode - wbc = wideband, nbc = narrowband, nbch1 = narrowband_ddc h1 mode
+mode = wbc
 #type of ADC. katadc or iadc.
 adc_type = katadc
 #number of frequency channels
@@ -67,6 +67,8 @@ n_xaui_ports_per_ffpga = 1
 mcnt_bits = 48
 #number of bits used in the packet header for timestamping
 pcnt_bits = 48
+# the sync period set in the f-engine design. used for f-engine arming. this default is for WIDEBAND!
+feng_sync_period = 134217728
 
 [receiver]
 #How is data to be retrieved from the correlator? either ppc or 10GbE. Only 10GbE is fully (ie automatically) supported. ppc will require manual intervention with the cn_tx.py script.

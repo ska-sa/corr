@@ -416,15 +416,43 @@ snap_fengine_xaui = construct.BitStruct("snap_debug",
     construct.Flag("sync"),
     construct.Flag("hdr_valid"),
     construct.BitField("data", 64))
-def get_snap_xaui(c, fpgas = [], offset = -1):
+def get_snap_xaui(c, fpgas = [], offset = -1, man_trigger = False, man_valid = False):
     """
     Read the XAUI data out of the general debug snap block.
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
     corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 4)
-    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset, man_trig = man_trigger, man_valid = man_valid, circular_capture = False)
     return snap_data
+
+snap_fengine_gbe_tx = construct.BitStruct("snap_debug", 
+    construct.Padding(128 - 64 - 32 - 6),  
+    construct.Flag("eof"), 
+    construct.Flag("link_up"), 
+    construct.Flag("led_tx"), 
+    construct.Flag("tx_full"), 
+    construct.Flag("tx_over"), 
+    construct.Flag("valid"),
+    construct.BitField("ip_addr", 32),
+    construct.BitField("data", 64))
+def get_snap_feng_10gbe(c, fpgas = [], offset = -1,  man_trigger = False, man_valid = False):
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 5)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset, man_trig = man_trigger, man_valid = man_valid, circular_capture = False)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        repeater = construct.GreedyRepeater(snap_fengine_gbe_tx)
+        up = repeater.parse(d)
+        for a in up:
+            a['link_down'] = not a['link_up']
+            a['hdr_valid'] = False
+            a['mrst'] = False
+            a['sync'] = False
+        rd.append(up)
+    return rd
 
 def DONE_get_fine_fft_snap(correlator):
     # interpret the ant_string

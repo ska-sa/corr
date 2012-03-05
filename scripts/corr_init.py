@@ -106,7 +106,8 @@ try:
         sys.stdout.flush()
         c.prog_all()
         print 'done.'
-    else: print ' Skipped programming FPGAs.'
+    else:
+        print ' Skipped programming FPGAs.'
 
     # pause
     time.sleep(2)
@@ -142,7 +143,8 @@ try:
         else: 
             print ('FAILURES detected!')
             raise RuntimeError("System doesn't work with broken clocks!")
-    else: print 'skipped.'
+    else:
+        print 'skipped.'
 
     print(''' Setting the board indices...'''),
     sys.stdout.flush()

@@ -721,35 +721,32 @@ class Correlator:
         lsw = self.ffpgas[0].read_uint('mcount_lsw')
         return int(((msw << 32) + lsw)*self.config['pcnt_scale_factor']/self.config['mcnt_scale_factor'])
     
-    def arm(self, spead_update = True, sleep_time = 2.1):
+    def arm(self, spead_update = True):
         """Arms all F engines, records arm time in config file and issues SPEAD update. Returns the UTC time at which the system was sync'd in seconds since the Unix epoch (MCNT=0)"""
-        #tested ok corr-0.5.0 2010-07-19
-        #wait for within 100ms of a half-second, then send out the arm signal.
-        ready=((int(time.time()*10)%10)==5)
+        # tested ok corr-0.5.0 2010-07-19
+        # wait for within 100ms of a half-second, then send out the arm signal.
+        ready = ((int(time.time() * 10) % 10) == 5)
         while not ready: 
-            ready=((int(time.time()*10)%10)==5)
-        trig_time=int(numpy.ceil(time.time()+1)) #Syncs on the next second, to ensure any sync pulses already in the datapipeline have a chance to propagate out.
-        self.feng_ctrl_set_all(arm=False)
-        self.feng_ctrl_set_all(arm=True)
-        #self.config.write('correlator','sync_time',trig_time)
-        self.config.write_var('sync_time',str(trig_time))
-        self.feng_ctrl_set_all(arm=False)
-        time.sleep(sleep_time)
-        armed_stat=[armed[0] for armed in self.feng_uptime()]
-        rv=True
+            ready = ((int(time.time() * 10) % 10) == 5)
+        trig_time = int(numpy.ceil(time.time() + 1)) # syncs on the next second, to ensure any sync pulses already in the datapipeline have a chance to propagate out.
+        self.config.write_var('sync_time', str(trig_time))
+        self.feng_ctrl_set_all(arm = 'pulse')
+        time.sleep((2 * self.config['feng_sync_period'] / self.config['feng_clk']) + 0.1)
+        armed_stat = [armed[0] for armed in self.feng_uptime()]
+        rv = True
         for i,stat in enumerate(armed_stat):
             if armed_stat[i]:
                 self.floggers[i].error("Did not trigger. Check clock and 1PPS.")
                 rv=False
             else:
                 self.floggers[i].info("Arm successful.")
-        if rv == True:
-            if spead_update: self.spead_time_meta_issue()
-            self.syslogger.info("All boards armed and triggered OK.")
-            return trig_time
-        else:
+        if rv == False:
             self.syslogger.error("Failed to arm and trigger the system properly.")
             raise RuntimeError("Failed to arm and trigger the system properly.")
+        if spead_update:
+            self.spead_time_meta_issue()
+        self.syslogger.info("All boards armed and triggered OK.")
+        return trig_time
 
     def get_roach_gbe_conf(self,start_addr,fpga,port):
         """Generates 10GbE configuration strings for ROACH-based xengines starting from 
@@ -826,12 +823,14 @@ class Correlator:
             cnt_check = self.xread_uint_all('pkt_reord_cnt%i' % x)
             for xbrd, xsrv in enumerate(self.xsrvs):
                 if (err_check[xbrd] != 0) or (cnt_check[xbrd] == 0) :
-                    self.xloggers[xbrd].error("Missing X engine data on this xeng(%i,%i) - %s %s." % (x, xbrd, "(ERR == %8i, 0b%s != 0)" % (err_check[xbrd], numpy.binary_repr(err_check[xbrd],32)) if err_check[xbrd] != 0 else "", "(CNT==0)" if cnt_check[xbrd] == 0 else ""))
+                    self.xloggers[xbrd].error("Data error on this xeng(%i,%i) - %s %s." % (x, xbrd, "(ERR == %8i, 0b%s != 0)" % (err_check[xbrd], numpy.binary_repr(err_check[xbrd],32)) if err_check[xbrd] != 0 else "", "(CNT==0)" if cnt_check[xbrd] == 0 else ""))
                     rv = False
                 else:
                     self.xloggers[xbrd].info("All X engine data on this xeng(%i,%i) OK." % (x, xbrd))
-        if rv == True: self.syslogger.info("No missing Xeng data.")
-        else: self.syslogger.error("Some Xeng data missing.")
+        if rv == True:
+            self.syslogger.info("No missing Xeng data.")
+        else:
+            self.syslogger.error("Some Xeng data missing.")
         return rv
 
     def check_xaui_error(self):
@@ -1418,7 +1417,7 @@ class Correlator:
         
     def time_from_pcnt(self, pcnt):
         """Returns the unix time UTC equivalent to the input packet timestamp. Does NOT account for wrapping pcnt."""
-        return self.config['sync_time'] + float(pcnt) / float(self.config['pcnt_scale_factor'])
+        return self.config['sync_time'] + (float(pcnt) / float(self.config['pcnt_scale_factor']))
         
     def pcnt_from_time(self, time_seconds):
         """Returns the packet timestamp from a given UTC system time (seconds since Unix Epoch). Accounts for wrapping pcnt."""
@@ -1636,32 +1635,33 @@ class Correlator:
 
     def vacc_sync(self, ld_time = -1):
         """Arms all vector accumulators to start accumulating at a given time. If no time is specified, after about a second from now. ld_time is in seconds since unix epoch."""
-#rev: 2011-02-02 JRM:   added warning calc for leadtime. fewer time.time() calls.
+        #rev: 2011-02-02 JRM:   added warning calc for leadtime. fewer time.time() calls.
         min_ld_time = 0.5
         arm_cnt0 = {}
         ld_cnt0 = {}
         for loc_xeng_n in range(self.config['x_per_fpga']):
-            for xf_n,srv in enumerate(self.xsrvs):
+            for xf_n, srv in enumerate(self.xsrvs):
                 xeng_n = loc_xeng_n + self.config['x_per_fpga'] * xf_n
                 #xeng_n = loc_xeng_n * self.config['x_per_fpga'] + xf_n
-                cnts = self.xfpgas[xf_n].read_uint('vacc_ld_status%i'%loc_xeng_n)
+                cnts = self.xfpgas[xf_n].read_uint('vacc_ld_status%i' % loc_xeng_n)
                 arm_cnt0[xeng_n] = cnts >> 16
                 ld_cnt0[xeng_n] = cnts & 0xffff
                 if arm_cnt0[xeng_n] != ld_cnt0[xeng_n]: 
                     self.xloggers[xf_n].warning("VACC sync'ing: arm count and load count differ by %i, resetting VACCs." % (arm_cnt0[xeng_n] - ld_cnt0[xeng_n]))
                     self.rst_vaccs()
+
+        # get current pcnt from f-engines
         pcnt = self.pcnt_current_get()
         
-        # figure out the load time
+        # figure out the load time as a pcnt
         t_start = time.time()
         if ld_time < 0:
-            # figure out the load-time pcnt:
-            ld_pcnt = self.pcnt_from_time(t_start + min_ld_time)
-        else:
-            if (ld_time <= t_start+min_ld_time): 
-                self.syslogger.error("Cannot load at a time in the past. Need at least %2.2f seconds leadtime."%(time.time()-t_start+min_ld_time))
-                raise RuntimeError("Cannot load at a time in the past. Need at least %2.2f seconds leadtime."%(time.time()-t_start+min_ld_time))
-            ld_pcnt=self.pcnt_from_time(ld_time)
+            ld_time = t_start + min_ld_time
+        if (ld_time < t_start + min_ld_time):
+            err_msg =  "Cannot load at a time in the past. Need at least %2.2f seconds leadtime." % min_ld_time
+            self.syslogger.error(err_msg)
+            raise RuntimeError(err_msg)
+        ld_pcnt = self.pcnt_from_time(ld_time)
 
         if (ld_pcnt <= pcnt): 
             self.syslogger.error("Error occurred. Cannot load at a time in the past.")
@@ -1671,17 +1671,18 @@ class Correlator:
             self.syslogger.warning("Looks like the 48bit pcnt has wrapped.")
             ld_pcnt = ld_pcnt & 0xffffffffffff
 
-        #round to the nearest spectrum cycle. this is: n_ants*(n_chans_per_xeng)*(xeng_acc_len) clock cycles. pcnts themselves are rounded to nearest xeng_acc_len.
-        #round_target=self.config['n_ants']*self.config['n_chans']/self.config['n_xeng']
-        #However, hardware rounds to n_chans, irrespective of anything else (oops!).
-        #ld_pcnt=(ld_pcnt/self.config['n_chans'])*self.config['n_chans']
+        # round to the nearest spectrum cycle. this is: n_ants*(n_chans_per_xeng)*(xeng_acc_len) clock cycles.
+        # pcnts themselves are rounded to nearest xeng_acc_len.
+        # round_target = self.config['n_ants'] * self.config['n_chans'] / self.config['n_xeng']
+        # However, hardware rounds to n_chans, irrespective of anything else (oops!).
+        # ld_pcnt = (ld_pcnt / self.config['n_chans']) * self.config['n_chans']
 
         self.xwrite_int_all('vacc_time_msw', (ld_pcnt >> 32) + (0 << 31))
         self.xwrite_int_all('vacc_time_lsw', (ld_pcnt &  0xffffffff))
         self.xwrite_int_all('vacc_time_msw', (ld_pcnt >> 32) + (1 << 31))
         self.xwrite_int_all('vacc_time_msw', (ld_pcnt >> 32) + (0 << 31))
 
-        #wait 'till the time has elapsed
+        # wait 'till the time has elapsed
         time.sleep(self.time_from_pcnt(ld_pcnt) - self.time_from_pcnt(pcnt))
         time.sleep(0.2) #account for a crazy network latency
         after_pcnt = self.pcnt_current_get()
@@ -1694,20 +1695,25 @@ class Correlator:
                 cnts = self.xfpgas[xf_n].read_uint('vacc_ld_status%i'%loc_xeng_n)
                 arm_cnt = cnts >> 16
                 ld_cnt = cnts & 0xffff
-                if ((cnts>>16)==0): 
-                    self.xloggers[xf_n].error('VACC %i on %s appears to be held in reset.'%(loc_xeng_n,srv))
-                    raise RuntimeError('VACC %i on %s appears to be held in reset.'%(loc_xeng_n,srv))
-                if (arm_cnt0[xeng_n] == (cnts>>16)): 
-                    self.xloggers[xf_n].error('VACC %i on %s did not arm.'%(loc_xeng_n,srv))
-                    raise RuntimeError('VACC %i on %s did not arm.'%(loc_xeng_n,srv))
-                if (ld_cnt0[xeng_n] >= (cnts&0xffff)): 
-                    #print 'before: %i, target: %i, after: %i'%(pcnt,ld_pcnt,after_pcnt)
-                    #print 'start: %10.3f, target: %10.3f, after: %10.3f'%(self.time_from_pcnt(pcnt),self.time_from_pcnt(ld_pcnt),self.time_from_pcnt(after_pcnt))
+                if ((cnts >> 16) == 0):
+                    err_msg = 'VACC %i on %s appears to be held in reset.' % (loc_xeng_n, srv) 
+                    self.xloggers[xf_n].error(err_msg)
+                    raise RuntimeError(err_msg)
+                if (arm_cnt0[xeng_n] == (cnts >> 16)):
+                    err_msg = 'VACC %i on %s did not arm.' % (loc_xeng_n, srv)
+                    self.xloggers[xf_n].error(err_msg)
+                    raise RuntimeError(err_msg)
+                if (ld_cnt0[xeng_n] >= (cnts & 0xffff)): 
+                    print 'PCNT: start: %i, target: %i, after: %i, diff: %i' % (pcnt, ld_pcnt, after_pcnt, after_pcnt - ld_pcnt)
+                    print 'TIME: start: %10.3f, target: %10.3f, after: %10.3f' % (self.time_from_pcnt(pcnt), self.time_from_pcnt(ld_pcnt), self.time_from_pcnt(after_pcnt))
                     sys.stdout.flush()
-                    if after_pcnt > ld_pcnt: 
-                        self.xloggers[xf_n].error('We missed loading the registers by about %4.1f ms.'%((self.time_from_pcnt(after_pcnt)-self.time_from_pcnt(ld_pcnt)) * 1000))
-                        raise RuntimeError('We missed loading the registers by about %4.1f ms.'%((self.time_from_pcnt(after_pcnt)-self.time_from_pcnt(ld_pcnt)) * 1000))
-                    else: raise RuntimeError('Xeng %i on %s did not load correctly for an unknown reason.'%(loc_xeng_n,srv))
+                    if after_pcnt > ld_pcnt:
+                        miss_ms = (self.time_from_pcnt(after_pcnt) - self.time_from_pcnt(ld_pcnt)) * 1000.
+                        err_msg = 'We missed loading the registers by about %4.1f ms.' % miss_ms
+                        self.xloggers[xf_n].error(err_msg)
+                        raise RuntimeError('vacc_sync: ', err_msg)
+                    else:
+                        raise RuntimeError('Xeng %i on %s did not load correctly for an unknown reason.' % (loc_xeng_n, srv))
                 #print 'xeng(%s, %i) VACC armed correctly.' % (srv, loc_xeng_n)
                     
 
@@ -1978,7 +1984,7 @@ class Correlator:
 
     def spead_labelling_issue(self):
         import spead
-        tx=spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
+        tx=spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
         ig=spead.ItemGroup()
 #        ig.add_item(name="bls_ordering",id=0x100C,
 #            description="The output ordering of the baselines from each X engine. Packed as a pair of unsigned integers, ant1,ant2 where ant1 < ant2.",
