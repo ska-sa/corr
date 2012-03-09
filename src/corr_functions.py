@@ -615,23 +615,21 @@ class Correlator:
 
     def check_feng_clks(self, quick_test=False, per_board=False):
         """ Checks all Fengine FPGAs' clk_frequency registers to confirm correct PPS operation. Requires that the system be sync'd. If per_board is True, returns a list of all f engine boards' clk status. If quick_test is true, does not estimate the boards' clock frequencies."""
-        #tested ok corr-0.5.0 2010-07-19
-        rv=[True for b in self.fsrvs]
-        expect_rate = round(self.config['feng_clk'] / 1000000) #expected clock rate in MHz.
+        # tested ok corr-0.5.0 2010-07-19
+        rv = [True for b in self.fsrvs]
+        expect_rate = round(self.config['feng_clk'] / 1000000) # expected clock rate in MHz.
 
-        #estimate actual clk freq 
-        if quick_test==False:
+        # estimate actual clk freq 
+        if quick_test == False:
             clk_freq=self.feng_clks_get()
             clk_mhz=[round(cf) for cf in clk_freq] #round to nearest MHz
             for fbrd,fsrv in enumerate(self.fsrvs):
                 if clk_freq[fbrd] <= 100: 
                     self.floggers[fbrd].error("No clock detected!")
-                    rv[fbrd]=False
-
+                    rv[fbrd] = False
                 if (clk_mhz[fbrd] > (expect_rate+1)) or (clk_mhz[fbrd] < (expect_rate -1)) or (clk_mhz[fbrd]==0):
                     self.floggers[fbrd].error("Estimated clock freq is %i MHz, where expected rate is %i MHz."%(clk_mhz[fbrd], expect_rate))
-                    rv[fbrd]=False
-
+                    rv[fbrd] = False
             if False in rv: 
                 self.syslogger.error("Some Fengine clocks are dead. We can't continue.")
                 if not per_board:
@@ -728,16 +726,26 @@ class Correlator:
         ready = ((int(time.time() * 10) % 10) == 5)
         while not ready: 
             ready = ((int(time.time() * 10) % 10) == 5)
-        trig_time = int(numpy.ceil(time.time() + 1)) # syncs on the next second, to ensure any sync pulses already in the datapipeline have a chance to propagate out.
-        self.config.write_var('sync_time', str(trig_time))
+        #trig_time = int(numpy.ceil(time.time() + 1)) # syncs on the next second, to ensure any sync pulses already in the datapipeline have a chance to propagate out.
+        #self.config.write_var('sync_time', str(trig_time))
         self.feng_ctrl_set_all(arm = 'pulse')
-        time.sleep((2 * self.config['feng_sync_period'] / self.config['feng_clk']) + 0.1)
-        armed_stat = [armed[0] for armed in self.feng_uptime()]
+        max_wait = 10
+        start_time = time.time()
+        done = False
+        armed_stat = []
+        while (time.time() - start_time < max_wait) and (not done):
+            armed_stat = [armed[0] for armed in self.feng_uptime()]
+            done_now = True
+            for i, stat in enumerate(armed_stat):
+                if armed_stat[i]: done_now = False
+            if done_now: done = True
+        done_time = time.time()
+        self.config.write_var('sync_time', str(numpy.floor(done_time)))
         rv = True
         for i,stat in enumerate(armed_stat):
             if armed_stat[i]:
                 self.floggers[i].error("Did not trigger. Check clock and 1PPS.")
-                rv=False
+                rv = False
             else:
                 self.floggers[i].info("Arm successful.")
         if rv == False:
@@ -746,7 +754,7 @@ class Correlator:
         if spead_update:
             self.spead_time_meta_issue()
         self.syslogger.info("All boards armed and triggered OK.")
-        return trig_time
+        return done_time
 
     def get_roach_gbe_conf(self,start_addr,fpga,port):
         """Generates 10GbE configuration strings for ROACH-based xengines starting from 
@@ -1633,26 +1641,42 @@ class Correlator:
                 rv[srv]['ld_cnt%i'%loc_xeng_n] = cnts&0xffff
         return rv
 
-    def vacc_sync(self, ld_time = -1):
+    def vacc_sync(self, ld_time = -1, network_wait = 0.5, min_load_time = 1.0):
         """Arms all vector accumulators to start accumulating at a given time. If no time is specified, after about a second from now. ld_time is in seconds since unix epoch."""
         #rev: 2011-02-02 JRM:   added warning calc for leadtime. fewer time.time() calls.
-        min_ld_time = 0.5
-        arm_cnt0 = {}
-        ld_cnt0 = {}
-        for loc_xeng_n in range(self.config['x_per_fpga']):
-            for xf_n, srv in enumerate(self.xsrvs):
-                xeng_n = loc_xeng_n + self.config['x_per_fpga'] * xf_n
-                #xeng_n = loc_xeng_n * self.config['x_per_fpga'] + xf_n
-                cnts = self.xfpgas[xf_n].read_uint('vacc_ld_status%i' % loc_xeng_n)
-                arm_cnt0[xeng_n] = cnts >> 16
-                ld_cnt0[xeng_n] = cnts & 0xffff
-                if arm_cnt0[xeng_n] != ld_cnt0[xeng_n]: 
-                    self.xloggers[xf_n].warning("VACC sync'ing: arm count and load count differ by %i, resetting VACCs." % (arm_cnt0[xeng_n] - ld_cnt0[xeng_n]))
-                    self.rst_vaccs()
+        min_ld_time = min_load_time
 
-        # get current pcnt from f-engines
-        pcnt = self.pcnt_current_get()
-        
+        def load_ldstatus(c):
+            rv = {}
+            for xf_n, srv in enumerate(c.xsrvs):
+                tsrv = {}
+                tsrv['xfpga_number'] = xf_n
+                tsrv['xengs'] = []
+                for loc_xeng_n in range(c.config['x_per_fpga']):
+                    xeng_index = loc_xeng_n + (c.config['x_per_fpga'] * xf_n)
+                    ldstat = c.xfpgas[xf_n].read_uint('vacc_ld_status%i' % loc_xeng_n)
+                    rtemp = {}
+                    rtemp['xeng_number'] = loc_xeng_n
+                    rtemp['arm_cnt'] = ldstat >> 16
+                    rtemp['ld_cnt'] = ldstat & 0xffff
+                    rtemp['xeng_index'] = xeng_index
+                    tsrv['xengs'].append(rtemp)
+                rv[srv] = tsrv 
+            return rv
+
+        # read the vacc status registers before syncing
+        xldstatus_before = load_ldstatus(self)
+        reset_required = False
+        for srv in xldstatus_before.values():
+            for xeng in srv['xengs']:
+                if xeng['arm_cnt'] != xeng['ld_cnt']: 
+                    self.xloggers[s['xfpga_number']].warning("VACC syncing: xfpga(%i), xeng(%i) - arm count(%i) and load count(%i) differ by %i, resetting VACCs." % (srv['xfpga_number'], xeng['xeng_number'], xeng['arm_cnt'], xeng['ld_cnt'], xeng['arm_cnt'] - xeng['ld_cnt']))
+                    reset_required = True
+        # reset the vaccs if any were out of alignment
+        if reset_required:
+            print 'Resetting vaccs...'
+            c.rst_vaccs()
+
         # figure out the load time as a pcnt
         t_start = time.time()
         if ld_time < 0:
@@ -1662,11 +1686,10 @@ class Correlator:
             self.syslogger.error(err_msg)
             raise RuntimeError(err_msg)
         ld_pcnt = self.pcnt_from_time(ld_time)
-
-        if (ld_pcnt <= pcnt): 
+        #print 'ld_time set to', time.ctime(ld_time)
+        if (ld_pcnt <= self.pcnt_current_get()): 
             self.syslogger.error("Error occurred. Cannot load at a time in the past.")
             raise RuntimeError("Error occurred. Cannot load at a time in the past.")
-
         if ld_pcnt > ((2**48)-1):
             self.syslogger.warning("Looks like the 48bit pcnt has wrapped.")
             ld_pcnt = ld_pcnt & 0xffffffffffff
@@ -1677,45 +1700,56 @@ class Correlator:
         # However, hardware rounds to n_chans, irrespective of anything else (oops!).
         # ld_pcnt = (ld_pcnt / self.config['n_chans']) * self.config['n_chans']
 
+        # get current pcnt from f-engines
+        pcnt = self.pcnt_current_get()
+
+        # arm the x-engine vaccs
         self.xwrite_int_all('vacc_time_msw', (ld_pcnt >> 32) + (0 << 31))
         self.xwrite_int_all('vacc_time_lsw', (ld_pcnt &  0xffffffff))
         self.xwrite_int_all('vacc_time_msw', (ld_pcnt >> 32) + (1 << 31))
         self.xwrite_int_all('vacc_time_msw', (ld_pcnt >> 32) + (0 << 31))
 
-        # wait 'till the time has elapsed
+        # wait for the load time to elapse
         time.sleep(self.time_from_pcnt(ld_pcnt) - self.time_from_pcnt(pcnt))
-        time.sleep(0.2) #account for a crazy network latency
+        # allow for the fact that reading/writing over the network may take some time
+        time.sleep(network_wait) # account for a crazy network latency
         after_pcnt = self.pcnt_current_get()
         #print 'waiting %2.3f seconds'%sleep_time
 
-        for loc_xeng_n in range(self.config['x_per_fpga']):
-            for xf_n,srv in enumerate(self.xsrvs):
-                xeng_n = loc_xeng_n + self.config['x_per_fpga'] * xf_n
-                #xeng_n = loc_xeng_n * self.config['x_per_fpga'] + xf_n
-                cnts = self.xfpgas[xf_n].read_uint('vacc_ld_status%i'%loc_xeng_n)
-                arm_cnt = cnts >> 16
-                ld_cnt = cnts & 0xffff
-                if ((cnts >> 16) == 0):
-                    err_msg = 'VACC %i on %s appears to be held in reset.' % (loc_xeng_n, srv) 
-                    self.xloggers[xf_n].error(err_msg)
+        xldstatus_after = load_ldstatus(self)
+        for item in xldstatus_after.items():
+            srvkey = item[0]
+            srv = item[1]
+            srvbefore = xldstatus_before[srvkey]
+            xlog = self.xloggers[srv['xfpga_number']]
+            for xeng in srv['xengs']:
+                xengbefore = srvbefore['xengs'][xeng['xeng_number']]
+                #print "xeng_index(%i) arm_cnt(%i) ld_cnt(%i)" % (xeng['xeng_index'], xeng['arm_cnt'], xeng['ld_cnt'])
+                # the arm count should have increased
+                if (xeng['arm_cnt'] == 0):
+                    err_msg = 'VACC %i on %s appears to be held in reset (arm count = 0).' % (xeng['xeng_number'], srvkey)
+                    xlog.error(err_msg)
                     raise RuntimeError(err_msg)
-                if (arm_cnt0[xeng_n] == (cnts >> 16)):
-                    err_msg = 'VACC %i on %s did not arm.' % (loc_xeng_n, srv)
-                    self.xloggers[xf_n].error(err_msg)
+                if (xengbefore['arm_cnt'] == xeng['arm_cnt']):
+                    err_msg = 'VACC %i on %s did not arm (arm count didn''t increment).' % (xeng['xeng_number'], srvkey)
+                    xlog.error(err_msg)
                     raise RuntimeError(err_msg)
-                if (ld_cnt0[xeng_n] >= (cnts & 0xffff)): 
-                    print 'PCNT: start: %i, target: %i, after: %i, diff: %i' % (pcnt, ld_pcnt, after_pcnt, after_pcnt - ld_pcnt)
+                # so should the load count
+                if (xengbefore['ld_cnt'] >= xeng['ld_cnt']):
+                    print "ldcnt_before(%i) ldcnt_after(%i)" % (xengbefore['ld_cnt'], xeng['ld_cnt'])
+                    print '\nPCNT: start: %i, target: %i, after: %i, diff: %i' % (pcnt, ld_pcnt, after_pcnt, after_pcnt - ld_pcnt)
                     print 'TIME: start: %10.3f, target: %10.3f, after: %10.3f' % (self.time_from_pcnt(pcnt), self.time_from_pcnt(ld_pcnt), self.time_from_pcnt(after_pcnt))
                     sys.stdout.flush()
                     if after_pcnt > ld_pcnt:
                         miss_ms = (self.time_from_pcnt(after_pcnt) - self.time_from_pcnt(ld_pcnt)) * 1000.
                         err_msg = 'We missed loading the registers by about %4.1f ms.' % miss_ms
-                        self.xloggers[xf_n].error(err_msg)
+                        xlog.error(err_msg)
                         raise RuntimeError('vacc_sync: ', err_msg)
                     else:
-                        raise RuntimeError('Xeng %i on %s did not load correctly for an unknown reason.' % (loc_xeng_n, srv))
-                #print 'xeng(%s, %i) VACC armed correctly.' % (srv, loc_xeng_n)
-                    
+                        raise RuntimeError('Xeng %i on %s did not load correctly for an unknown reason.' % (xeng['xeng_number'], srvkey))
+                #print 'xeng(%s, %i) VACC armed correctly.' % (srv, loc_xeng_n) 
+
+        return True
 
 #    def freq_to_chan(self,frequency):
 #        """Returns the channel number where a given frequency is to be found. Frequency is in Hz."""

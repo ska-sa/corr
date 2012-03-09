@@ -35,15 +35,13 @@ register_fengine_fstatus = construct.BitStruct('fstatus0',
 
 # f-engine coarse control
 register_fengine_coarse_control = construct.BitStruct('coarse_ctrl',
-    construct.Padding(32 - 10 - 10 - 1),        # 21 - 31
-    construct.Flag('mixer_select'),             # 20
+    construct.Padding(32 - 10 - 10),            # 20 - 31
     construct.BitField('channel_select', 10),   # 10 - 19
     construct.BitField('fft_shift', 10))        # 0 - 9
 
 # f-engine fine control
 register_fengine_fine_control = construct.BitStruct('fine_ctrl',
-    construct.Padding(32 - 13 - 2 - 1),         # 16 - 31
-    construct.Flag('skip_window'),              # 15
+    construct.Padding(32 - 13 - 2),             # 15 - 31
     construct.BitField('fine_debug_select', 2), # 13 - 14
     construct.BitField('fft_shift', 13))        # 0 - 12
 
@@ -53,7 +51,7 @@ register_fengine_control = construct.BitStruct('control',
     construct.BitField('debug_snap_select', 3), # 25 - 27
     construct.Flag('debug_pol_select'),         # 24
     construct.Padding(2),                       # 22 - 23
-    construct.Flag('fine_chan_tvg_post'),       # 21
+    construct.Flag('fine_tvg'),                 # 21
     construct.Flag('adc_tvg'),                  # 20
     construct.Flag('fdfs_tvg'),                 # 19
     construct.Flag('packetiser_tvg'),           # 18
@@ -296,6 +294,28 @@ def get_snap_coarse_fft(c, fpgas = [], pol = 0):
 #    construct.BitField("p0_i", 18),
 #    construct.BitField("p1_r", 18),
 #    construct.BitField("p1_i", 18))
+snap_fengine_debug_fine_fft_tvg = construct.BitStruct(snap_debug,
+    construct.Padding(128-32),
+    construct.BitField("ctr", 32))
+def get_snap_fine_tvg(c, fpgas, offset = -1):
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = 2)
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1, tvg_en = True, fine_tvg = True)
+    import time
+    time.sleep(1)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        repeater = construct.GreedyRepeater(snap_fengine_debug_fine_fft_tvg)
+        up = repeater.parse(d)
+        fdata = []
+        for a in up:
+            p0c = a['ctr']
+            fdata.append(p0c)
+        rd.append(fdata)
+    return rd
 snap_fengine_debug_fine_fft = construct.BitStruct(snap_debug,
     construct.BitField("p0_r", 32),
     construct.BitField("p0_i", 32),
@@ -305,7 +325,7 @@ def get_snap_fine(c, debug_select, fpgas, offset = -1):
     if len(fpgas) == 0:
         fpgas = c.ffpgas
     corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1)
-    corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = debug_select)
+    #corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = debug_select)
     snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
     rd = []
     for ctr in range(0, len(snap_data['data'])):
@@ -416,14 +436,14 @@ snap_fengine_xaui = construct.BitStruct("snap_debug",
     construct.Flag("sync"),
     construct.Flag("hdr_valid"),
     construct.BitField("data", 64))
-def get_snap_xaui(c, fpgas = [], offset = -1, man_trigger = False, man_valid = False):
+def get_snap_xaui(c, fpgas = [], offset = -1, man_trigger = False, man_valid = False, wait_period = 3):
     """
     Read the XAUI data out of the general debug snap block.
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
     corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 4)
-    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset, man_trig = man_trigger, man_valid = man_valid, circular_capture = False)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = wait_period, offset = offset, man_trig = man_trigger, man_valid = man_valid, circular_capture = False)
     return snap_data
 
 snap_fengine_gbe_tx = construct.BitStruct("snap_debug", 

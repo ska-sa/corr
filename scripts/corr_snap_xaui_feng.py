@@ -235,7 +235,7 @@ try:
                 pkt_hdr_idx = i
                 # skip_indices records positions in table which are ADC updates and should not be counted towards standard data.
                 skip_indices = []
-                print ('HEADER RECEIVED @ %i with freq %i' % (i, pkt_hdr_current_freq))
+                #print ('HEADER RECEIVED @ %i with freq %i' % (i, pkt_hdr_current_freq))
 #            elif bram_oob[f]['adc'][i]:
 #                print "Got a legacy ADC amplitude update. This shouldn't happen in modern designs. I think you connected an old (or a faulty!) F engine."
 #                skip_indices.append(i)
