@@ -188,7 +188,7 @@ def coarse_channel_select(c, mixer_sel = -1, channel_sel = -1):
         corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, mixer_select = True if mixer_sel == 1 else False)
     elif channel_sel > -1:
         corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = channel_sel)
-        self.config['center_freq'] = (channel_sel * self.config['bandwidth']) + (self.config['bandwidth'] / 2.)
+        c.config['center_freq'] = (channel_sel * c.config['bandwidth']) + (c.config['bandwidth'] / 2.)
     else:
         return
     # force a SPEAD update
@@ -210,13 +210,13 @@ snap_fengine_adc = construct.BitStruct(snap_adc,
     construct.BitField("d1_1", 8),
     construct.BitField("d1_2", 8),
     construct.BitField("d1_3", 8))
-def get_snap_adc(c, fpgas = []):
+def get_snap_adc(c, fpgas = [], wait_period = 3):
     """
     Read raw samples from the ADC snap block.
     2 pols, each one 4 parallel samples f8.7. So 64-bits total.
     """
-    raw = snap.snapshots_get(fpgas = fpgas, dev_names = snap_adc, wait_period = 3)
-    repeater = construct.GreedyRepeater(snap_fengine_adc) 
+    raw = snap.snapshots_get(fpgas = fpgas, dev_names = snap_adc, wait_period = wait_period)
+    repeater = construct.GreedyRepeater(snap_fengine_adc)
     rv = []
     for index, d in enumerate(raw['data']):
         upd = repeater.parse(d)
@@ -229,6 +229,43 @@ def get_snap_adc(c, fpgas = []):
                     data[pol].append(f87)
         v = {'fpga_index': index, 'data': data}
         rv.append(v)
+    return rv
+def get_adc_snapshot(c, ant_names, trig_level = -1, sync_to_pps = True):
+    if (trig_level >= 0) or (sync_to_pps == False):
+        raise RuntimeError('Not currently supported. Soon, Captain, soon...')
+
+    # horrid horrid translation step because of that KAK way data is organised in this package
+    fpgas = []
+    ffpga_numbers = []
+    ant_details = {}
+    index = 0
+    for ant_str in ant_names:
+        (ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input) = c.get_ant_str_location(ant_str)
+        f = c.ffpgas[ffpga_n]
+        if fpgas.count(f) == 0:
+            fpgas.append(f)
+            ffpga_numbers.append(ffpga_n)
+            ant_details[ffpga_n] = {}
+        ant_details[ffpga_n][feng_input] = ant_str
+    # get the data
+    data = get_snap_adc(c, fpgas = fpgas)
+    # mangle it to return it
+    rv = {}
+    for n, d in enumerate(data):
+        for p, poldata in enumerate(d['data']):
+            t = {}
+            t['timestamp'] = 0
+            t['data'] = poldata
+            t['length'] = len(poldata)
+            t['offset'] = 0
+            astr = None
+            try:
+                fnum = ffpga_numbers[n]
+                astr = ant_details[fnum][p]
+            except KeyError:
+                pass
+            if astr != None:
+                rv[astr] = t
     return rv
 
 snap_fengine_debug_coarse_fft_old = construct.BitStruct(snap_debug,

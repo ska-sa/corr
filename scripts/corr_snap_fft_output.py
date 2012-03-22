@@ -94,6 +94,8 @@ def get_data_nb(pol):
         unpacked_vals = []
         offset = 0
         while len(unpacked_vals) < n_chans:
+            print '(%i/%i)' % (len(unpacked_vals), n_chans),
+            sys.stdout.flush()
             temp = corr.corr_nb.get_snap_fine_fft(c, fpgas = [pol['fpga']], offset = offset)
             temp = temp[0][pol['pol']]
             unpacked_vals.extend(temp)

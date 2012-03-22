@@ -91,39 +91,41 @@ def snapshots_get(fpgas,dev_names,man_trig=False,man_valid=False,wait_period=-1,
 #   INCOMPLETE. use construct instead.
 
 
-def get_adc_snapshots(correlator,ant_strs=[],trig_level=-1,sync_to_pps=True):
+def get_adc_snapshots(correlator, ant_strs = [], trig_level = -1, sync_to_pps = True):
     """Fetches multiple ADC snapshots from hardware. Set trig_level to negative value to disable triggered captures. Timestamps only valid if system is correctly sync'd!"""
-
     if correlator.config['adc_n_bits'] !=8: 
-        raise RuntimeError('This function is hardcoded to work with 8 bit ADCs. According to your config file, yours is %i bits.'%correlator.config['adc_n_bits'])
+        raise RuntimeError('This function is hardcoded to work with 8 bit ADCs. According to your config file, yours is %i bits.' % correlator.config['adc_n_bits'])
 
-    fpgas=[]
-    dev_names=[]
+    fpgas = []
+    dev_names = []
     for ant_str in ant_strs:    
-        (ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input) = correlator.get_ant_str_location(ant_str)
+        (ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input) = correlator.get_ant_str_location(ant_str)
         fpgas.append(correlator.ffpgas[ffpga_n])
-        dev_names.append('adc_snap%i'%feng_input)
+        dev_names.append('adc_snap%i' % feng_input)
 
-    init_mcnt=correlator.mcnt_current_get(ant_str=ant_strs[0])
-    mcnt_lsbs=init_mcnt&0xffffffff
+    if correlator.is_narrowband():
+        return corr.corr_nb.get_adc_snapshot(c = correlator, ant_names = ant_strs, trig_level = trig_level, sync_to_pps = sync_to_pps)
 
-    if trig_level>=0:
-        [fpga.write_int('trig_level',trig_level) for fpga in fpgas]
-        raw=snapshots_get(fpgas,dev_names,wait_period=-1,circular_capture=True,man_trig=(not sync_to_pps))
-        ready=((int(time.time()*10)%10)==5)
+    init_mcnt = correlator.mcnt_current_get(ant_str = ant_strs[0])
+    mcnt_lsbs = init_mcnt & 0xffffffff
+
+    if trig_level >= 0:
+        [fpga.write_int('trig_level', trig_level) for fpga in fpgas]
+        raw = snapshots_get(fpgas, dev_names, wait_period = -1, circular_capture = True, man_trig = (not sync_to_pps))
+        ready = ((int(time.time() * 10) % 10) == 5)
         while not ready:
             time.sleep(0.05)
-            ready=((int(time.time()*10)%10)==5)
+            ready = ((int(time.time() * 10) % 10) == 5)
     else:
-        raw=snapshots_get(fpgas,dev_names,wait_period=2,circular_capture=False,man_trig=(not sync_to_pps))
+        raw = snapshots_get(fpgas, dev_names, wait_period = 2, circular_capture = False, man_trig = (not sync_to_pps))
     
-    rv={}
-    for ant_n,ant_str in enumerate(ant_strs):    
-        rv[ant_str]={'data':numpy.fromstring(raw['data'][ant_n],dtype=numpy.int8),'offset':raw['offsets'][ant_n],'length':raw['lengths'][ant_n]}
-        ts=fpgas[ant_n].read_uint(dev_names[ant_n]+'_val')
-        rv[ant_str]['timestamp']=correlator.time_from_mcnt((init_mcnt&0xffffffff00000000) + ts)
+    rv = {}
+    for ant_n, ant_str in enumerate(ant_strs):    
+        rv[ant_str] = {'data': numpy.fromstring(raw['data'][ant_n], dtype = numpy.int8), 'offset': raw['offsets'][ant_n], 'length': raw['lengths'][ant_n]}
+        ts = fpgas[ant_n].read_uint(dev_names[ant_n] + '_val')
+        rv[ant_str]['timestamp'] = correlator.time_from_mcnt((init_mcnt & 0xffffffff00000000) + ts)
         if mcnt_lsbs > ts: 
-            rv[ant_str]['timestamp'] += 0x100000000 #32 bit number must've overflowed once.
+            rv[ant_str]['timestamp'] += 0x100000000 # 32 bit number must've overflowed once.
 
     return rv
        
