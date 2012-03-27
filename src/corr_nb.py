@@ -220,13 +220,33 @@ def get_snap_adc(c, fpgas = [], wait_period = 3):
     rv = []
     for index, d in enumerate(raw['data']):
         upd = repeater.parse(d)
-        data = [[],[]]
+        data = [[], []]
         for ctr in range(0, len(upd)):
             for pol in range(0,2):
                 for sample in range(0,4):
                     uf = upd[ctr]['d%i_%i' % (pol,sample)]
                     f87 = bin2fp(uf)
                     data[pol].append(f87)
+        v = {'fpga_index': index, 'data': data}
+        rv.append(v)
+    return rv
+def get_snap_adc_DUMB(c, fpgas = [], wait_period = 3):
+    """
+    Read raw samples from the ADC snap block.
+    2 pols, each one 4 parallel samples f8.7. So 64-bits total.
+    """
+    raw = snap.snapshots_get(fpgas = fpgas, dev_names = snap_adc, wait_period = wait_period)
+    repeater = construct.GreedyRepeater(snap_fengine_adc)
+    rv = []
+    for index, d in enumerate(raw['data']):
+        data = [[],[]]
+        od = numpy.fromstring(d, dtype = numpy.int8)
+        for ctr in range(0, len(od), 8):
+            for ctr2 in range(0,4):
+                data[0].append(od[ctr + ctr2])
+            for ctr2 in range(4,8):
+                data[1].append(od[ctr + ctr2])
+        data = [numpy.array(data[0], dtype=numpy.int8), numpy.array(data[1], dtype=numpy.int8)]
         v = {'fpga_index': index, 'data': data}
         rv.append(v)
     return rv
@@ -248,7 +268,7 @@ def get_adc_snapshot(c, ant_names, trig_level = -1, sync_to_pps = True):
             ant_details[ffpga_n] = {}
         ant_details[ffpga_n][feng_input] = ant_str
     # get the data
-    data = get_snap_adc(c, fpgas = fpgas)
+    data = get_snap_adc_DUMB(c, fpgas = fpgas)
     # mangle it to return it
     rv = {}
     for n, d in enumerate(data):
