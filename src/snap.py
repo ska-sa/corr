@@ -150,7 +150,14 @@ def get_quant_snapshot(correlator, ant_str, n_spectra = 1, pol = 0):
                 # cast up to signed numbers:
                 unpacked_vals.append(float(((numpy.int8(pol_r_bits << 4)>> 4))) + 1j * float(((numpy.int8(pol_i_bits << 4)>> 4))))
         elif correlator.is_narrowband():
-            unpacked_vals = corr.corr_nb.get_snap_quant(correlator, [fpga])[0][pol]            
+            # the narrowband snap block may be shorter than one spectrum, so make sure we get enough data
+            td = []
+            offset = 0
+            while len(td) < correlator.config['n_chans']:
+                ttd = corr.corr_nb.get_snap_quant(correlator, [fpga], offset = offset)[0][pol]
+                td.extend(ttd)
+                offset = offset + len(ttd)
+            unpacked_vals.extend(td)
         else:
             raise RuntimeError('Unknown mode.')
         ns = len(unpacked_vals) / correlator.config['n_chans']
