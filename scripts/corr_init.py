@@ -106,7 +106,8 @@ try:
         sys.stdout.flush()
         c.prog_all()
         print 'done.'
-    else: print ' Skipped programming FPGAs.'
+    else:
+        print ' Skipped programming FPGAs.'
 
     # pause
     time.sleep(2)
@@ -128,11 +129,10 @@ try:
     c.gbe_reset_hold_x()
     print 'done.'
 
-    print ''' Syncing the F engines...''',
+    print ' Syncing the F engines, this may take a few seconds...'
     sys.stdout.flush()
-    time.sleep(2)
     trig_time = c.arm()
-    print 'Armed. Expect trigg at %s local (%s UTC).' % (time.strftime('%H:%M:%S', time.localtime(trig_time)), time.strftime('%H:%M:%S', time.gmtime(trig_time))),
+    print ' Armed. Expect trigg at %s local (%s UTC).' % (time.strftime('%H:%M:%S', time.localtime(trig_time)), time.strftime('%H:%M:%S', time.gmtime(trig_time))),
     print 'SPEAD packet sent.'
 
     print(''' Checking F engine clocks...'''),
@@ -142,7 +142,8 @@ try:
         else: 
             print ('FAILURES detected!')
             raise RuntimeError("System doesn't work with broken clocks!")
-    else: print 'skipped.'
+    else:
+        print 'skipped.'
 
     print(''' Setting the board indices...'''),
     sys.stdout.flush()

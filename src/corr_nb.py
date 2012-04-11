@@ -35,15 +35,13 @@ register_fengine_fstatus = construct.BitStruct('fstatus0',
 
 # f-engine coarse control
 register_fengine_coarse_control = construct.BitStruct('coarse_ctrl',
-    construct.Padding(32 - 10 - 10 - 1),        # 21 - 31
-    construct.Flag('mixer_select'),             # 20
+    construct.Padding(32 - 10 - 10),            # 20 - 31
     construct.BitField('channel_select', 10),   # 10 - 19
     construct.BitField('fft_shift', 10))        # 0 - 9
 
 # f-engine fine control
 register_fengine_fine_control = construct.BitStruct('fine_ctrl',
-    construct.Padding(32 - 13 - 2 - 1),         # 16 - 31
-    construct.Flag('skip_window'),              # 15
+    construct.Padding(32 - 13 - 2),             # 15 - 31
     construct.BitField('fine_debug_select', 2), # 13 - 14
     construct.BitField('fft_shift', 13))        # 0 - 12
 
@@ -53,7 +51,7 @@ register_fengine_control = construct.BitStruct('control',
     construct.BitField('debug_snap_select', 3), # 25 - 27
     construct.Flag('debug_pol_select'),         # 24
     construct.Padding(2),                       # 22 - 23
-    construct.Flag('fine_chan_tvg_post'),       # 21
+    construct.Flag('fine_tvg'),                 # 21
     construct.Flag('adc_tvg'),                  # 20
     construct.Flag('fdfs_tvg'),                 # 19
     construct.Flag('packetiser_tvg'),           # 18
@@ -190,7 +188,7 @@ def coarse_channel_select(c, mixer_sel = -1, channel_sel = -1):
         corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, mixer_select = True if mixer_sel == 1 else False)
     elif channel_sel > -1:
         corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = channel_sel)
-        self.config['center_freq'] = (channel_sel * self.config['bandwidth']) + (self.config['bandwidth'] / 2.)
+        c.config['center_freq'] = (channel_sel * c.config['bandwidth']) + (c.config['bandwidth'] / 2.)
     else:
         return
     # force a SPEAD update
@@ -212,17 +210,17 @@ snap_fengine_adc = construct.BitStruct(snap_adc,
     construct.BitField("d1_1", 8),
     construct.BitField("d1_2", 8),
     construct.BitField("d1_3", 8))
-def get_snap_adc(c, fpgas = []):
+def get_snap_adc(c, fpgas = [], wait_period = 3):
     """
     Read raw samples from the ADC snap block.
     2 pols, each one 4 parallel samples f8.7. So 64-bits total.
     """
-    raw = snap.snapshots_get(fpgas = fpgas, dev_names = snap_adc, wait_period = 3)
-    repeater = construct.GreedyRepeater(snap_fengine_adc) 
+    raw = snap.snapshots_get(fpgas = fpgas, dev_names = snap_adc, wait_period = wait_period)
+    repeater = construct.GreedyRepeater(snap_fengine_adc)
     rv = []
     for index, d in enumerate(raw['data']):
         upd = repeater.parse(d)
-        data = [[],[]]
+        data = [[], []]
         for ctr in range(0, len(upd)):
             for pol in range(0,2):
                 for sample in range(0,4):
@@ -231,6 +229,63 @@ def get_snap_adc(c, fpgas = []):
                     data[pol].append(f87)
         v = {'fpga_index': index, 'data': data}
         rv.append(v)
+    return rv
+def get_snap_adc_DUMB(c, fpgas = [], wait_period = 3):
+    """
+    Read raw samples from the ADC snap block.
+    2 pols, each one 4 parallel samples f8.7. So 64-bits total.
+    """
+    raw = snap.snapshots_get(fpgas = fpgas, dev_names = snap_adc, wait_period = wait_period)
+    repeater = construct.GreedyRepeater(snap_fengine_adc)
+    rv = []
+    for index, d in enumerate(raw['data']):
+        data = [[],[]]
+        od = numpy.fromstring(d, dtype = numpy.int8)
+        for ctr in range(0, len(od), 8):
+            for ctr2 in range(0,4):
+                data[0].append(od[ctr + ctr2])
+            for ctr2 in range(4,8):
+                data[1].append(od[ctr + ctr2])
+        data = [numpy.array(data[0], dtype=numpy.int8), numpy.array(data[1], dtype=numpy.int8)]
+        v = {'fpga_index': index, 'data': data}
+        rv.append(v)
+    return rv
+def get_adc_snapshot(c, ant_names, trig_level = -1, sync_to_pps = True):
+    if (trig_level >= 0) or (sync_to_pps == False):
+        raise RuntimeError('Not currently supported. Soon, Captain, soon...')
+
+    # horrid horrid translation step because of that KAK way data is organised in this package
+    fpgas = []
+    ffpga_numbers = []
+    ant_details = {}
+    index = 0
+    for ant_str in ant_names:
+        (ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input) = c.get_ant_str_location(ant_str)
+        f = c.ffpgas[ffpga_n]
+        if fpgas.count(f) == 0:
+            fpgas.append(f)
+            ffpga_numbers.append(ffpga_n)
+            ant_details[ffpga_n] = {}
+        ant_details[ffpga_n][feng_input] = ant_str
+    # get the data
+    data = get_snap_adc_DUMB(c, fpgas = fpgas)
+    # mangle it to return it
+    rv = {}
+    for n, d in enumerate(data):
+        for p, poldata in enumerate(d['data']):
+            t = {}
+            t['timestamp'] = 0
+            t['data'] = poldata
+            t['length'] = len(poldata)
+            t['offset'] = 0
+            astr = None
+            try:
+                fnum = ffpga_numbers[n]
+                astr = ant_details[fnum][p]
+            except KeyError:
+                pass
+            if astr != None:
+                rv[astr] = t
     return rv
 
 snap_fengine_debug_coarse_fft_old = construct.BitStruct(snap_debug,
@@ -296,6 +351,28 @@ def get_snap_coarse_fft(c, fpgas = [], pol = 0):
 #    construct.BitField("p0_i", 18),
 #    construct.BitField("p1_r", 18),
 #    construct.BitField("p1_i", 18))
+snap_fengine_debug_fine_fft_tvg = construct.BitStruct(snap_debug,
+    construct.Padding(128-32),
+    construct.BitField("ctr", 32))
+def get_snap_fine_tvg(c, fpgas, offset = -1):
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = 2)
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1, tvg_en = True, fine_tvg = True)
+    import time
+    time.sleep(1)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        repeater = construct.GreedyRepeater(snap_fengine_debug_fine_fft_tvg)
+        up = repeater.parse(d)
+        fdata = []
+        for a in up:
+            p0c = a['ctr']
+            fdata.append(p0c)
+        rd.append(fdata)
+    return rd
 snap_fengine_debug_fine_fft = construct.BitStruct(snap_debug,
     construct.BitField("p0_r", 32),
     construct.BitField("p0_i", 32),
@@ -305,7 +382,7 @@ def get_snap_fine(c, debug_select, fpgas, offset = -1):
     if len(fpgas) == 0:
         fpgas = c.ffpgas
     corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1)
-    corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = debug_select)
+    #corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = debug_select)
     snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
     rd = []
     for ctr in range(0, len(snap_data['data'])):
@@ -416,15 +493,43 @@ snap_fengine_xaui = construct.BitStruct("snap_debug",
     construct.Flag("sync"),
     construct.Flag("hdr_valid"),
     construct.BitField("data", 64))
-def get_snap_xaui(c, fpgas = [], offset = -1):
+def get_snap_xaui(c, fpgas = [], offset = -1, man_trigger = False, man_valid = False, wait_period = 3):
     """
     Read the XAUI data out of the general debug snap block.
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
     corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 4)
-    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = wait_period, offset = offset, man_trig = man_trigger, man_valid = man_valid, circular_capture = False)
     return snap_data
+
+snap_fengine_gbe_tx = construct.BitStruct("snap_debug", 
+    construct.Padding(128 - 64 - 32 - 6),  
+    construct.Flag("eof"), 
+    construct.Flag("link_up"), 
+    construct.Flag("led_tx"), 
+    construct.Flag("tx_full"), 
+    construct.Flag("tx_over"), 
+    construct.Flag("valid"),
+    construct.BitField("ip_addr", 32),
+    construct.BitField("data", 64))
+def get_snap_feng_10gbe(c, fpgas = [], offset = -1,  man_trigger = False, man_valid = False):
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 5)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset, man_trig = man_trigger, man_valid = man_valid, circular_capture = False)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        repeater = construct.GreedyRepeater(snap_fengine_gbe_tx)
+        up = repeater.parse(d)
+        for a in up:
+            a['link_down'] = not a['link_up']
+            a['hdr_valid'] = False
+            a['mrst'] = False
+            a['sync'] = False
+        rd.append(up)
+    return rd
 
 def DONE_get_fine_fft_snap(correlator):
     # interpret the ant_string

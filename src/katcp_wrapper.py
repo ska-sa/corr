@@ -38,14 +38,13 @@ class FpgaClient(BlockingClient):
            @param logger Object: Logger to log to.
            """
         super(FpgaClient, self).__init__(host, port, tb_limit=tb_limit,timeout=timeout, logger=logger)
-        self.host=host
+        self.host = host
         self._timeout = timeout
-        self.start(daemon=True)
+        self.start(daemon = True)
 
     def inform_log(self,message):
         "If we get a log inform, log it."
         DeviceLogger.log_to_python(self._logger, message)
-        
 
     def _request(self, name, *args):
         """Make a blocking request and check the result.

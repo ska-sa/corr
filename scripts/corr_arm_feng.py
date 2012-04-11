@@ -40,14 +40,14 @@ if __name__ == '__main__':
 
 try:    
     print 'Connecting...',
-    c=corr.corr_functions.Correlator(config_file=config_file,log_level=logging.DEBUG if verbose else logging.INFO, connect=False)
+    c = corr.corr_functions.Correlator(config_file=config_file,log_level=logging.DEBUG if verbose else logging.INFO, connect=False)
     c.connect()
     print 'done'
 
     print ''' Syncing the F engines...''',
     sys.stdout.flush()
-    trig_time=c.arm()
-    print 'Armed. Expect trigg at %s local (%s UTC).'%(time.strftime('%H:%M:%S',time.localtime(trig_time)),time.strftime('%H:%M:%S',time.gmtime(trig_time))),
+    trig_time = c.arm()
+    print 'Armed. Expect trigg at %s local (%s UTC).' % (time.strftime('%H:%M:%S', time.localtime(trig_time)), time.strftime('%H:%M:%S', time.gmtime(trig_time))),
     print 'SPEAD packet sent.'
 
     print('Resyncing VACCs...'),

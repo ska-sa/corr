@@ -29,6 +29,13 @@ def exit_clean():
     except: pass
     exit()
 
+def tvg_check(fsrv, count, d, freq):
+    if not d.hdr_valid:
+        data_chan = d.data & 0xffffffff
+        if data_chan != freq:
+            #raise RuntimeError("[%s] header says freq %d, tvg data has %d instead." % (fsrv, freq, data_chan))
+            print "ERROR: [%s] header says freq %d, tvg data has %d instead." % (fsrv, freq, data_chan)
+
 def print_packet_info_basic(server, count, d):
     print '[%s @ %4i]: %016X' % (server, count, d.data),
     if d.eof: print '[EOF]',
@@ -147,8 +154,12 @@ if __name__ == '__main__':
     p.set_description(__doc__)
     p.add_option('-t', '--man_trigger', dest='man_trigger', action='store_true', default = False,
         help='Trigger the snap block manually')   
-    p.add_option('-v', '--verbose', dest='verbose', action='store_true',
+    p.add_option('-e', '--man_valid', dest='man_valid', action='store_true', default = False,
+        help='Apply manual valid to the snap write enable.')   
+    p.add_option('-v', '--verbose', dest='verbose', action='store_true', default = False,
         help='Print raw output.')  
+    p.add_option('', '--tvg_check', dest='tvg', action='store_true', default = False,
+        help='Enable the packetiser TVG and check the packet and channel info in the tvg data against the header info.')  
     p.add_option('-o', '--offset', dest='offset', type='int', default=0,
         help='Offset in CHANNELS stored in the XAUI snap block whence we shall start capturing. Default: 0')
     p.add_option('-x', '--xaui_port', dest='xaui_port', type='int', default=0,
@@ -184,6 +195,11 @@ try:
     
     print 'You should have %i XAUI cables connected to each F engine FPGA.' % (c.config['n_xaui_ports_per_ffpga'])
 
+    if opts.tvg:
+        print "Enabling packetiser TVG..."
+        if c.is_narrowband():
+            corr.corr_functions.write_masked_register(c.ffpgas, corr.corr_nb.register_fengine_control, tvg_en = True, packetiser_tvg = True)
+
     # 33 = one 64-bit packet in 128-bit snap, 4 16-bit (2 pols, 4.3r+i each) values in each packet. So 128-deep collections of f-channels take 32 packets. Plus one header packet.
     # (128 / 8) = size of 128-bit snap block word in bytes
     # The offset is in bytes, but must work on packets, because the 128-bit words each contain a packet and the fchan sets take a certain number of packets.
@@ -192,7 +208,7 @@ try:
     print 'Grabbing data off snap blocks with offset %i channels (%i bytes) and unpacking it...' % (opts.offset, offset),
     #for x in range(c.config['n_xaui_ports_per_ffpga']):
     #bram_dmp = c.fsnap_all(dev_name,brams,man_trig=man_trigger,wait_period=3,offset=opts.offset*num_bits*2*2/64*packet_len)
-    data = corr.snap.get_xaui_snapshot(c, offset = offset, man_trigger = opts.man_trigger)
+    data = corr.snap.get_xaui_snapshot(c, offset = offset, man_trigger = opts.man_trigger, man_valid = opts.man_valid)
     print 'done.'
 
     print 'Analysing packets...'
@@ -205,20 +221,21 @@ try:
         report.append(dict())
         report[f]['pkt_total'] = 0
         pkt_hdr_idx = -1
+        pkt_hdr_current_freq = -1
         for i, d in enumerate(fengine_data['data']):
-
-            #print "dataword%i" % i,
-            #print d
-
+            if opts.tvg:
+                tvg_check(fsrv, i, d, pkt_hdr_current_freq)
             if opts.verbose:
                 print_packet_info_basic(fsrv, i, d)
             if d.link_down:
                 print '[%s] LINK DOWN AT %i' % (fsrv, i)
             elif d.hdr_valid:
+                pkt_mcnt = (d.data & ((2**64)-(2**16)))>>16
+                pkt_hdr_current_freq = pkt_mcnt % n_chans
                 pkt_hdr_idx = i
                 # skip_indices records positions in table which are ADC updates and should not be counted towards standard data.
                 skip_indices = []
-                #print ('HEADER RECEIVED')
+                #print ('HEADER RECEIVED @ %i with freq %i' % (i, pkt_hdr_current_freq))
 #            elif bram_oob[f]['adc'][i]:
 #                print "Got a legacy ADC amplitude update. This shouldn't happen in modern designs. I think you connected an old (or a faulty!) F engine."
 #                skip_indices.append(i)
