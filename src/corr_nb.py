@@ -481,6 +481,29 @@ def get_snap_ct(c, fpgas = [], offset = -1):
             fdata_p1.extend(p1)
         rd.append([fdata_p0, fdata_p1])
     return rd
+def get_snap_quant_wbc_compat(c, fpgas = [], offset = -1):
+    """ 
+    Read and return data from the quantiser. Both pols are returned.
+    """
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 2)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        up = numpy.fromstring(d, dtype = numpy.uint8)
+        fdata_p0 = []
+        fdata_p1 = []
+        for a in range(0, len(up), 2): 
+            pol0_r_bits = (up[a]   & ((2**8) - (2**4))) >> 4
+            pol0_i_bits = (up[a]   & ((2**4) - (2**0)))
+            pol1_r_bits = (up[a+1] & ((2**8) - (2**4))) >> 4
+            pol1_i_bits = (up[a+1] & ((2**4) - (2**0)))
+            fdata_p0.append(float(((numpy.int8(pol0_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol0_i_bits << 4) >> 4)))))
+            fdata_p1.append(float(((numpy.int8(pol1_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol1_i_bits << 4) >> 4)))))
+        rd.append([fdata_p0, fdata_p1])
+    return rd
 
 # the xaui snap block on the f-engine - this is just after packetisation
 snap_fengine_xaui = construct.BitStruct("snap_debug",

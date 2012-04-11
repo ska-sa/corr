@@ -154,7 +154,8 @@ def get_quant_snapshot(correlator, ant_str, n_spectra = 1, pol = 0):
             td = []
             offset = 0
             while len(td) < correlator.config['n_chans']:
-                ttd = corr.corr_nb.get_snap_quant(correlator, [fpga], offset = offset)[0][pol]
+                #ttd = corr.corr_nb.get_snap_quant(correlator, [fpga], offset = offset)[0][pol]
+                ttd = corr.corr_nb.get_snap_quant_wbc_compat(correlator, [fpga], offset = offset)[0][pol]
                 td.extend(ttd)
                 offset = offset + len(ttd)
             unpacked_vals.extend(td)
