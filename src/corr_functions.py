@@ -2213,7 +2213,6 @@ class Correlator:
             shape=[],fmt=spead.mkfmt(('f',64)),
             init_val=self.config['spead_timestamp_scale_factor'])
 
-
         tx.send_heap(ig.get_heap())
         self.syslogger.info("Issued SPEAD timing metadata to %s:%i."%(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
 
@@ -2247,7 +2246,6 @@ class Correlator:
 
         tx.send_heap(ig.get_heap())
         self.syslogger.info("Issued SPEAD EQ metadata to %s:%i."%(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
-
 
     def spead_data_descriptor_issue(self):
         """ Issues the SPEAD data descriptors for the HW 10GbE output, to enable receivers to decode the data."""

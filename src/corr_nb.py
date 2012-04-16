@@ -422,26 +422,42 @@ snap_fengine_debug_quant = construct.BitStruct(snap_debug,
     construct.BitField("p0_i", 4),
     construct.BitField("p1_r", 4),
     construct.BitField("p1_i", 4))
-def get_snap_quant(c, fpgas = [], offset = -1):
+def get_snap_quant_wbc_compat(c, fpgas = [], offset = -1):
+    return get_snap_quant(c = c, fpgas = fpgas, offset = offset, wbc_compat = True)
+def get_snap_quant(c, fpgas = [], offset = -1, wbc_compat = False, debug_data = None):
     """
     Read and return data from the quantiser. Both pols are returned.
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
     corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 2)
-    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+    if debug_data == None:
+        snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+    else:
+        snap_data = debug_data
     rd = []
     for ctr in range(0, len(snap_data['data'])):
         d = snap_data['data'][ctr]
-        repeater = construct.GreedyRepeater(snap_fengine_debug_quant)
-        up = repeater.parse(d)
         fdata_p0 = []
         fdata_p1 = []
-        for a in up:
-            p0c = bin2fp(a['p0_r'], 4, 3) + (1j * bin2fp(a['p0_i'], 4, 3))
-            p1c = bin2fp(a['p1_r'], 4, 3) + (1j * bin2fp(a['p1_i'], 4, 3))
-            fdata_p0.append(p0c)
-            fdata_p1.append(p1c)
+        if not wbc_compat:
+            repeater = construct.GreedyRepeater(snap_fengine_debug_quant)
+            up = repeater.parse(d)
+            for a in up:
+                p0c = bin2fp(a['p0_r'], 4, 3) + (1j * bin2fp(a['p0_i'], 4, 3))
+                p1c = bin2fp(a['p1_r'], 4, 3) + (1j * bin2fp(a['p1_i'], 4, 3))
+                fdata_p0.append(p0c)
+                fdata_p1.append(p1c)
+        else:
+            # remember that the data is 16-bit padded up to 128-bit because of the one debug snap block, so only 2 of every 16 bytes are valid data
+            up = numpy.fromstring(d, dtype = numpy.uint8)
+            for a in range(14, len(up), 16):
+                pol0_r_bits = (up[a]   & ((2**8) - (2**4))) >> 4
+                pol0_i_bits = (up[a]   & ((2**4) - (2**0)))
+                pol1_r_bits = (up[a+1] & ((2**8) - (2**4))) >> 4
+                pol1_i_bits = (up[a+1] & ((2**4) - (2**0)))
+                fdata_p0.append(float(((numpy.int8(pol0_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol0_i_bits << 4) >> 4)))))
+                fdata_p1.append(float(((numpy.int8(pol1_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol1_i_bits << 4) >> 4)))))
         rd.append([fdata_p0, fdata_p1])
     return rd
 

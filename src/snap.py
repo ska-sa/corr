@@ -148,13 +148,13 @@ def get_quant_snapshot(correlator, ant_str, n_spectra = 1, pol = 0):
                 pol_r_bits = (val & ((2**8) - (2**4))) >> 4
                 pol_i_bits = (val & ((2**4) - (2**0)))
                 # cast up to signed numbers:
-                unpacked_vals.append(float(((numpy.int8(pol_r_bits << 4)>> 4))) + 1j * float(((numpy.int8(pol_i_bits << 4)>> 4))))
+                unpacked_vals.append(float(((numpy.int8(pol_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol_i_bits << 4) >> 4)))))
         elif correlator.is_narrowband():
             # the narrowband snap block may be shorter than one spectrum, so make sure we get enough data
             td = []
             offset = 0
             while len(td) < correlator.config['n_chans']:
-                ttd = corr.corr_nb.get_snap_quant(correlator, [fpga], offset = offset)[0][pol]
+                ttd = corr.corr_nb.get_snap_quant_wbc_compat(correlator, [fpga], offset = offset)[0][pol]
                 td.extend(ttd)
                 offset = offset + len(ttd)
             unpacked_vals.extend(td)
