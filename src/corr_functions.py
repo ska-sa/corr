@@ -1959,6 +1959,9 @@ class Correlator:
             coeffs = self.eq_default_get(ant_str)
         elif len(init_coeffs) == n_coeffs:
             coeffs = init_coeffs
+        elif len(init_coeffs) == self.config['n_chans']:
+            coeffs = init_coeffs[0::self.config['eq_decimation']]
+            self.floggers[ffpga_n].warn("You specified %i EQ coefficients but your system only supports %i actual values. Only writing every %ith value."%(self.config['n_chans'],n_coeffs,self.config['eq_decimation']))
         elif len(init_coeffs)>0: 
             raise RuntimeError ('You specified %i coefficients, but there are %i EQ coefficients in this design.'%(len(init_coeffs),n_coeffs))
         else:
