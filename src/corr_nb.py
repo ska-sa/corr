@@ -178,21 +178,24 @@ def feng_status_get(c, ant_str):
         rv['lru_state']='ok'
     return rv
 
-def coarse_channel_select(c, mixer_sel = -1, channel_sel = -1):
+def channel_select(c, freq_hz = -1, no_select = False):
     """
-    Select a coarse channel to process further with the fine FFT.
+    Set the coarse channel based on a given center frequency, given in Hz.
     """
-    if (mixer_sel > -1) and (channel_sel > -1):
-        corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, mixer_select = True if mixer_sel == 1 else False, channel_select = channel_sel)
-    elif mixer_sel > -1:
-        corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, mixer_select = True if mixer_sel == 1 else False)
-    elif channel_sel > -1:
-        corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = channel_sel)
-        c.config['center_freq'] = (channel_sel * c.config['bandwidth']) + (c.config['bandwidth'] / 2.)
-    else:
-        return
-    # force a SPEAD update
-    c.spead_static_meta_issue()
+    if freq_hz == -1:
+        raise RuntimeError('Calling this function without specifying a frequency makes no sense.')
+    channel_bw = c.config['bandwidth']
+    total_bw = c.config['rf_bandwidth']
+    coarse_chans = c.config['coarse_chans']
+    chan = round(freq_hz / total_bw * coarse_chans)
+    if chan >= coarse_chans:
+        raise RuntimeError('Frequency %i is too high.' % freq_hz)
+    chan_cf = chan * channel_bw
+    if not no_select:
+        corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = chan)
+        c.config['center_freq'] = chan_cf
+        c.spead_static_meta_issue()
+    return chan, freq_hz - chan_cf
 
 """
 SNAP blocks in the narrowband system.

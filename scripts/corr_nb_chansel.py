@@ -43,6 +43,10 @@ if __name__ == '__main__':
 
 lh = corr.log_handlers.DebugLogHandler(100)
 try:
+
+    print 'No longer works.'
+    exit(1)
+
     print 'Connecting...',
     c = corr.corr_functions.Correlator(config_file = config_file, log_level = logging.INFO, connect = False, log_handler = lh)
     if not c.is_narrowband():
