@@ -723,38 +723,50 @@ class Correlator:
         """Arms all F engines, records arm time in config file and issues SPEAD update. Returns the UTC time at which the system was sync'd in seconds since the Unix epoch (MCNT=0)"""
         # tested ok corr-0.5.0 2010-07-19
         # wait for within 100ms of a half-second, then send out the arm signal.
+        rv = True
         ready = ((int(time.time() * 10) % 10) == 5)
         while not ready: 
             ready = ((int(time.time() * 10) % 10) == 5)
         #trig_time = int(numpy.ceil(time.time() + 1)) # syncs on the next second, to ensure any sync pulses already in the datapipeline have a chance to propagate out.
         #self.config.write_var('sync_time', str(trig_time))
-        self.feng_ctrl_set_all(arm = 'pulse')
-        max_wait = 10
         start_time = time.time()
+        self.feng_ctrl_set_all(arm = 'pulse')
+        max_wait = 5
+        #print 'Issued arm at %f.'%start_time
         done = False
         armed_stat = []
         while (time.time() - start_time < max_wait) and (not done):
             armed_stat = [armed[0] for armed in self.feng_uptime()]
             done_now = True
+            #print time.time(), armed_stat
             for i, stat in enumerate(armed_stat):
                 if armed_stat[i]: done_now = False
             if done_now: done = True
+            time.sleep(0.1)
         done_time = time.time()
+        if not done:
+            for i,stat in enumerate(armed_stat):
+                if armed_stat[i]:
+                    self.floggers[i].error("Did not trigger. Check clock and 1PPS.")
+                    rv = False
+                else:
+                    self.floggers[i].info('Triggered.')
+        else:
+            self.syslogger.info("All boards triggered.")
+        #print 'Detected trigger at %f.'%done_time
         self.config.write_var('sync_time', str(numpy.floor(done_time)))
-        rv = True
-        for i,stat in enumerate(armed_stat):
-            if armed_stat[i]:
-                self.floggers[i].error("Did not trigger. Check clock and 1PPS.")
-                rv = False
-            else:
-                self.floggers[i].info("Arm successful.")
+        elapsed_time=numpy.floor(done_time)-numpy.ceil(start_time)
+        if (elapsed_time) > self.config['feng_sync_delay']:
+            self.syslogger.error('We expected to trigger the boards in %i 1PPS pulses, but %i seconds have elapsed.'%(self.config['feng_sync_delay'],elapsed_time))
+            raise RuntimeError('We expected to trigger the boards in %i 1PPS pulses, but %i seconds have elapsed.'%(self.config['feng_sync_delay'],elapsed_time))
+        #print 'Recorded sync time as at %f.'%numpy.floor(done_time)
         if rv == False:
             self.syslogger.error("Failed to arm and trigger the system properly.")
             raise RuntimeError("Failed to arm and trigger the system properly.")
         if spead_update:
             self.spead_time_meta_issue()
-        self.syslogger.info("All boards armed and triggered OK.")
-        return done_time
+        self.syslogger.info("Arm OK, sync time recorded as %i."%numpy.floor(done_time))
+        return int(numpy.floor(done_time))
 
     def get_roach_gbe_conf(self,start_addr,fpga,port):
         """Generates 10GbE configuration strings for ROACH-based xengines starting from 

@@ -24,7 +24,7 @@ setup(name = 'corr',
     package_dir = {'corr':'src'},
     packages = ['corr'],
     scripts=glob.glob('scripts/*'),
-    data_files=[('/etc/corr',['etc/config']),
+    data_files=[('/etc/corr',['etc/default']),
                 #('/var/run/corr',['support_files/sync_time'])
                 ]
 )

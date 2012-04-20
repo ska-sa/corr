@@ -69,6 +69,8 @@ mcnt_bits = 48
 pcnt_bits = 48
 # the sync period set in the f-engine design. used for f-engine arming. this default is for WIDEBAND!
 feng_sync_period = 134217728
+# the number of 1PPS pulses that we expect to elapse between arming the system and actually triggering. This is usually 2, to allow any sync pulses in the pipeline to flush before resyncing.
+feng_sync_delay=2
 
 [receiver]
 #How is data to be retrieved from the correlator? either ppc or 10GbE. Only 10GbE is fully (ie automatically) supported. ppc will require manual intervention with the cn_tx.py script.
