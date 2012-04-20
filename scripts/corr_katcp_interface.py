@@ -28,20 +28,17 @@ class DeviceExampleServer(katcp.DeviceServer):
         super(DeviceExampleServer, self).__init__(*args, **kwargs)
         self.c = None
 
-    @request(include_msg = True)
-    def request_nb_set_cf(self, sock, orgmsg):
+    @request(Int(default=-1))
+    @return_reply(Int(), Int())
+    def request_nb_set_cf(self, sock, freq):
         """Sets the center frequency for narrowband."""
         if self.c is None:
-            return katcp.Message.reply(orgmsg.name, "fail","... you haven't connected yet!")
+            return ("fail","... you haven't connected yet!")
         try:
-            if len(orgmsg.arguments) == 1:
-                dcf = int(orgmsg.arguments[0])
-            else:
-                return katcp.Message.reply(orgmsg.name, "fail", "No center frequency was supplied.")
-            rv = corr.corr_nb.channel_select(self.c, dcf)
-            return katcp.Message.reply(orgmsg.name, "ok", rv)
+            rva, rvb = corr.corr_nb.channel_select(self.c, freq)
+            return ("ok", rva, rvb)
         except:
-            return katcp.Message.reply(orgmsg.name, "fail", "Something broke spectacularly. Check the log.")
+            return ("fail", "Something broke spectacularly. Check the log.")
 
     @request(Str(default='/etc/corr/default'), Int(default=100))
     @return_reply()

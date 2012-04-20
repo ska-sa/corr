@@ -187,7 +187,7 @@ def channel_select(c, freq_hz = -1, no_select = False):
     channel_bw = c.config['bandwidth']
     total_bw = c.config['rf_bandwidth']
     coarse_chans = c.config['coarse_chans']
-    chan = round(freq_hz / total_bw * coarse_chans)
+    chan = int(round(freq_hz / total_bw * coarse_chans))
     if chan >= coarse_chans:
         raise RuntimeError('Frequency %i is too high.' % freq_hz)
     chan_cf = chan * channel_bw
