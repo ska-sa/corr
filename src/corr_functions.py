@@ -727,15 +727,13 @@ class Correlator:
         ready = ((int(time.time() * 10) % 10) == 5)
         while not ready: 
             ready = ((int(time.time() * 10) % 10) == 5)
-        #trig_time = int(numpy.ceil(time.time() + 1)) # syncs on the next second, to ensure any sync pulses already in the datapipeline have a chance to propagate out.
-        #self.config.write_var('sync_time', str(trig_time))
         start_time = time.time()
         self.feng_ctrl_set_all(arm = 'pulse')
-        max_wait = 5
+        max_wait = self.config['feng_sync_delay'] + 2
         #print 'Issued arm at %f.'%start_time
         done = False
         armed_stat = []
-        while (time.time() - start_time < max_wait) and (not done):
+        while ((time.time() - start_time) < max_wait) and (not done):
             armed_stat = [armed[0] for armed in self.feng_uptime()]
             done_now = True
             #print time.time(), armed_stat
