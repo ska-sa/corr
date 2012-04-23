@@ -29,14 +29,14 @@ class DeviceExampleServer(katcp.DeviceServer):
         self.c = None
 
     @request(Int(default=-1))
-    @return_reply(Int(), Int())
+    @return_reply(Int(), Int(), Int())
     def request_nb_set_cf(self, sock, freq):
         """Sets the center frequency for narrowband."""
         if self.c is None:
             return ("fail","... you haven't connected yet!")
         try:
-            rva, rvb = corr.corr_nb.channel_select(self.c, freq)
-            return ("ok", rva, rvb)
+            rva, rvb, rvc = corr.corr_nb.channel_select(self.c, freq)
+            return ("ok", rva, rvb, rvc)
         except:
             return ("fail", "Something broke spectacularly. Check the log.")
 

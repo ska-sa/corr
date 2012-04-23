@@ -182,6 +182,8 @@ def channel_select(c, freq_hz = -1, no_select = False):
     """
     Set the coarse channel based on a given center frequency, given in Hz.
     """
+    if not c.is_narrowband():
+        raise RuntimeError('This command cannot be run in the current mode.')
     if freq_hz == -1:
         raise RuntimeError('Calling this function without specifying a frequency makes no sense.')
     channel_bw = c.config['bandwidth']
@@ -192,10 +194,15 @@ def channel_select(c, freq_hz = -1, no_select = False):
         raise RuntimeError('Frequency %i is too high.' % freq_hz)
     chan_cf = chan * channel_bw
     if not no_select:
-        corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = chan)
-        c.config['center_freq'] = chan_cf
-        c.spead_static_meta_issue()
-    return chan, freq_hz - chan_cf
+        try:
+            corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = chan)
+            c.config['center_freq'] = chan_cf
+            c.spead_static_meta_issue()
+        except:
+            errmsg = 'Something bad happened trying to write the coarse channel select register.'
+            c.syslogger.error(errmsg)
+            raise RuntimeError(errmsg)
+    return chan_cf, chan, freq_hz - chan_cf
 
 """
 SNAP blocks in the narrowband system.
