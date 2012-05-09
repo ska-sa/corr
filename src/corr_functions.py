@@ -1452,7 +1452,7 @@ class Correlator:
     def acc_n_set(self,n_accs=-1,spead_update=True):
         """Set the Accumulation Length (in # of spectrum accumulations). If not specified, get the config from the config file."""
         if n_accs<0: n_accs=self.config['acc_len']
-        n_accs_vacc = int(n_accs / self.config['xeng_acc_len'])
+        n_accs_vacc = int(round(float(n_accs) / float(self.config['xeng_acc_len'])))
         self.xwrite_int_all('acc_len', n_accs_vacc)
         self.syslogger.info("Set number of VACC accumulations to %5i."%n_accs_vacc)
         self.vacc_sync() #this is needed in case we decrease the accumulation period on a new_acc transition where some vaccs would then be out of sync
