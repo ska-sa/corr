@@ -103,8 +103,8 @@ def get_adc_snapshots(correlator, ant_strs = [], trig_level = -1, sync_to_pps = 
         fpgas.append(correlator.ffpgas[ffpga_n])
         dev_names.append('adc_snap%i' % feng_input)
 
-    if correlator.is_narrowband():
-        return corr.corr_nb.get_adc_snapshot(c = correlator, ant_names = ant_strs, trig_level = trig_level, sync_to_pps = sync_to_pps)
+    #if correlator.is_narrowband():
+    #    return corr.corr_nb.get_adc_snapshot(c = correlator, ant_names = ant_strs, trig_level = trig_level, sync_to_pps = sync_to_pps)
 
     init_mcnt = correlator.mcnt_current_get(ant_str = ant_strs[0])
     mcnt_lsbs = init_mcnt & 0xffffffff
