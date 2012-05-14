@@ -8,7 +8,7 @@ Revisions:\n
 2010-11-16: PVP: Working with 4 bits fixed (affects number of bins). Need reconfigurable dp and number of quant bits.
 2010-08-06: JRM: Initial version based on corr_adc_hist.py from Paul.\n
 '''
-import matplotlib, time, corr, numpy, struct, sys, pylab, os,logging
+import matplotlib, time, corr, numpy, struct, sys, pylab, os, logging
 
 # exit cleanly
 def exit_fail():
@@ -69,18 +69,8 @@ def getUnpackedData(requiredPol):
     antLocation = c.get_ant_str_location(requiredPol)
     # which fpga do we need?
     requiredFpga = antLocation[0]
-    # which ADC is it on that FPGA?
-    requiredFengInput = antLocation[4]
     # get the data
-    snapName = 'quant_snap' + str(requiredFengInput)
-    bram_dmp = c.ffpgas[requiredFpga].snapshot_get(snapName, man_trig = True, man_valid = True, wait_period = 0.1)
-    # unpack the data
-    pckd_8bit = struct.unpack('>%iB' % (bram_dmp['length']), bram_dmp['data'])
-    unpacked_vals=[]
-    for val in pckd_8bit:
-        pol_r_bits = (val & ((2**8) - (2**4))) >> 4
-        pol_i_bits = (val & ((2**4) - (2**0)))
-        unpacked_vals.append(float(((numpy.int8(pol_r_bits << 4) >> 4))) / (2**binaryPoint) + 1j * float(((numpy.int8(pol_i_bits << 4) >> 4))) / (2**binaryPoint))
+    unpacked_vals = corr.snap.get_quant_snapshot(correlator = c, ant_str = requiredPol, man_trig = True, man_valid = True, wait_period = 0.1)
     return unpacked_vals, requiredFpga
 
 # make the log handler
@@ -97,7 +87,7 @@ else:
 
 try:    
     print 'Connecting...',
-    c=corr.corr_functions.Correlator(config_file=config_file,log_handler=lh,log_level=logging.DEBUG if verbose else logging.INFO, connect=False)
+    c = corr.corr_functions.Correlator(config_file = config_file, log_handler = lh, log_level = logging.DEBUG if verbose else logging.INFO, connect = False)
     c.connect()
     print 'done'
 
