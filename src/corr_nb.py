@@ -51,11 +51,11 @@ register_fengine_control = construct.BitStruct('control',
     construct.BitField('debug_snap_select', 3), # 25 - 27
     construct.Flag('debug_pol_select'),         # 24
     construct.Padding(2),                       # 22 - 23
-    construct.Flag('fine_tvg'),                 # 21
-    construct.Flag('adc_tvg'),                  # 20
-    construct.Flag('fdfs_tvg'),                 # 19
-    construct.Flag('packetiser_tvg'),           # 18
-    construct.Flag('ct_tvg'),                   # 17
+    construct.Flag('tvgsel_fine'),              # 21
+    construct.Flag('tvgsel_adc'),               # 20
+    construct.Flag('tvgsel_fdfs'),              # 19
+    construct.Flag('tvgsel_pkt'),               # 18
+    construct.Flag('tvgsel_ct'),                # 17
     construct.Flag('tvg_en'),                   # 16
     construct.Padding(4),                       # 12 - 15
     construct.Flag('flasher_en'),               # 11

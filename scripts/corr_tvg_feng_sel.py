@@ -45,11 +45,12 @@ if  __name__ == '__main__':
     verbose=opts.verbose
 
 try:
+    raise RuntimeError('This script is farked. Don''t use it.')
+
     print 'Connecting...',
     c=corr.corr_functions.Correlator(config_file=config_file,log_level=logging.DEBUG if verbose else logging.INFO,connect=False)
     c.connect()
     print 'done'
-
 
     print 'F-engine TVGs:'
     kwargs = {}
