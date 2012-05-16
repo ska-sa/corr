@@ -339,15 +339,16 @@ class DeviceExampleServer(katcp.DeviceServer):
             return katcp.Message.reply(orgmsg.name,"fail","Antenna not found. Valid entries are %s."%str(self.c.config._get_ant_mapping_list()))
 
         eq_coeffs=[]
-        if len(orgmsg.arguments) != (self.c.config['n_chans']+1): #+1 to account for antenna label
+        if len(orgmsg.arguments) == 2: #+1 to account for antenna label, assume single number across entire band
+            self.c.eq_spectrum_set(ant_str,init_poly=[eval(orgmsg.arguments[1])])
+            return katcp.Message.reply(orgmsg.name,'ok',"Set all coefficients to %i."%eval(orgmsg.arguments[1]))
+        elif len(orgmsg.arguments) != (self.c.config['n_chans']+1): #+1 to account for antenna label
             return katcp.Message.reply(orgmsg.name,"fail","Sorry, you didn't specify the right number of coefficients (expecting %i, got %i)."%(self.c.config['n_chans'],len(orgmsg.arguments)-1))
-
-        for arg in orgmsg.arguments[1:]:
-            eq_coeffs.append(eval(arg))
-
-        self.c.eq_spectrum_set(ant_str,init_coeffs=eq_coeffs)
-
-        return katcp.Message.reply(orgmsg.name,'ok')
+        else:
+            for arg in orgmsg.arguments[1:]:
+                eq_coeffs.append(eval(arg))
+            self.c.eq_spectrum_set(ant_str,init_coeffs=eq_coeffs)
+            return katcp.Message.reply(orgmsg.name,'ok')
 
     def request_fr_delay_set(self, sock, orgmsg):
         """Set the fringe rate and delay compensation config for a given antenna. Parms: antpol, fringe_offset (degrees), fr_rate (Hz), delay (seconds), delay rate, load_time (Unix seconds), <ignore check>. If there is a seventh argument, don't do any checks to see if things loaded properly. If the load time is negative, load asap."""
