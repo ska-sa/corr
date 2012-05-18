@@ -259,9 +259,17 @@ class DeviceExampleServer(katcp.DeviceServer):
             if not (ant_str in self.c.config._get_ant_mapping_list()): 
                 return katcp.Message.reply(orgmsg.name,"fail","Antenna not found. Valid entries are: %s"%str(self.c.config._get_ant_mapping_list()))
             unpackedBytes=self.c.get_quant_snapshot(ant_str,n_spectra)
-            for s_n,spectrum in enumerate(unpackedBytes):
-                #print 'Sending inform %i:'%s,unpackedBytes[s]
-                self.reply_inform(sock, katcp.Message.inform(orgmsg.name,*(['%i+%ij'%(val.real,val.imag) for val in unpackedBytes[s_n]])),orgmsg)
+            print 'N spectra: %i.'%n_spectra
+            print unpackedBytes
+            if n_spectra == 1: 
+                self.reply_inform(sock, katcp.Message.inform(orgmsg.name,*(['%i+%ij'%(val.real,val.imag) for val in unpackedBytes])),orgmsg)
+            elif n_spectra >1:
+                for s_n,spectrum in enumerate(unpackedBytes):
+                    #print 'Sending inform %i:'%s,unpackedBytes[s]
+                    print 'trying to send the array:', ['%i+%ij'%(val.real,val.imag) for val in unpackedBytes[s_n]]
+                    self.reply_inform(sock, katcp.Message.inform(orgmsg.name,*(['%i+%ij'%(val.real,val.imag) for val in unpackedBytes[s_n]])),orgmsg)
+            else:
+                raise RuntimeError("Please specify the number of spectra to be greater than zero!")
             return katcp.Message.reply(orgmsg.name,'ok',str(n_spectra))
         except:
             return katcp.Message.reply(orgmsg.name,'fail',"something broke. darn.")
