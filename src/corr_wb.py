@@ -10,10 +10,10 @@ import construct, corr_functions
 # f-engine control register
 register_fengine_control = construct.BitStruct('control',
     construct.Padding(32 - 20 - 1),             # 21 - 31
-    construct.Flag('tvg_noise_sel'),            # 20
-    construct.Flag('tvg_ffdel_sel'),            # 19
-    construct.Flag('tvg_pkt_sel'),              # 18
-    construct.Flag('tvg_ct_sel'),               # 17
+    construct.Flag('tvgsel_noise'),             # 20
+    construct.Flag('tvgsel_ffdel'),             # 19
+    construct.Flag('tvgsel_pkt'),               # 18
+    construct.Flag('tvgsel_ct'),                # 17
     construct.Flag('tvg_en'),                   # 16
     construct.Padding(16 - 13 - 1),             # 14 - 15
     construct.Flag('adc_protect_disable'),      # 13

@@ -380,10 +380,55 @@ class Correlator:
         self.feng_ctrl_set_all(flasher_en=False)
         self.xeng_ctrl_set_all(flasher_en=False)
 
-    def feng_tvg_sel(self,noise=False,ct=False,pkt=False,ffdel=False):
+    def feng_tvg_available_tvgs(self):
+        reg = None
+        if self.is_wideband():
+            reg = corr.corr_wb.register_fengine_control
+        elif self.is_narrowband():
+            reg = corr.corr_nb.register_fengine_control
+        else:
+            raise RuntimeError('Unknown mode.')
+        # go to some lengths to get the names of the fields out of the construct.BitStruct
+        keys = reg.subcon.subcons
+        tvgs = []
+        for k in keys:
+            if type(k) == construct.MappingAdapter:
+                if k.name[0:7] == 'tvgsel_':
+                    tvgs.append(k.name)
+        return tvgs
+
+    def feng_tvg_select(self, **kwargs):
+        """
+        Turn ONE TVG on at a time. Use feng_tvg_vailable_tvgs() to see what TVGs are available to you in the current mode. 
+        """
+        available_tvgs = self.feng_tvg_available_tvgs()
+        newkwargs = {}
+        if len(kwargs) == 0:
+            print 'No TVG given. Available f-engine TVGs in this mode are:'
+            print available_tvgs
+            raise RuntimeError('No TVG specified.')
+        elif len(kwargs) > 1:
+            raise RuntimeError('Only one TVG can be turned on at a time.')
+        matched = False
+        seltvg = kwargs.keys()[0]
+        for avtvg in available_tvgs:
+            newkwargs[avtvg] = False
+            if avtvg == seltvg:
+                newkwargs[avtvg] = True
+                matched = True
+        if not matched:
+            print 'TVG \'%s\' doesn\'t exist. Available f-engine TVGs in this mode are:' % seltvg
+            print available_tvgs
+            raise RuntimeError('Invalid TVG specified.')
+        self.feng_ctrl_set_all(tvg_en = True, **newkwargs)
+        self.feng_ctrl_set_all(tvg_en = False, **newkwargs)
+
+    def feng_tvg_sel_OLD(self, noise = False, ct = False, pkt = False, ffdel = False):
         """Turns TVGs on/off on the F engines."""
-        self.feng_ctrl_set_all(tvg_en=True,  tvg_noise_sel=noise, tvg_ct_sel=ct, tvg_pkt_sel=pkt, tvg_ffdel_sel=ffdel)
-        self.feng_ctrl_set_all(tvg_en=False, tvg_noise_sel=noise, tvg_ct_sel=ct, tvg_pkt_sel=pkt, tvg_ffdel_sel=ffdel)
+        if not self.is_wideband():
+            raise RuntimeError('Only valid in wideband mode.')
+        self.feng_ctrl_set_all(tvg_en = True,  tvgsel_noise = noise, tvgsel_ct = ct, tvgsel_pkt = pkt, tvgsel_ffdel = ffdel)
+        self.feng_ctrl_set_all(tvg_en = False, tvgsel_noise = noise, tvgsel_ct = ct, tvgsel_pkt = pkt, tvgsel_ffdel = ffdel)
 
     def xeng_ctrl_set_all(self, **kwargs):
         write_masked_register(self.xfpgas, corr.corr_wb.register_xengine_control, **kwargs)

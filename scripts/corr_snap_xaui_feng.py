@@ -198,7 +198,12 @@ try:
     if opts.tvg:
         print "Enabling packetiser TVG..."
         if c.is_narrowband():
-            corr.corr_functions.write_masked_register(c.ffpgas, corr.corr_nb.register_fengine_control, tvg_en = True, packetiser_tvg = True)
+            corr.corr_functions.write_masked_register(c.ffpgas, corr.corr_nb.register_fengine_control, tvg_en = True,  tvgsel_pkt = True)
+            corr.corr_functions.write_masked_register(c.ffpgas, corr.corr_nb.register_fengine_control, tvg_en = False, tvgsel_pkt = True)
+        elif c.is_wideband():
+            raise RuntimeError('No TVG in wideband yet.')
+        else
+            raise RuntimeError('Unknown mode.')
 
     # 33 = one 64-bit packet in 128-bit snap, 4 16-bit (2 pols, 4.3r+i each) values in each packet. So 128-deep collections of f-channels take 32 packets. Plus one header packet.
     # (128 / 8) = size of 128-bit snap block word in bytes
