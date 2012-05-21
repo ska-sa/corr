@@ -35,7 +35,7 @@ class DeviceExampleServer(katcp.DeviceServer):
         if self.c is None:
             return ("fail","... you haven't connected yet!")
         try:
-            rva, rvb, rvc = corr.corr_nb.channel_select(self.c, freq)
+            rva, rvb, rvc = corr.corr_nb.channel_select(c = self.c, freq_hz = freq)
             return ("ok", rva, rvb, rvc)
         except:
             return ("fail", "Something broke spectacularly. Check the log.")

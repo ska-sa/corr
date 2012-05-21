@@ -35,6 +35,8 @@ if __name__ == '__main__':
     #    help = 'Select the unmixed(0) or mixed(1) signal path in the F engine.')
     p.add_option('-c', '--channel', dest = 'channel_sel', type = 'int', default = -1, 
         help = 'Select the coarse channel to be further channelised.')
+    p.add_option('-f', '--freq', dest = 'freq_hz', type = 'int', default = -1, 
+        help = 'Select a target frequency, in Hz.')
     opts, args = p.parse_args(sys.argv[1:])
     if args == []:
         config_file = None
@@ -43,10 +45,6 @@ if __name__ == '__main__':
 
 lh = corr.log_handlers.DebugLogHandler(100)
 try:
-
-    print 'No longer works.'
-    exit(1)
-
     print 'Connecting...',
     c = corr.corr_functions.Correlator(config_file = config_file, log_level = logging.INFO, connect = False, log_handler = lh)
     if not c.is_narrowband():
@@ -55,20 +53,16 @@ try:
     c.connect()
     print 'done'
 
-    #if opts.mixer_sel > -1:
-    #    print 'Setting mixer to %i...' % opts.mixer_sel
-    if opts.channel_sel > -1:
-        print 'Setting coarse channel to %i...' % opts.channel_sel
+    chan_cf, chan, chan_diff = corr.corr_nb.channel_select(c, freq_hz = opts.freq_hz, specific_chan = opts.channel_sel)
 
-    #corr.corr_nb.coarse_channel_select(c, mixer_sel = opts.mixer_sel, channel_sel = opts.channel_sel)
-    corr.corr_nb.coarse_channel_select(c, channel_sel = opts.channel_sel)
+    print 'Coarse channel %i chosen, with center frequency %.4fMhz, distance from cf %ihz' % (chan, chan_cf / 1000000.0, chan_diff)
 
     # print the setup on the fengines
-    rv = corr.corr_functions.read_masked_register(c.ffpgas, corr.corr_nb.register_fengine_coarse_control)
+    #rv = corr.corr_functions.read_masked_register(c.ffpgas, corr.corr_nb.register_fengine_coarse_control)
     # work out the center frequency of the selected band
     #c.config['center_freq'] = float(rv[0]['channel_select']) * float(c.config['bandwidth'])
-    for ctr, v in enumerate(rv):
-        print "%s: channel(%d) cf(%.6f Mhz)" % (c.fsrvs[ctr], v['channel_select'], c.config['center_freq'] / 1000000.0)
+    #for ctr, v in enumerate(rv):
+    #    print "%s: channel(%d) cf(%.6f Mhz)" % (c.fsrvs[ctr], v['channel_select'], c.config['center_freq'] / 1000000.0)
 
 except KeyboardInterrupt:
     exit_clean()

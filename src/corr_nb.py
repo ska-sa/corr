@@ -178,20 +178,26 @@ def feng_status_get(c, ant_str):
         rv['lru_state']='ok'
     return rv
 
-def channel_select(c, freq_hz = -1, no_select = False):
+def channel_select(c, freq_hz = -1, specific_chan = -1, no_select = False):
     """
     Set the coarse channel based on a given center frequency, given in Hz.
     """
     if not c.is_narrowband():
         raise RuntimeError('This command cannot be run in the current mode.')
-    if freq_hz == -1:
-        raise RuntimeError('Calling this function without specifying a frequency makes no sense.')
+    if freq_hz != -1 and specific_chan != -1:
+        raise RuntimeError('Specify a frequency in Hz OR a specific coarse channel, not both.')
+    elif freq_hz == -1 and specific_chan == -1:
+        raise RuntimeError('Specify frequency in Hz or specific coarse channel.')
     channel_bw = c.config['bandwidth']
-    total_bw = c.config['rf_bandwidth']
     coarse_chans = c.config['coarse_chans']
-    chan = int(round(freq_hz / total_bw * coarse_chans))
+    if specific_chan != -1:
+        chan = specific_chan
+        freq_hz = chan * channel_bw
+    else:
+        total_bw = c.config['rf_bandwidth']
+        chan = int(round(freq_hz / total_bw * coarse_chans))
     if chan >= coarse_chans:
-        raise RuntimeError('Frequency %i is too high.' % freq_hz)
+        raise RuntimeError('Coarse channel too large: %i >= %i' % (chan, coarse_chans))
     chan_cf = chan * channel_bw
     if not no_select:
         try:
