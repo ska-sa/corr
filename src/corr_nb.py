@@ -438,44 +438,71 @@ snap_fengine_debug_quant = construct.BitStruct(snap_debug,
     construct.BitField("p0_i", 4),
     construct.BitField("p1_r", 4),
     construct.BitField("p1_i", 4))
+
 def get_snap_quant_wbc_compat(c, fpgas = [], offset = -1):
     return get_snap_quant(c = c, fpgas = fpgas, offset = offset, wbc_compat = True)
-def get_snap_quant(c, fpgas = [], offset = -1, wbc_compat = False, debug_data = None):
+
+def get_snap_quant(c, fpgas = None, offset = -1, wbc_compat = False, debug_data = None, no_setup = False):
     """
-    Read and return data from the quantiser. Both pols are returned.
+    Read and return data from the quantiser snapshot. Both pols are returned.
     """
-    if len(fpgas) == 0:
+    if fpgas == None:
         fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 2)
+    if not no_setup:
+        c.syslogger.debug('get_snap_quant: setting debug snapblock to quantiser output.')
+        corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 2)
+    data = []
+    for fpga in fpgas:
+        tempdata = _fpga_snap_quant(fpga = fpga, offset = offset, wbc_compat = wbc_compat, debug_data = debug_data)
+        data.append(tempdata)
+    return data
+
+def _fpga_snap_quant(fpga = None, offset = -1, wbc_compat = False, debug_data = None):
+    ''''
+    Get quantiser snap data from only one f-engine FPGA.
+    NB: Assumes the quantiser has already been selected in the control register.
+    Returns a snapshot of quantised data in one of two formats, depending on the wbc_compat argument.
+    Either way, it's data for both pols.
+    debug_data is data from the snap.snapshots_get function
+    '''
+    def _log(msg):
+        fpga._logger.debug('_fpga_snap_quant: %s' % msg)
+    if fpga == None:
+        raise RuntimeError('Please provide the FPGA from which to read the quantised data.')
     if debug_data == None:
-        snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+        _log('reading snap data at offset %i.' % offset)
+        snap_data = snap.snapshots_get(fpgas = [fpga], dev_names = snap_debug, wait_period = 3, offset = offset)['data'][0]
     else:
-        snap_data = debug_data
-    rd = []
-    for ctr in range(0, len(snap_data['data'])):
-        d = snap_data['data'][ctr]
-        fdata_p0 = []
-        fdata_p1 = []
-        if not wbc_compat:
-            repeater = construct.GreedyRepeater(snap_fengine_debug_quant)
-            up = repeater.parse(d)
-            for a in up:
-                p0c = bin2fp(a['p0_r'], 4, 3) + (1j * bin2fp(a['p0_i'], 4, 3))
-                p1c = bin2fp(a['p1_r'], 4, 3) + (1j * bin2fp(a['p1_i'], 4, 3))
-                fdata_p0.append(p0c)
-                fdata_p1.append(p1c)
-        else:
-            # remember that the data is 16-bit padded up to 128-bit because of the one debug snap block, so only 2 of every 16 bytes are valid data
-            up = numpy.fromstring(d, dtype = numpy.uint8)
-            for a in range(14, len(up), 16):
-                pol0_r_bits = (up[a]   & ((2**8) - (2**4))) >> 4
-                pol0_i_bits = (up[a]   & ((2**4) - (2**0)))
-                pol1_r_bits = (up[a+1] & ((2**8) - (2**4))) >> 4
-                pol1_i_bits = (up[a+1] & ((2**4) - (2**0)))
-                fdata_p0.append(float(((numpy.int8(pol0_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol0_i_bits << 4) >> 4)))))
-                fdata_p1.append(float(((numpy.int8(pol1_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol1_i_bits << 4) >> 4)))))
-        rd.append([fdata_p0, fdata_p1])
-    return rd
+        _log('using debug data, not fresh snap data.')
+        snap_data = debug_data['data'][0]
+    _log('unpacking data.')
+    data = [[], []]
+    if not wbc_compat:
+        repeater = construct.GreedyRepeater(snap_fengine_debug_quant)
+        unpacked = repeater.parse(snap_data)
+        for ctr in unpacked:
+            p0c = bin2fp(ctr['p0_r'], 4, 3) + (1j * bin2fp(ctr['p0_i'], 4, 3))
+            p1c = bin2fp(ctr['p1_r'], 4, 3) + (1j * bin2fp(ctr['p1_i'], 4, 3))
+            data[0].append(p0c)
+            data[1].append(p1c)
+    else:
+        # remember that the data is 16-bit padded up to 128-bit because of the one debug snap block, so only 2 of every 16 bytes are valid data
+        unpacked = numpy.fromstring(snap_data, dtype = numpy.uint8)
+        for ctr in range(14, len(unpacked), 16):
+            pol0_r_bits = (unpacked[ctr]   & ((2**8) - (2**4))) >> 4
+            pol0_i_bits = (unpacked[ctr]   & ((2**4) - (2**0)))
+            pol1_r_bits = (unpacked[ctr+1] & ((2**8) - (2**4))) >> 4
+            pol1_i_bits = (unpacked[ctr+1] & ((2**4) - (2**0)))
+            data[0].append(float(((numpy.int8(pol0_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol0_i_bits << 4) >> 4)))))
+            data[1].append(float(((numpy.int8(pol1_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol1_i_bits << 4) >> 4)))))
+    _log('returning %i complex values for each pol.' % len(data[0]))
+    return data
+
+def get_quant_spectrum(c, fpgas = None):
+    num_chans = c.config['n_chans']
+    rv = []
+    spectrum = 3 
+    return spectrum
 
 snap_fengine_debug_ct = construct.BitStruct(snap_debug,
     construct.Padding(128 - 64),

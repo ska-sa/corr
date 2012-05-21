@@ -62,9 +62,11 @@ def parseAntenna(antArg):
 def get_data(pol):
     print 'Integrating data %i from %s:' % (pol['num_accs'], pol['ant_str'])
     print ' Grabbing data off snap blocks...',
+    sys.stdout.flush()
     unpacked_vals = c.get_quant_snapshot(pol['ant_str'], n_spectra = 1)
     print 'done.'
-    print ' Accumulating...', 
+    print ' Accumulating...',
+    sys.stdout.flush()
     pol['accumulations'] = numpy.sum([pol['accumulations'],numpy.sum(numpy.abs(unpacked_vals),axis=0)],axis=0)
     pol['num_accs'] += 8
     print 'done.'

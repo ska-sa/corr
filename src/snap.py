@@ -151,15 +151,15 @@ def get_quant_snapshot(correlator, ant_str, n_spectra = 1, man_trig = False, man
                 unpacked_vals.append(float(((numpy.int8(r_bits << 4) >> 4))) + (1j * float(((numpy.int8(i_bits << 4) >> 4)))))
         elif correlator.is_narrowband():
             # the narrowband snap block may be shorter than one spectrum, so make sure we get enough data
-            td = []
+            tempdata = []
             offset = 0
-            while len(td) < correlator.config['n_chans']:
-                #ttd = corr.corr_nb.get_snap_quant(correlator, [fpga], offset = offset)[0][feng_input]
-                logging.debug('get_quant_snapshot: nb, read snap - have %i/%i channels' % (len(td), correlator.config['n_chans']))
-                ttd = corr.corr_nb.get_snap_quant_wbc_compat(correlator, [fpga], offset = offset)[0][feng_input]
-                td.extend(ttd)
-                offset = offset + len(ttd)
-            unpacked_vals.extend(td)
+            while len(tempdata) < correlator.config['n_chans']:
+                #quanttemp = corr.corr_nb.get_snap_quant(correlator, [fpga], offset = offset)[0][feng_input]
+                logging.debug('get_quant_snapshot: nb, read snap - have %i/%i channels' % (len(tempdata), correlator.config['n_chans']))
+                quanttemp = corr.corr_nb.get_snap_quant_wbc_compat(correlator, [fpga], offset = offset)[0][feng_input]
+                tempdata.extend(quanttemp)
+                offset = offset + len(quanttemp)
+            unpacked_vals.extend(tempdata)
         else:
             raise RuntimeError('Unknown mode.')
         ns = len(unpacked_vals) / correlator.config['n_chans']
