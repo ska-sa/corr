@@ -132,7 +132,10 @@ def get_adc_snapshots(correlator, ant_strs = [], trig_level = -1, sync_to_pps = 
     #return numpy.fromstring(self.ffpgas[ffpga_n].snapshot_get('adc_snap%i'%feng_input,man_trig=False,circular_capture=True,wait_period=-1)['data'],dtype=numpy.int8)        
 
 def get_quant_snapshot(correlator, ant_str, n_spectra = 1, man_trig = False, man_valid = False, wait_period = 2):
-    """Fetches a quantiser snapshot from hardware for a given antenna."""
+    """
+    Fetches a quantiser snapshot from hardware for a single given antenna.
+    Returns a numpy array.
+    """
     if correlator.config['feng_bits'] != 4:
         raise RuntimeError('Sorry, this function is currently hard-coded to unpack 4 bit values')
     (ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input) = correlator.get_ant_str_location(ant_str)
@@ -166,12 +169,14 @@ def get_quant_snapshot(correlator, ant_str, n_spectra = 1, man_trig = False, man
         logging.debug('get_quant_snapshot: got spectrum %i/%i' % (ns, n_spectra))
     rv = numpy.array(unpacked_vals)
     if len(rv) % correlator.config['n_chans'] != 0:
-        raise RuntimeError('Retrieved data is not a multiple of n_chans. Something is wrong.')
-    rv.shape = (len(unpacked_vals) / correlator.config['n_chans'], correlator.config['n_chans'])
+        raise RuntimeError('Retrieved data is not a multiple of n_chans, something is wrong.')
+    rv.shape = (ns, correlator.config['n_chans'])
+    if ns < n_spectra:
+        raise RuntimeError('Needed %i spectra, but only ended up with %i, something is wrong.' % (n_spectra, ns))
     if n_spectra == 1:
-        return rv[0]
+        return rv[0], 1
     else:
-        return rv[0:n_spectra, :]
+        return rv[0:n_spectra, :], n_spectra
 
 def Swapped(subcon):
     """swaps the bytes of the stream, prior to parsing"""

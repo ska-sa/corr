@@ -1820,9 +1820,9 @@ class Correlator:
         """Retrieves raw ADC samples from the specified antennas. Optionally capture the data at the same time. Optionally set a trigger level."""
         return corr.snap.get_adc_snapshots(self,ant_strs,trig_level=trig_level,sync_to_pps=sync_to_pps)
 
-    def get_quant_snapshot(self,ant_str,n_spectra=1):
+    def get_quant_snapshot(self, ant_str, n_spectra = 1):
         """Retrieves quantised samples from the output of the FFT for user-specified antennas."""
-        return corr.snap.get_quant_snapshot(self,ant_str,n_spectra=n_spectra)
+        return corr.snap.get_quant_snapshot(self, ant_str, n_spectra = n_spectra)
 
     def calibrate_adc_snapshot(self,ant_str,raw_data,n_chans=256):
         """Calibrates ADC count raw voltage input in timedomain. Returns samples in mV and a spectrum of n_chans in dBm."""

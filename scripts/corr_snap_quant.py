@@ -24,6 +24,7 @@ import corr, time, numpy, struct, sys, logging, pylab, matplotlib
 
 polList = []
 report = []
+logscale = False
 
 def exit_fail():
     print 'FAILURE DETECTED. Log entries:\n', lh.printMessages() 
@@ -49,7 +50,10 @@ def drawDataCallback():
         pol['plot'].set_title('Quantiser amplitude output for input %s, averaged over %i spectra.' % (pol['ant_str'], pol['num_accs']))
         pol['plot'].set_xlabel('Frequency channel')
         pol['plot'].set_ylabel('Average level')
-        pol['plot'].plot(numpy.divide(pol['accumulations'], pol['num_accs']))
+        if logscale:
+            pol['plot'].semilogy(numpy.divide(pol['accumulations'], pol['num_accs']))
+        else:
+            pol['plot'].plot(numpy.divide(pol['accumulations'], pol['num_accs']))
         fig.canvas.draw()
         fig.canvas.manager.window.after(100, drawDataCallback)
 
@@ -63,12 +67,15 @@ def get_data(pol):
     print 'Integrating data %i from %s:' % (pol['num_accs'], pol['ant_str'])
     print ' Grabbing data off snap blocks...',
     sys.stdout.flush()
-    unpacked_vals = c.get_quant_snapshot(pol['ant_str'], n_spectra = 1)
+    unpacked_vals, spectra = c.get_quant_snapshot(pol['ant_str'], n_spectra = 1)
     print 'done.'
     print ' Accumulating...',
     sys.stdout.flush()
-    pol['accumulations'] = numpy.sum([pol['accumulations'],numpy.sum(numpy.abs(unpacked_vals),axis=0)],axis=0)
-    pol['num_accs'] += 8
+    unpacked_vals = numpy.abs(unpacked_vals)
+    if spectra > 1:
+        unpacked_vals = numpy.sum(unpacked_vals, axis = 0)
+    pol['accumulations'] = numpy.sum([pol['accumulations'], unpacked_vals], axis = 0)
+    pol['num_accs'] += spectra
     print 'done.'
     return
 
@@ -85,16 +92,18 @@ if __name__ == '__main__':
         help='Do not plot averaged spectrum.')  
     p.add_option('-a', '--ant', dest='ant', type='str', default=None,
         help='Select antenna to query.')
+    p.add_option('-l', '--log', dest='log', action='store_true', default=False,
+        help='Plot on a log scale.')
     opts, args = p.parse_args(sys.argv[1:])
 
     if opts.man_trigger: man_trigger = True
     else: man_trigger = False
 
-    if args==[]:
-        config_file=None
+    if args == []:
+        config_file = None
     else:
-        config_file=args[0]
-    verbose=opts.verbose
+        config_file = args[0]
+    verbose = opts.verbose
 
 lh = corr.log_handlers.DebugLogHandler(35)
 if opts.ant != None:
@@ -102,6 +111,8 @@ if opts.ant != None:
 else:
     print 'No antenna given for which to plot data.'
     exit_fail()
+
+logscale = opts.log
 
 try:
     print 'Connecting...',
