@@ -351,7 +351,7 @@ class Correlator:
 
     def feng_ctrl_set_all(self, **kwargs):
         """Valid keyword args include: 
-        tvg_noise_sel','tvg_ffdel_sel', 'tvg_pkt_sel', 'tvg_ct_sel', 'tvg_en', 'adc_protect_disable', 'flasher_en', 'gbe_enable', 'gbe_rst', 'clr_status', 'arm', 'soft_sync', 'mrst'
+        tvgsel_noise','tvgsel_fdfs', 'tvgsel_pkt', 'tvgsel_ct', 'tvg_en', 'adc_protect_disable', 'flasher_en', 'gbe_enable', 'gbe_rst', 'clr_status', 'arm', 'soft_sync', 'mrst'
         """
         if self.is_wideband():
             write_masked_register(self.ffpgas, corr.corr_wb.register_fengine_control, **kwargs)
@@ -423,12 +423,12 @@ class Correlator:
         self.feng_ctrl_set_all(tvg_en = True, **newkwargs)
         self.feng_ctrl_set_all(tvg_en = False, **newkwargs)
 
-    def feng_tvg_sel_OLD(self, noise = False, ct = False, pkt = False, ffdel = False):
+    def feng_tvg_sel_OLD(self, noise = False, ct = False, pkt = False, fdfs = False):
         """Turns TVGs on/off on the F engines."""
         if not self.is_wideband():
             raise RuntimeError('Only valid in wideband mode.')
-        self.feng_ctrl_set_all(tvg_en = True,  tvgsel_noise = noise, tvgsel_ct = ct, tvgsel_pkt = pkt, tvgsel_ffdel = ffdel)
-        self.feng_ctrl_set_all(tvg_en = False, tvgsel_noise = noise, tvgsel_ct = ct, tvgsel_pkt = pkt, tvgsel_ffdel = ffdel)
+        self.feng_ctrl_set_all(tvg_en = True,  tvgsel_noise = noise, tvgsel_ct = ct, tvgsel_pkt = pkt, tvgsel_fdfs = fdfs)
+        self.feng_ctrl_set_all(tvg_en = False, tvgsel_noise = noise, tvgsel_ct = ct, tvgsel_pkt = pkt, tvgsel_fdfs = fdfs)
 
     def xeng_ctrl_set_all(self, **kwargs):
         write_masked_register(self.xfpgas, corr.corr_wb.register_xengine_control, **kwargs)
@@ -1945,10 +1945,10 @@ class Correlator:
             self.ffpgas[ffpga_n].write_int('adc_ctrl%i'%feng_input,self.ffpgas[ffpga_n].read_uint('adc_ctrl%i'%feng_input)|0x80000000)
             self.floggers[ffpga_n].info("Enabled RF frontend.")
 
-    def eq_set_all(self,init_poly=[],init_coeffs=[]):
+    def eq_set_all(self, init_poly = [], init_coeffs = []):
         """Initialise all connected Fengines' EQs to given polynomial. If no polynomial or coefficients are given, use defaults from config file."""
-        for in_n,ant_str in enumerate(self.config._get_ant_mapping_list()):
-            self.eq_spectrum_set(ant_str=ant_str,init_coeffs=init_coeffs,init_poly=init_poly)
+        for in_n, ant_str in enumerate(self.config._get_ant_mapping_list()):
+            self.eq_spectrum_set(ant_str = ant_str, init_coeffs = init_coeffs, init_poly = init_poly)
         self.syslogger.info('Set all EQ gains on all Fengs.')
 
     def eq_default_get(self,ant_str):
@@ -1960,14 +1960,15 @@ class Correlator:
             equalisation = self.config['eq_coeffs_%s'%(input_n)]
 
         elif self.config['eq_default'] == 'poly':
-            poly = self.config['eq_poly_%i'%(input_n)]
+            poly = self.config['eq_poly_%i' % (input_n)]
             equalisation = numpy.polyval(poly, range(self.config['n_chans']))[self.config['eq_decimation']/2::self.config['eq_decimation']]
-            if self.config['eq_type']=='complex':
+            if self.config['eq_type'] == 'complex':
                 equalisation = [eq+0*1j for eq in equalisation]
         else: 
-            raise RuntimeError("Your EQ type, %s, is not understood."%self.config['eq_type'])
+            raise RuntimeError("Your EQ type, %s, is not understood." % self.config['eq_type'])
                 
-        if len(equalisation) != n_coeffs: raise RuntimeError("Something's wrong. I have %i eq coefficients when I should have %i."%(len(equalisation),n_coeffs))
+        if len(equalisation) != n_coeffs:
+            raise RuntimeError("Something's wrong. I have %i eq coefficients when I should have %i." % (len(equalisation), n_coeffs))
         return equalisation
 
     #def eq_tostr(self,poly)
@@ -2002,13 +2003,16 @@ class Correlator:
             self.syslogger.error("Unable to interpret eq_type from config file. Expecting scalar or complex.")
             raise RuntimeError("Unable to interpret eq_type from config file. Expecting scalar or complex.")
 
-    def eq_spectrum_set(self,ant_str,init_coeffs=[],init_poly=[]):
-        """Set a given antenna and polarisation equaliser to given co-efficients. Assumes equaliser of 16 bits. init_coeffs is list of length n_chans/decimation_factor."""
-        #tested ok corr-0.5.0 2010-08-07
-        ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_ant_str_location(ant_str)
-        fpga=self.ffpgas[ffpga_n]
-        register_name='eq%i'%(feng_input)
-        n_coeffs = self.config['n_chans']/self.config['eq_decimation']
+    def eq_spectrum_set(self, ant_str, init_coeffs = [], init_poly = []):
+        """
+        Set a given antenna and polarisation equaliser to given co-efficients.
+        Assumes equaliser of 16 bits.
+        init_coeffs is list of length (n_chans / decimation_factor)."""
+        # tested ok corr-0.5.0 2010-08-07
+        ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input = self.get_ant_str_location(ant_str)
+        fpga = self.ffpgas[ffpga_n]
+        register_name = 'eq%i' % (feng_input)
+        n_coeffs = self.config['n_chans'] / self.config['eq_decimation']
 
         if init_coeffs == [] and init_poly == []: 
             coeffs = self.eq_default_get(ant_str)
@@ -2023,7 +2027,7 @@ class Correlator:
             coeffs = numpy.polyval(init_poly, range(self.config['n_chans']))[self.config['eq_decimation']/2::self.config['eq_decimation']]
         
         if self.config['eq_type'] == 'scalar':
-            coeffs    = numpy.real(coeffs) 
+            coeffs = numpy.real(coeffs) 
             if numpy.max(coeffs) > ((2**16)-1) or numpy.min(coeffs)<0: 
                 self.floggers[ffpga_n].error("Sorry, your EQ settings are out of range!")
                 raise RuntimeError("Sorry, your EQ settings are out of range!")
@@ -2032,8 +2036,8 @@ class Correlator:
             if numpy.max(coeffs) > ((2**15)-1) or numpy.min(coeffs)<-((2**15)-1): 
                 self.floggers[ffpga_n].error("Sorry, your EQ settings are out of range!")
                 raise RuntimeError("Sorry, your EQ settings are out of range!")
-            coeffs    = numpy.array(coeffs,dtype=numpy.complex128)
-            coeff_str = struct.pack('>%ih'%(2*n_coeffs),*coeffs.view(dtype=numpy.float64))
+            coeffs = numpy.array(coeffs, dtype = numpy.complex128)
+            coeff_str = struct.pack('>%ih' % (2 * n_coeffs), *coeffs.view(dtype=numpy.float64))
         else: 
             self.floggers[ffpga_n].error("Sorry, your EQ type is not supported. Expecting scalar or complex.")
             raise RuntimeError('EQ type not supported.')
@@ -2042,14 +2046,14 @@ class Correlator:
         #self.config.write('equalisation','eq_coeffs_%i%c'%(ant,pol),str(coeffs.tolist()))
         
         for term,coeff in enumerate(coeffs):
-            self.floggers[ffpga_n].debug('''Initialising EQ for antenna %s, input %i on %s (register %s)'s index %i to %s.'''%(ant_str,feng_input,self.fsrvs[ffpga_n],register_name,term,str(coeff)))
+            self.floggers[ffpga_n].debug('''Initialising EQ for antenna %s, input %i on %s (register %s)'s index %i to %s.''' % (ant_str, feng_input, self.fsrvs[ffpga_n], register_name, term, str(coeff)))
 
-        fpga.write(register_name,coeff_str)
+        fpga.write(register_name, coeff_str)
 
     def adc_lru_mapping_get(self):
         """Map all the antennas to lru and physical inputs"""
-        rv=[]
-        for input_n,ant_str in enumerate(self.config._get_ant_mapping_list()):
+        rv = []
+        for input_n, ant_str in enumerate(self.config._get_ant_mapping_list()):
             ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_input_location(input_n)
             rv.append((ant_str,input_n,self.fsrvs[ffpga_n],feng_input))
         return rv

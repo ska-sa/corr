@@ -3,7 +3,7 @@
 Author: Jason Manley
 Revs:
 2010-07-29  JRM Port to corr-0.5.0 """
-import corr, numpy,sys,os,time,logging
+import corr, numpy, sys, os, time, logging
 
 def re_equalize(self, thresh=.1, maxval=2**17-1, max_tries=10):
         """Automatically adjust equalization for maximum flatness around 4b pwr of 10."""
@@ -78,10 +78,10 @@ try:
     n_chans = c.config['n_chans']
     #auto_eq = c.config['auto_eq']
 
-    if (opts.init_eq>=0):
-        print '''Resetting all F engines' %i channels' gains to %i...'''%(n_chans,opts.init_eq),
+    if (opts.init_eq >= 0):
+        print '''Resetting all F engines' %i channels' gains to %i...''' % (n_chans, opts.init_eq),
         sys.stdout.flush()
-        c.eq_set_all(init_poly=[opts.init_eq])
+        c.eq_set_all(init_poly = [opts.init_eq])
         print 'Done.'
     else:
         print '''Configuring channels' gains to default values as listed in config file...''',

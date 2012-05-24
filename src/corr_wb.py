@@ -11,7 +11,7 @@ import construct, corr_functions
 register_fengine_control = construct.BitStruct('control',
     construct.Padding(32 - 20 - 1),             # 21 - 31
     construct.Flag('tvgsel_noise'),             # 20
-    construct.Flag('tvgsel_ffdel'),             # 19
+    construct.Flag('tvgsel_fdfs'),              # 19
     construct.Flag('tvgsel_pkt'),               # 18
     construct.Flag('tvgsel_ct'),                # 17
     construct.Flag('tvg_en'),                   # 16
