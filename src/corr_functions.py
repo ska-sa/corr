@@ -2045,9 +2045,14 @@ class Correlator:
         #self.floggers[ffpga_n].info('Writing new EQ coefficient values to config file...')
         #self.config.write('equalisation','eq_coeffs_%i%c'%(ant,pol),str(coeffs.tolist()))
         
-        for term,coeff in enumerate(coeffs):
+        for term, coeff in enumerate(coeffs):
             self.floggers[ffpga_n].debug('''Initialising EQ for antenna %s, input %i on %s (register %s)'s index %i to %s.''' % (ant_str, feng_input, self.fsrvs[ffpga_n], register_name, term, str(coeff)))
 
+        # if this is a narrowband implementation, swap the EQ values, because the Xilinx FFT output is in swapped halves
+        if self.is_narrowband():
+            coeff_str = ''.join([coeff_str[len(coeff_str)/2:], coeff_str[0:len(coeff_str)/2]])
+
+        # finally write to the bram
         fpga.write(register_name, coeff_str)
 
     def adc_lru_mapping_get(self):
