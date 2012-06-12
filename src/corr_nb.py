@@ -16,81 +16,87 @@ def bin2fp(bits, m = 8, e = 7):
     e = e + shift
     return float(numpy.int32(bits)) / (2**e)
 
+# f-engine adc control
+register_fengine_adc_control = construct.BitStruct('adc_ctrl0',
+    construct.Flag('enable'),       # 31    Enable input channel on KAT ADC.
+    construct.Padding(32 - 6 - 1),  # 6-30
+    construct.BitField('atten', 6)) # 0-5   KAT ADC channel attenuation setting.
+
 # f-engine status
 register_fengine_fstatus = construct.BitStruct('fstatus0',
-    construct.BitField('coarse_bits', 5),       # 27 - 31
-    construct.BitField('fine_bits', 5),         # 22 - 26
-    construct.BitField('sync_val', 2),          # 20 - 21
-    construct.Padding(2),                       # 18 - 19
-    construct.Flag('xaui_lnkdn'),               # 17
-    construct.Flag('xaui_over'),                # 16
-    construct.Padding(9),                       # 7 - 15
-    construct.Flag('clk_err'),                  # 6
-    construct.Flag('adc_disabled'),             # 5
-    construct.Flag('ct_error'),                 # 4
-    construct.Flag('adc_overrange'),            # 3
-    construct.Flag('fine_fft_overrange'),       # 2
-    construct.Flag('coarse_fft_overrange'),     # 1
-    construct.Flag('quant_overrange'))          # 0
+    construct.BitField('coarse_bits', 5),       # 27-31 2^x - the number of points in the coarse FFT.
+    construct.BitField('fine_bits', 5),         # 22-26 2^y - the number of points in the fine FFT.
+    construct.BitField('sync_val', 2),          # 20-21 On which ADC cycle did the sync happen?
+    construct.Padding(2),                       # 18-19
+    construct.Flag('xaui_lnkdn'),               # 17    The 10GBE link is down.
+    construct.Flag('xaui_over'),                # 16    The 10GBE link has overflows.
+    construct.Padding(9),                       # 7-15
+    construct.Flag('clk_err'),                  # 6     The board frequency is calculated out of bounds.
+    construct.Flag('adc_disabled'),             # 5     The ADC has been disabled.
+    construct.Flag('ct_error'),                 # 4     There is a QDR error from the corner-turner.
+    construct.Flag('adc_overrange'),            # 3     The ADC is reporting over-ranging.
+    construct.Flag('fine_fft_overrange'),       # 2     Not used currently.
+    construct.Flag('coarse_fft_overrange'),     # 1     The coarse FFT is over-range.
+    construct.Flag('quant_overrange'))          # 0     The quantiser is over-range.
 
 # f-engine coarse control
 register_fengine_coarse_control = construct.BitStruct('coarse_ctrl',
-    construct.Padding(32 - 10 - 10 - 1 - 1 - 6),    # 28 - 31
-    construct.BitField('debug_chan', 6),            # 22 - 27
-    construct.Flag('debug_specify_chan'),           # 21
-    construct.Flag('debug_pol_select'),             # 20
-    construct.BitField('channel_select', 10),       # 10 - 19
-    construct.BitField('fft_shift', 10))            # 0 - 9
+    construct.Padding(32 - 10 - 10 - 1 - 1 - 6),    # 28-31
+    construct.BitField('debug_chan', 6),            # 22-27 Which channel to capture when debugging.
+    construct.Flag('debug_specify_chan'),           # 21    Capture only a specific channel when debugging.
+    construct.Flag('debug_pol_select'),             # 20    Select a polarisation for debugging.
+    construct.BitField('channel_select', 10),       # 10-19 Which channel should be fine channelised?
+    construct.BitField('fft_shift', 10))            # 0-9   The shift-schedule for the coarse FFT.
 
 # f-engine fine control
 register_fengine_fine_control = construct.BitStruct('fine_ctrl',
-    construct.Padding(32 - 26),             	# 26 - 31
-    construct.BitField('fft_shift', 26))        # 0 - 25
+    construct.Padding(32 - 26),             	# 26-31
+    construct.BitField('fft_shift', 26))        # 0-25  Fine FFT shift schedule - not currently used.
 
 # f-engine control
 register_fengine_control = construct.BitStruct('control',
-    construct.Padding(4),                       # 28 - 31
-    construct.BitField('debug_snap_select', 3), # 25 - 27
-    construct.Padding(1),                       # 24 - where coarse debug pol sel used to be
-    construct.Padding(2),                       # 22 - 23
-    construct.Flag('tvgsel_fine'),              # 21
-    construct.Flag('tvgsel_adc'),               # 20
-    construct.Flag('tvgsel_fdfs'),              # 19
-    construct.Flag('tvgsel_pkt'),               # 18
-    construct.Flag('tvgsel_ct'),                # 17
-    construct.Flag('tvg_en'),                   # 16
-    construct.Padding(4),                       # 12 - 15
-    construct.Flag('flasher_en'),               # 11
-    construct.Flag('adc_protect_disable'),      # 10
-    construct.Flag('gbe_enable'),               # 9
-    construct.Flag('gbe_rst'),                  # 8
-    construct.Padding(4),                       # 4 - 7
-    construct.Flag('clr_status'),               # 3
-    construct.Flag('arm'),                      # 2
-    construct.Flag('man_sync'),                 # 1
-    construct.Flag('sys_rst'))                  # 0
+    construct.Padding(4),                       # 28-31
+    construct.BitField('debug_snap_select', 3), # 25-27 Select the source to route to the general debug snap block.
+    construct.Padding(1),                       # 24
+    construct.Padding(2),                       # 22-23
+    construct.Flag('tvgsel_fine'),              # 21    Fine channelisation TVG enable.
+    construct.Flag('tvgsel_adc'),               # 20    ADC TVG enable.
+    construct.Flag('tvgsel_fdfs'),              # 19    Fine-delay and fringe-stopping TVG enable.
+    construct.Flag('tvgsel_pkt'),               # 18    Packetiser TVG enable.
+    construct.Flag('tvgsel_ct'),                # 17    Corner-turner TVG enable.
+    construct.Flag('tvg_en'),                   # 16    Global TVG enable.
+    construct.Padding(4),                       # 12-15
+    construct.Flag('flasher_en'),               # 11    Enable the "knightrider" pattern on the front LED panel.
+    construct.Flag('adc_protect_disable'),      # 10    Disable the protection on the ADC front-end.
+    construct.Flag('gbe_enable'),               # 9     Enable the 10GBE core.
+    construct.Flag('gbe_rst'),                  # 8     Reset the 10GBE core.
+    construct.Padding(4),                       # 4-7
+    construct.Flag('clr_status'),               # 3     Clear the status registers.
+    construct.Flag('arm'),                      # 2     Arm the board.
+    construct.Flag('man_sync'),                 # 1     Force a board sync.
+    construct.Flag('sys_rst'))                  # 0     Reset the board.
 
 # x-engine control
 register_xengine_control = construct.BitStruct('ctrl',
-    construct.Padding(32 - 16 - 1),     # 17 - 31
-    construct.Flag('gbe_out_enable'),   # 16
-    construct.Flag('gbe_rst'),          # 15
-    construct.Padding(15 - 12 - 1),     # 13 - 14
-    construct.Flag('flasher_en'),       # 12
+    construct.Padding(32 - 16 - 1),     # 17-31
+    construct.Flag('gbe_out_enable'),   # 16    Enable the 10GBE core.
+    construct.Flag('gbe_rst'),          # 15    Reset the 10GBE core.
+    construct.Padding(15 - 12 - 1),     # 13-14
+    construct.Flag('flasher_en'),       # 12    Enable the "knightrider" pattern on the front LED panel.
     construct.Flag('gbe_out_rst'),      # 11
-    construct.Flag('loopback_mux_rst'), # 10
-    construct.Flag('gbe_enable'),       # 9
-    construct.Flag('cnt_rst'),          # 8
-    construct.Flag('clr_status'),       # 7
-    construct.Padding(7 - 0 - 1),       # 1 - 6
-    construct.Flag('vacc_rst'))         # 0
+    construct.Flag('loopback_mux_rst'), # 10    
+    construct.Flag('gbe_enable'),       # 9     Enable the 10GBE core.
+    construct.Flag('cnt_rst'),          # 8     Reset the packet counter.
+    construct.Flag('clr_status'),       # 7     Clear the status registers.
+    construct.Padding(7 - 0 - 1),       # 1-6
+    construct.Flag('vacc_rst'))         # 0     Reset the vector accumulator.
 
 # x-engine status
 register_xengine_status = construct.BitStruct('xstatus0',
-    construct.Padding(32 - 18 - 1),     # 19 - 31
+    construct.Padding(32 - 18 - 1),     # 19-31
     construct.Flag('gbe_lnkdn'),        # 18
     construct.Flag('xeng_err'),         # 17
-    construct.Padding(17 - 5 - 1),      # 6 - 16
+    construct.Padding(17 - 5 - 1),      # 6-16
     construct.Flag('vacc_err'),         # 5
     construct.Flag('rx_bad_pkt'),       # 4
     construct.Flag('rx_bad_frame'),     # 3
@@ -100,10 +106,10 @@ register_xengine_status = construct.BitStruct('xstatus0',
 
 # x-engine tvg control
 register_xengine_tvg_sel = construct.BitStruct('tvg_sel',
-    construct.Padding(32 - 1 - 2 - 2 - 6),  # 11 - 31
-    construct.BitField("vacc_tvg_sel", 6),  # 5 - 10
-    construct.BitField("xeng_tvg_sel", 2),  # 3 - 4
-    construct.BitField("descr_tvg_sel", 2), # 1 - 2
+    construct.Padding(32 - 1 - 2 - 2 - 6),  # 11-31
+    construct.BitField("vacc_tvg_sel", 6),  # 5-10
+    construct.BitField("xeng_tvg_sel", 2),  # 3-4
+    construct.BitField("descr_tvg_sel", 2), # 1-2
     construct.Flag('xaui_tvg_sel'))         # 0
 
 # the snap_rx block on the x-engine
@@ -425,7 +431,7 @@ def get_snap_buffer_pfb(c, fpgas = [], pol = 0, setup_snap = True, pfb = False):
 #            fdata.append(p0c)
 #        rd.append(fdata)
 #    return rd
-fine_fft_bitwidth = 18;
+fine_fft_bitwidth = 32;
 snap_fengine_debug_fine_fft = construct.BitStruct(snap_debug,
     construct.Padding(128 - (4*fine_fft_bitwidth)),
     construct.BitField("p0_r", fine_fft_bitwidth),
