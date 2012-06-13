@@ -16,79 +16,87 @@ def bin2fp(bits, m = 8, e = 7):
     e = e + shift
     return float(numpy.int32(bits)) / (2**e)
 
+# f-engine adc control
+register_fengine_adc_control = construct.BitStruct('adc_ctrl0',
+    construct.Flag('enable'),       # 31    Enable input channel on KAT ADC.
+    construct.Padding(32 - 6 - 1),  # 6-30
+    construct.BitField('atten', 6)) # 0-5   KAT ADC channel attenuation setting.
+
 # f-engine status
 register_fengine_fstatus = construct.BitStruct('fstatus0',
-    construct.BitField('coarse_bits', 5),       # 27 - 31
-    construct.BitField('fine_bits', 5),         # 22 - 26
-    construct.BitField('sync_val', 2),          # 20 - 21
-    construct.Padding(2),                       # 18 - 19
-    construct.Flag('xaui_lnkdn'),               # 17
-    construct.Flag('xaui_over'),                # 16
-    construct.Padding(9),                       # 7 - 15
-    construct.Flag('clk_err'),                  # 6
-    construct.Flag('adc_disabled'),             # 5
-    construct.Flag('ct_error'),                 # 4
-    construct.Flag('adc_overrange'),            # 3
-    construct.Flag('fine_fft_overrange'),       # 2
-    construct.Flag('coarse_fft_overrange'),     # 1
-    construct.Flag('quant_overrange'))          # 0
+    construct.BitField('coarse_bits', 5),       # 27-31 2^x - the number of points in the coarse FFT.
+    construct.BitField('fine_bits', 5),         # 22-26 2^y - the number of points in the fine FFT.
+    construct.BitField('sync_val', 2),          # 20-21 On which ADC cycle did the sync happen?
+    construct.Padding(2),                       # 18-19
+    construct.Flag('xaui_lnkdn'),               # 17    The 10GBE link is down.
+    construct.Flag('xaui_over'),                # 16    The 10GBE link has overflows.
+    construct.Padding(9),                       # 7-15
+    construct.Flag('clk_err'),                  # 6     The board frequency is calculated out of bounds.
+    construct.Flag('adc_disabled'),             # 5     The ADC has been disabled.
+    construct.Flag('ct_error'),                 # 4     There is a QDR error from the corner-turner.
+    construct.Flag('adc_overrange'),            # 3     The ADC is reporting over-ranging.
+    construct.Flag('fine_fft_overrange'),       # 2     Not used currently.
+    construct.Flag('coarse_fft_overrange'),     # 1     The coarse FFT is over-range.
+    construct.Flag('quant_overrange'))          # 0     The quantiser is over-range.
 
 # f-engine coarse control
 register_fengine_coarse_control = construct.BitStruct('coarse_ctrl',
-    construct.Padding(32 - 10 - 10),            # 20 - 31
-    construct.BitField('channel_select', 10),   # 10 - 19
-    construct.BitField('fft_shift', 10))        # 0 - 9
+    construct.Padding(32 - 10 - 10 - 1 - 1 - 6),    # 28-31
+    construct.BitField('debug_chan', 6),            # 22-27 Which channel to capture when debugging.
+    construct.Flag('debug_specify_chan'),           # 21    Capture only a specific channel when debugging.
+    construct.Flag('debug_pol_select'),             # 20    Select a polarisation for debugging.
+    construct.BitField('channel_select', 10),       # 10-19 Which channel should be fine channelised?
+    construct.BitField('fft_shift', 10))            # 0-9   The shift-schedule for the coarse FFT.
 
 # f-engine fine control
 register_fengine_fine_control = construct.BitStruct('fine_ctrl',
-    construct.Padding(32 - 13 - 2),             # 15 - 31
-    construct.BitField('fine_debug_select', 2), # 13 - 14
-    construct.BitField('fft_shift', 13))        # 0 - 12
+    construct.Padding(32 - 26),             	# 26-31
+    construct.BitField('fft_shift', 26))        # 0-25  Fine FFT shift schedule - not currently used.
 
 # f-engine control
 register_fengine_control = construct.BitStruct('control',
-    construct.Padding(4),                       # 28 - 31
-    construct.BitField('debug_snap_select', 3), # 25 - 27
-    construct.Flag('debug_pol_select'),         # 24
-    construct.Padding(2),                       # 22 - 23
-    construct.Flag('tvgsel_fine'),              # 21
-    construct.Flag('tvgsel_adc'),               # 20
-    construct.Flag('tvgsel_fdfs'),              # 19
-    construct.Flag('tvgsel_pkt'),               # 18
-    construct.Flag('tvgsel_ct'),                # 17
-    construct.Flag('tvg_en'),                   # 16
-    construct.Padding(4),                       # 12 - 15
-    construct.Flag('flasher_en'),               # 11
-    construct.Flag('adc_protect_disable'),      # 10
-    construct.Flag('gbe_enable'),               # 9
-    construct.Flag('gbe_rst'),                  # 8
-    construct.Padding(4),                       # 4 - 7
-    construct.Flag('clr_status'),               # 3
-    construct.Flag('arm'),                      # 2
-    construct.Flag('man_sync'),                 # 1
-    construct.Flag('sys_rst'))                  # 0
+    construct.Padding(4),                       # 28-31
+    construct.BitField('debug_snap_select', 3), # 25-27 Select the source to route to the general debug snap block.
+    construct.Padding(1),                       # 24
+    construct.Padding(2),                       # 22-23
+    construct.Flag('tvgsel_fine'),              # 21    Fine channelisation TVG enable.
+    construct.Flag('tvgsel_adc'),               # 20    ADC TVG enable.
+    construct.Flag('tvgsel_fdfs'),              # 19    Fine-delay and fringe-stopping TVG enable.
+    construct.Flag('tvgsel_pkt'),               # 18    Packetiser TVG enable.
+    construct.Flag('tvgsel_ct'),                # 17    Corner-turner TVG enable.
+    construct.Flag('tvg_en'),                   # 16    Global TVG enable.
+    construct.Padding(4),                       # 12-15
+    construct.Flag('flasher_en'),               # 11    Enable the "knightrider" pattern on the front LED panel.
+    construct.Flag('adc_protect_disable'),      # 10    Disable the protection on the ADC front-end.
+    construct.Flag('gbe_enable'),               # 9     Enable the 10GBE core.
+    construct.Flag('gbe_rst'),                  # 8     Reset the 10GBE core.
+    construct.Padding(4),                       # 4-7
+    construct.Flag('clr_status'),               # 3     Clear the status registers.
+    construct.Flag('arm'),                      # 2     Arm the board.
+    construct.Flag('man_sync'),                 # 1     Force a board sync.
+    construct.Flag('sys_rst'))                  # 0     Reset the board.
 
 # x-engine control
 register_xengine_control = construct.BitStruct('ctrl',
-    construct.Padding(32 - 16 - 1),     # 17 - 31
-    construct.Flag('gbe_out_enable'),   # 16
-    construct.Flag('gbe_rst'),          # 15
-    construct.Padding(15 - 12 - 1),     # 13 - 14
-    construct.Flag('flasher_en'),       # 12
+    construct.Padding(32 - 16 - 1),     # 17-31
+    construct.Flag('gbe_out_enable'),   # 16    Enable the 10GBE core.
+    construct.Flag('gbe_rst'),          # 15    Reset the 10GBE core.
+    construct.Padding(15 - 12 - 1),     # 13-14
+    construct.Flag('flasher_en'),       # 12    Enable the "knightrider" pattern on the front LED panel.
     construct.Flag('gbe_out_rst'),      # 11
-    construct.Flag('loopback_mux_rst'), # 10
-    construct.Flag('gbe_enable'),       # 9
-    construct.Flag('cnt_rst'),          # 8
-    construct.Flag('clr_status'),       # 7
-    construct.Padding(7 - 0 - 1),       # 1 - 6
-    construct.Flag('vacc_rst'))         # 0
+    construct.Flag('loopback_mux_rst'), # 10    
+    construct.Flag('gbe_enable'),       # 9     Enable the 10GBE core.
+    construct.Flag('cnt_rst'),          # 8     Reset the packet counter.
+    construct.Flag('clr_status'),       # 7     Clear the status registers.
+    construct.Padding(7 - 0 - 1),       # 1-6
+    construct.Flag('vacc_rst'))         # 0     Reset the vector accumulator.
 
 # x-engine status
 register_xengine_status = construct.BitStruct('xstatus0',
-    construct.Padding(32 - 18 - 1),     # 19 - 31
+    construct.Padding(32 - 18 - 1),     # 19-31
     construct.Flag('gbe_lnkdn'),        # 18
     construct.Flag('xeng_err'),         # 17
-    construct.Padding(17 - 5 - 1),      # 6 - 16
+    construct.Padding(17 - 5 - 1),      # 6-16
     construct.Flag('vacc_err'),         # 5
     construct.Flag('rx_bad_pkt'),       # 4
     construct.Flag('rx_bad_frame'),     # 3
@@ -98,10 +106,10 @@ register_xengine_status = construct.BitStruct('xstatus0',
 
 # x-engine tvg control
 register_xengine_tvg_sel = construct.BitStruct('tvg_sel',
-    construct.Padding(32 - 1 - 2 - 2 - 6),  # 11 - 31
-    construct.BitField("vacc_tvg_sel", 6),  # 5 - 10
-    construct.BitField("xeng_tvg_sel", 2),  # 3 - 4
-    construct.BitField("descr_tvg_sel", 2), # 1 - 2
+    construct.Padding(32 - 1 - 2 - 2 - 6),  # 11-31
+    construct.BitField("vacc_tvg_sel", 6),  # 5-10
+    construct.BitField("xeng_tvg_sel", 2),  # 3-4
+    construct.BitField("descr_tvg_sel", 2), # 1-2
     construct.Flag('xaui_tvg_sel'))         # 0
 
 # the snap_rx block on the x-engine
@@ -132,7 +140,6 @@ snap_xengine_gbe_rx = construct.BitStruct("snap_gbe_rx0",
 
 # the snap block immediately after the x-engine
 snap_xengine_vacc = construct.BitStruct("snap_vacc0", construct.BitField("data", 32))
-
 
 def fft_shift_coarse_set_all(correlator, shift = -1):
     """
@@ -178,22 +185,28 @@ def feng_status_get(c, ant_str):
         rv['lru_state']='ok'
     return rv
 
-def channel_select(c, freq_hz = -1, no_select = False):
+def channel_select(c, freq_hz = -1, specific_chan = -1, selectchan = True):
     """
     Set the coarse channel based on a given center frequency, given in Hz.
     """
     if not c.is_narrowband():
         raise RuntimeError('This command cannot be run in the current mode.')
-    if freq_hz == -1:
-        raise RuntimeError('Calling this function without specifying a frequency makes no sense.')
+    if freq_hz != -1 and specific_chan != -1:
+        raise RuntimeError('Specify a frequency in Hz OR a specific coarse channel, not both.')
+    elif freq_hz == -1 and specific_chan == -1:
+        raise RuntimeError('Specify frequency in Hz or specific coarse channel.')
     channel_bw = c.config['bandwidth']
-    total_bw = c.config['rf_bandwidth']
     coarse_chans = c.config['coarse_chans']
-    chan = int(round(freq_hz / total_bw * coarse_chans))
+    if specific_chan != -1:
+        chan = specific_chan
+        freq_hz = chan * channel_bw
+    else:
+        total_bw = c.config['rf_bandwidth']
+        chan = int(round(freq_hz / total_bw * coarse_chans))
     if chan >= coarse_chans:
-        raise RuntimeError('Frequency %i is too high.' % freq_hz)
+        raise RuntimeError('Coarse channel too large: %i >= %i' % (chan, coarse_chans))
     chan_cf = chan * channel_bw
-    if not no_select:
+    if selectchan:
         try:
             corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = chan)
             c.config['center_freq'] = chan_cf
@@ -298,35 +311,15 @@ def get_adc_snapshot(c, ant_names, trig_level = -1, sync_to_pps = True):
                 rv[astr] = t
     return rv
 
-snap_fengine_debug_coarse_fft_old = construct.BitStruct(snap_debug,
-    construct.BitField("d0_r", 16),
-    construct.BitField("d0_i", 16),
-    construct.BitField("d1_r", 16),
-    construct.BitField("d1_i", 16),
-    construct.BitField("d2_r", 16),
-    construct.BitField("d2_i", 16),
-    construct.BitField("d3_r", 16),
-    construct.BitField("d3_i", 16))
-def get_snap_coarse_fft_old(c, fpgas = [], pol = 0):
-    """
-    Read and return data from the coarse FFT.
-    """
-    if len(fpgas) == 0:
-        fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 0, debug_pol_select = pol)
-    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3)
-    rd = []
-    for ctr in range(0, len(snap_data['data'])):
-        d = snap_data['data'][ctr]
-        repeater = construct.GreedyRepeater(snap_fengine_debug_coarse_fft)
-        up = repeater.parse(d)
-        coarsed = []
-        for a in up:
-            for b in range(0,4):
-                num = bin2fp(a['d%i_r'%b], 16, 15) + (1j * bin2fp(a['d%i_i'%b], 16, 15))
-                coarsed.append(num)
-        rd.append(coarsed)
-    return rd
+snap_fengine_debug_select = {}
+snap_fengine_debug_select['coarse_72'] =    0
+snap_fengine_debug_select['fine_128'] =     1
+snap_fengine_debug_select['quant_16'] =     2
+snap_fengine_debug_select['ct_64'] =        3
+snap_fengine_debug_select['xaui_128'] =     4
+snap_fengine_debug_select['gbetx0_128'] =   5
+snap_fengine_debug_select['buffer_72'] =    6
+snap_fengine_debug_select['pfb_72'] =       7
 
 snap_fengine_debug_coarse_fft = construct.BitStruct(snap_debug,
     construct.Padding(128 - (4*18)),
@@ -334,13 +327,16 @@ snap_fengine_debug_coarse_fft = construct.BitStruct(snap_debug,
     construct.BitField("d0_i", 18),
     construct.BitField("d1_r", 18),
     construct.BitField("d1_i", 18))
-def get_snap_coarse_fft(c, fpgas = [], pol = 0):
+def get_snap_coarse_fft(c, fpgas = [], pol = 0, setup_snap = True):
     """
     Read and return data from the coarse FFT.
+    Returns a list of the data from only that polarisation.
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 0, debug_pol_select = pol)
+    if setup_snap:
+        corr_functions.write_masked_register(fpgas, register_fengine_control,           debug_snap_select = snap_fengine_debug_select['coarse_72'])
+        corr_functions.write_masked_register(fpgas, register_fengine_coarse_control,    debug_pol_select = pol, debug_specify_chan = 0)
     snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3)
     rd = []
     for ctr in range(0, len(snap_data['data'])):
@@ -355,44 +351,98 @@ def get_snap_coarse_fft(c, fpgas = [], pol = 0):
         rd.append(coarsed)
     return rd
 
+def get_snap_coarse_channel(c, fpgas = [], pol = 0, channel = -1, setup_snap = True):
+    """
+    Get data from a specific coarse channel - straight out of the FFT into the snap block, NOT via the buffer block.
+    Returns a list of the data from only that polarisation.
+    """
+    if channel == -1:
+        raise RuntimeError('Cannot get data from unspecified channel.')
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    if setup_snap:
+        corr_functions.write_masked_register(fpgas, register_fengine_control,           debug_snap_select = snap_fengine_debug_select['coarse_72'])
+        corr_functions.write_masked_register(fpgas, register_fengine_coarse_control,    debug_pol_select = pol, debug_specify_chan = 1, debug_chan = channel >> 1)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        repeater = construct.GreedyRepeater(snap_fengine_debug_coarse_fft)
+        up = repeater.parse(d)
+        coarsed = []
+        for a in up:
+            if channel & 1:
+                num = bin2fp(a['d1_r'], 18, 17) + (1j * bin2fp(a['d1_i'], 18, 17))
+            else:
+                num = bin2fp(a['d0_r'], 18, 17) + (1j * bin2fp(a['d0_i'], 18, 17))
+            coarsed.append(num)
+        rd.append(coarsed)
+    return rd
+
+def get_snap_buffer_pfb(c, fpgas = [], pol = 0, setup_snap = True, pfb = False):
+    '''This DOESN'T EXIST in regular F-engines. Only in specific debug versions.
+    '''
+    if len(fpgas) == 0:
+        fpgas = c.ffpgas
+    if setup_snap:
+        if pfb:
+            corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = snap_fengine_debug_select['pfb_72'])
+        else:
+            corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = snap_fengine_debug_select['buffer_72'])
+        corr_functions.write_masked_register(fpgas, register_fengine_coarse_control, debug_pol_select = pol)
+    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3)
+    rd = []
+    for ctr in range(0, len(snap_data['data'])):
+        d = snap_data['data'][ctr]
+        repeater = construct.GreedyRepeater(snap_fengine_debug_coarse_fft)
+        up = repeater.parse(d)
+        coarsed = []
+        for a in up:
+            num = bin2fp(a['d%i_r'%pol], 18, 17) + (1j * bin2fp(a['d%i_i'%pol], 18, 17))
+            coarsed.append(num)
+        rd.append(coarsed)
+    return rd
+
 #snap_fengine_debug_fine_fft = construct.BitStruct(snap_debug,
 #    construct.Padding(128 - 72),
 #    construct.BitField("p0_r", 18),
 #    construct.BitField("p0_i", 18),
 #    construct.BitField("p1_r", 18),
 #    construct.BitField("p1_i", 18))
-snap_fengine_debug_fine_fft_tvg = construct.BitStruct(snap_debug,
-    construct.Padding(128-32),
-    construct.BitField("ctr", 32))
-def get_snap_fine_tvg(c, fpgas, offset = -1):
-    if len(fpgas) == 0:
-        fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = 2)
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1, tvg_en = True, fine_tvg = True)
-    import time
-    time.sleep(1)
-    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
-    rd = []
-    for ctr in range(0, len(snap_data['data'])):
-        d = snap_data['data'][ctr]
-        repeater = construct.GreedyRepeater(snap_fengine_debug_fine_fft_tvg)
-        up = repeater.parse(d)
-        fdata = []
-        for a in up:
-            p0c = a['ctr']
-            fdata.append(p0c)
-        rd.append(fdata)
-    return rd
+#snap_fengine_debug_fine_fft_tvg = construct.BitStruct(snap_debug,
+#    construct.Padding(128-32),
+#    construct.BitField("ctr", 32))
+#def get_snap_fine_tvg(c, fpgas, offset = -1):
+#    if len(fpgas) == 0:
+#        fpgas = c.ffpgas
+#    corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = 2)
+#    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1, tvg_en = True, fine_tvg = True)
+#    import time
+#    time.sleep(1)
+#    snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+#    rd = []
+#    for ctr in range(0, len(snap_data['data'])):
+#        d = snap_data['data'][ctr]
+#        repeater = construct.GreedyRepeater(snap_fengine_debug_fine_fft_tvg)
+#        up = repeater.parse(d)
+#        fdata = []
+#        for a in up:
+#            p0c = a['ctr']
+#            fdata.append(p0c)
+#        rd.append(fdata)
+#    return rd
+fine_fft_bitwidth = 32;
 snap_fengine_debug_fine_fft = construct.BitStruct(snap_debug,
-    construct.BitField("p0_r", 32),
-    construct.BitField("p0_i", 32),
-    construct.BitField("p1_r", 32),
-    construct.BitField("p1_i", 32))
-def get_snap_fine(c, debug_select, fpgas, offset = -1):
+    construct.Padding(128 - (4*fine_fft_bitwidth)),
+    construct.BitField("p0_r", fine_fft_bitwidth),
+    construct.BitField("p0_i", fine_fft_bitwidth),
+    construct.BitField("p1_r", fine_fft_bitwidth),
+    construct.BitField("p1_i", fine_fft_bitwidth))
+def get_snap_fine_fft(c, fpgas = [], offset = -1, setup_snap = True):
     if len(fpgas) == 0:
         fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 1)
-    #corr_functions.write_masked_register(fpgas, register_fengine_fine_control, fine_debug_select = debug_select)
+    if setup_snap:
+        corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = snap_fengine_debug_select['fine_128'])
     snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
     rd = []
     for ctr in range(0, len(snap_data['data'])):
@@ -402,29 +452,12 @@ def get_snap_fine(c, debug_select, fpgas, offset = -1):
         fdata_p0 = []
         fdata_p1 = []
         for a in up:
-            #p0c = bin2fp(a['p0_r'], 18, 17) + (1j * bin2fp(a['p0_i'], 18, 17))
-            #p1c = bin2fp(a['p1_r'], 18, 17) + (1j * bin2fp(a['p1_i'], 18, 17))
-            p0c = bin2fp(a['p0_r'], 32, 17) + (1j * bin2fp(a['p0_i'], 32, 17))
-            p1c = bin2fp(a['p1_r'], 32, 17) + (1j * bin2fp(a['p1_i'], 32, 17))
+            p0c = bin2fp(a['p0_r'], fine_fft_bitwidth, 17) + (1j * bin2fp(a['p0_i'], fine_fft_bitwidth, 17))
+            p1c = bin2fp(a['p1_r'], fine_fft_bitwidth, 17) + (1j * bin2fp(a['p1_i'], fine_fft_bitwidth, 17))
             fdata_p0.append(p0c)
             fdata_p1.append(p1c)
         rd.append([fdata_p0, fdata_p1])
     return rd
-def get_snap_fine_fft(c, fpgas = [], offset = -1):
-    """
-    Read and return data from the fine FFT. Both pols are returned.
-    """
-    return get_snap_fine(c = c, debug_select = 2, fpgas = fpgas, offset = offset)
-def get_snap_fine_buffer(c, fpgas = [], offset = -1):
-    """
-    Read and return data from the buffer before the fine FFT. Both pols are returned.
-    """
-    return get_snap_fine(c = c, debug_select = 0, fpgas = fpgas, offset = offset)
-def get_snap_fine_window(c, fpgas = [], offset = -1):
-    """
-    Read and return data from the window output inside the fine FFT block. Both pols are returned.
-    """
-    return get_snap_fine(c = c, debug_select = 1, fpgas = fpgas, offset = offset)
 
 snap_fengine_debug_quant = construct.BitStruct(snap_debug,
     construct.Padding(128 - 16),
@@ -434,42 +467,68 @@ snap_fengine_debug_quant = construct.BitStruct(snap_debug,
     construct.BitField("p1_i", 4))
 def get_snap_quant_wbc_compat(c, fpgas = [], offset = -1):
     return get_snap_quant(c = c, fpgas = fpgas, offset = offset, wbc_compat = True)
-def get_snap_quant(c, fpgas = [], offset = -1, wbc_compat = False, debug_data = None):
+def get_snap_quant(c, fpgas = None, offset = -1, wbc_compat = False, debug_data = None, setup_snap = True):
     """
-    Read and return data from the quantiser. Both pols are returned.
+    Read and return data from the quantiser snapshot. Both pols are returned.
     """
-    if len(fpgas) == 0:
+    if fpgas == None:
         fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 2)
+    if setup_snap:
+        c.syslogger.debug('get_snap_quant: setting debug snapblock to quantiser output.')
+        corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = snap_fengine_debug_select['quant_16'])
+    data = []
+    for fpga in fpgas:
+        tempdata = _fpga_snap_quant(fpga = fpga, offset = offset, wbc_compat = wbc_compat, debug_data = debug_data)
+        data.append(tempdata)
+    return data
+
+def _fpga_snap_quant(fpga = None, offset = -1, wbc_compat = False, debug_data = None):
+    ''''
+    Get quantiser snap data from only one f-engine FPGA.
+    NB: Assumes the quantiser has already been selected in the control register.
+    Returns a snapshot of quantised data in one of two formats, depending on the wbc_compat argument.
+    Either way, it's data for both pols.
+    debug_data is data from the snap.snapshots_get function
+    '''
+    def _log(msg):
+        fpga._logger.debug('_fpga_snap_quant: %s' % msg)
+    if fpga == None:
+        raise RuntimeError('Please provide the FPGA from which to read the quantised data.')
     if debug_data == None:
-        snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
+        _log('reading snap data at offset %i.' % offset)
+        snap_data = snap.snapshots_get(fpgas = [fpga], dev_names = snap_debug, wait_period = 3, offset = offset)['data'][0]
     else:
-        snap_data = debug_data
-    rd = []
-    for ctr in range(0, len(snap_data['data'])):
-        d = snap_data['data'][ctr]
-        fdata_p0 = []
-        fdata_p1 = []
-        if not wbc_compat:
-            repeater = construct.GreedyRepeater(snap_fengine_debug_quant)
-            up = repeater.parse(d)
-            for a in up:
-                p0c = bin2fp(a['p0_r'], 4, 3) + (1j * bin2fp(a['p0_i'], 4, 3))
-                p1c = bin2fp(a['p1_r'], 4, 3) + (1j * bin2fp(a['p1_i'], 4, 3))
-                fdata_p0.append(p0c)
-                fdata_p1.append(p1c)
-        else:
-            # remember that the data is 16-bit padded up to 128-bit because of the one debug snap block, so only 2 of every 16 bytes are valid data
-            up = numpy.fromstring(d, dtype = numpy.uint8)
-            for a in range(14, len(up), 16):
-                pol0_r_bits = (up[a]   & ((2**8) - (2**4))) >> 4
-                pol0_i_bits = (up[a]   & ((2**4) - (2**0)))
-                pol1_r_bits = (up[a+1] & ((2**8) - (2**4))) >> 4
-                pol1_i_bits = (up[a+1] & ((2**4) - (2**0)))
-                fdata_p0.append(float(((numpy.int8(pol0_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol0_i_bits << 4) >> 4)))))
-                fdata_p1.append(float(((numpy.int8(pol1_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol1_i_bits << 4) >> 4)))))
-        rd.append([fdata_p0, fdata_p1])
-    return rd
+        _log('using debug data, not fresh snap data.')
+        snap_data = debug_data['data'][0]
+    _log('unpacking data.')
+    data = [[], []]
+    if not wbc_compat:
+        repeater = construct.GreedyRepeater(snap_fengine_debug_quant)
+        unpacked = repeater.parse(snap_data)
+        for ctr in unpacked:
+            p0c = bin2fp(ctr['p0_r'], 4, 3) + (1j * bin2fp(ctr['p0_i'], 4, 3))
+            p1c = bin2fp(ctr['p1_r'], 4, 3) + (1j * bin2fp(ctr['p1_i'], 4, 3))
+            data[0].append(p0c)
+            data[1].append(p1c)
+    else:
+        # remember that the data is 16-bit padded up to 128-bit because of the one debug snap block, so only 2 of every 16 bytes are valid data
+        unpacked = numpy.fromstring(snap_data, dtype = numpy.uint8)
+        for ctr in range(14, len(unpacked), 16):
+            pol0_r_bits = (unpacked[ctr]   & ((2**8) - (2**4))) >> 4
+            pol0_i_bits = (unpacked[ctr]   & ((2**4) - (2**0)))
+            pol1_r_bits = (unpacked[ctr+1] & ((2**8) - (2**4))) >> 4
+            pol1_i_bits = (unpacked[ctr+1] & ((2**4) - (2**0)))
+            data[0].append(float(((numpy.int8(pol0_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol0_i_bits << 4) >> 4)))))
+            data[1].append(float(((numpy.int8(pol1_r_bits << 4) >> 4))) + (1j * float(((numpy.int8(pol1_i_bits << 4) >> 4)))))
+    _log('returning %i complex values for each pol.' % len(data[0]))
+    return data
+
+def get_quant_spectrum(c, fpgas = None):
+    raise RuntimeError('NOT YET COMPLETE. SORRY.')
+    num_chans = c.config['n_chans']
+    rv = []
+    spectrum = 3 
+    return spectrum
 
 snap_fengine_debug_ct = construct.BitStruct(snap_debug,
     construct.Padding(128 - 64),
@@ -477,13 +536,14 @@ snap_fengine_debug_ct = construct.BitStruct(snap_debug,
     construct.BitField("p01_r", 4), construct.BitField("p01_i", 4), construct.BitField("p11_r", 4), construct.BitField("p11_i", 4),
     construct.BitField("p02_r", 4), construct.BitField("p02_i", 4), construct.BitField("p12_r", 4), construct.BitField("p12_i", 4),
     construct.BitField("p03_r", 4), construct.BitField("p03_i", 4), construct.BitField("p13_r", 4), construct.BitField("p13_i", 4))
-def get_snap_ct(c, fpgas = [], offset = -1):
+def get_snap_ct(c, fpgas = [], offset = -1, setup_snap = True):
     """
     Read and return data from the corner turner. Both pols are returned.
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 3)
+    if setup_snap:
+        corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = snap_fengine_debug_select['ct_64'])
     snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset)
     rd = []
     for ctr in range(0, len(snap_data['data'])):
@@ -525,7 +585,7 @@ def get_snap_xaui(c, fpgas = [], offset = -1, man_trigger = False, man_valid = F
     """
     if len(fpgas) == 0:
         fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 4)
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = snap_fengine_debug_select['xaui_128'])
     snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = wait_period, offset = offset, man_trig = man_trigger, man_valid = man_valid, circular_capture = False)
     return snap_data
 
@@ -542,7 +602,7 @@ snap_fengine_gbe_tx = construct.BitStruct("snap_debug",
 def get_snap_feng_10gbe(c, fpgas = [], offset = -1,  man_trigger = False, man_valid = False):
     if len(fpgas) == 0:
         fpgas = c.ffpgas
-    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = 5)
+    corr_functions.write_masked_register(fpgas, register_fengine_control, debug_snap_select = snap_fengine_debug_select['gbetx0_128'])
     snap_data = snap.snapshots_get(fpgas = fpgas, dev_names = snap_debug, wait_period = 3, offset = offset, man_trig = man_trigger, man_valid = man_valid, circular_capture = False)
     rd = []
     for ctr in range(0, len(snap_data['data'])):

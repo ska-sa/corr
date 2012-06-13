@@ -64,10 +64,10 @@ try:
     
     if opts.tvg_fdfs == 1:
         print "\tEnabling FD,FS TVG"
-        kwargs["tvg_ffdel_sel"] = True
+        kwargs["tvgsel_fdfs"] = True
     elif opts.tvg_fdfs == 0:
         print "\tDisabling FD,FS TVG"
-        kwargs["tvg_ffdel_sel"] = False
+        kwargs["tvgsel_fdfs"] = False
 
     if opts.tvg_packetiser == 1:
         print "\tEnabling packetiser TVG"
