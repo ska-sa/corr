@@ -262,12 +262,12 @@ class DeviceExampleServer(katcp.DeviceServer):
             print 'N spectra: %i.'%n_spectra
             print unpackedBytes
             if n_spectra == 1: 
-                self.reply_inform(sock, katcp.Message.inform(orgmsg.name,*(['%i+%ij'%(val.real,val.imag) for val in unpackedBytes])),orgmsg)
+                self.reply_inform(sock, katcp.Message.inform(orgmsg.name,*(['%i+%ij'%(val.real,val.imag) for val in unpackedBytes[0]])),orgmsg)
             elif n_spectra >1:
                 for s_n,spectrum in enumerate(unpackedBytes):
                     #print 'Sending inform %i:'%s,unpackedBytes[s]
-                    print 'trying to send the array:', ['%i+%ij'%(val.real,val.imag) for val in unpackedBytes[s_n]]
-                    self.reply_inform(sock, katcp.Message.inform(orgmsg.name,*(['%i+%ij'%(val.real,val.imag) for val in unpackedBytes[s_n]])),orgmsg)
+                    print 'trying to send the array:', ['%i+%ij'%(val.real,val.imag) for val in unpackedBytes[0][s_n]]
+                    self.reply_inform(sock, katcp.Message.inform(orgmsg.name,*(['%i+%ij'%(val.real,val.imag) for val in unpackedBytes[0][s_n]])),orgmsg)
             else:
                 raise RuntimeError("Please specify the number of spectra to be greater than zero!")
             return katcp.Message.reply(orgmsg.name,'ok',str(n_spectra))
