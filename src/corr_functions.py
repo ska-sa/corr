@@ -6,6 +6,7 @@ Author: Jason Manley
 """
 """
 Revisions:
+2012-06-015 JRM Object-wide spead itemgroup and transmitter.
 2012-01-11: JRM Cleanup of SPEAD metadata to match new documentation.
 2011-07-06: PVP New functions to read/write/pulse bitfields within registers. Remove a bit of duplicate code for doing that.
 2011-06-23: JMR Moved all snapshot stuff into new file (snap.py)
@@ -50,7 +51,7 @@ Revisions:
 2009-06-26  JRM UNDER CONSTRUCTION.
 \n"""
 
-import corr, time, sys, numpy, os, logging, katcp, struct, construct, socket
+import corr, time, sys, numpy, os, logging, katcp, struct, construct, socket, spead
 
 DEFAULT_CONFIG='/etc/corr/default'
 
@@ -168,6 +169,8 @@ class Correlator:
             logger.setLevel(log_level)
 
         self.syslogger.info('Configuration file %s parsed ok.' % config_file)
+        self.spead_tx=spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
+        self.spead_ig=spead.ItemGroup()
 
         if connect == True:
             self.connect()
@@ -636,9 +639,8 @@ class Correlator:
             self.xeng_ctrl_set_all(gbe_out_enable = False)
             self.syslogger.info("Correlator output paused.")
             if spead_stop:
-                import spead
-                tx = spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
-                tx.end()
+                tx_temp = spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
+                tx_temp.end()
                 self.syslogger.info("Sent SPEAD end-of-stream notification.")
             else:
                 self.syslogger.info("Did not send SPEAD end-of-stream notification.")
@@ -2084,70 +2086,64 @@ class Correlator:
         return rv
 
     def spead_labelling_issue(self):
-        import spead
-        tx=spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
-        ig=spead.ItemGroup()
-#        ig.add_item(name="bls_ordering",id=0x100C,
+        """Issues the SPEAD metadata packets describing the labelling/location/connections of the system's analogue inputs."""
+#        self.spead_ig.add_item(name="bls_ordering",id=0x100C,
 #            description="The output ordering of the baselines from each X engine. Packed as a pair of unsigned integers, ant1,ant2 where ant1 < ant2.",
 #            shape=[self.config['n_bls'],2],fmt=spead.mkfmt(('u',16)),
 #            init_val=[[bl[0],bl[1]] for bl in self.get_bl_order()])
 
-        ig.add_item(name="bls_ordering",id=0x100C,
+        self.spead_ig.add_item(name="bls_ordering",id=0x100C,
             description="The output ordering of the baselines from each X engine.",
             #shape=[self.config['n_bls']],fmt=spead.STR_FMT, 
             init_val=numpy.array([bl for bl in self.get_bl_order()]))
 
-        ig.add_item(name="input_labelling",id=0x100E,
+        self.spead_ig.add_item(name="input_labelling",id=0x100E,
             description="The physical location of each antenna connection.",
-            #shape=[self.config['n_inputs']],fmt=spead.STR_FMT,
             init_val=numpy.array([(ant_str,input_n,lru,feng_input) for (ant_str,input_n,lru,feng_input) in self.adc_lru_mapping_get()]))
 
-#        ig.add_item(name="crosspol_ordering",id=0x100D,
+#        self.spead_ig.add_item(name="crosspol_ordering",id=0x100D,
 #            description="The output ordering of the cross-pol terms. Packed as a pair of characters, pol1,pol2.",
 #            shape=[self.config['n_stokes'],self.config['n_pols']],fmt=spead.mkfmt(('c',8)),
 #            init_val=[[bl[0],bl[1]] for bl in self.get_crosspol_order()])
-        tx.send_heap(ig.get_heap())
+        self.spead_tx.send_heap(self.spead_ig.get_heap())
         self.syslogger.info("Issued SPEAD metadata describing baseline labelling and input mapping to %s:%i."%(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
 
 
     def spead_static_meta_issue(self):
         """ Issues the SPEAD metadata packets containing the payload and options descriptors and unpack sequences."""
-        import spead
         #tested ok corr-0.5.0 2010-08-07
-        tx=spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
-        ig=spead.ItemGroup()
 
-        ig.add_item(name="adc_clk",id=0x1007,
+        self.spead_ig.add_item(name="adc_clk",id=0x1007,
             description="Clock rate of ADC (samples per second).",
             shape=[],fmt=spead.mkfmt(('u',64)),
             init_val=self.config['adc_clk'])
 
-        ig.add_item(name="n_bls",id=0x1008,
+        self.spead_ig.add_item(name="n_bls",id=0x1008,
             description="The total number of baselines in the data product.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['n_bls'])
 
-        ig.add_item(name="n_chans",id=0x1009,
+        self.spead_ig.add_item(name="n_chans",id=0x1009,
             description="The total number of frequency channels present in any integration.",
             shape=[], fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['n_chans'])
 
-        ig.add_item(name="n_ants",id=0x100A,
+        self.spead_ig.add_item(name="n_ants",id=0x100A,
             description="The total number of dual-pol antennas in the system.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['n_ants'])
 
-        ig.add_item(name="n_xengs",id=0x100B,
+        self.spead_ig.add_item(name="n_xengs",id=0x100B,
             description="The total number of X engines in the system.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['n_xeng'])
 
-        ig.add_item(name="center_freq",id=0x1011,
+        self.spead_ig.add_item(name="center_freq",id=0x1011,
             description="The center frequency of the DBE in Hz, 64-bit IEEE floating-point number.",
             shape=[],fmt=spead.mkfmt(('f',64)),
             init_val=self.config['center_freq'])
 
-        ig.add_item(name="bandwidth",id=0x1013,
+        self.spead_ig.add_item(name="bandwidth",id=0x1013,
             description="The analogue bandwidth of the digitally processed signal in Hz.",
             shape=[],fmt=spead.mkfmt(('f',64)),
             init_val=self.config['bandwidth'])
@@ -2155,196 +2151,185 @@ class Correlator:
         #1015/1016 are taken (see time_metadata_issue below)
 
         if self.is_wideband():
-            ig.add_item(name="fft_shift",id=0x101E,
+            self.spead_ig.add_item(name="fft_shift",id=0x101E,
                 description="The FFT bitshift pattern. F-engine correlator internals.",
                 shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
                 init_val=self.config['fft_shift'])
         elif self.is_narrowband():
-            ig.add_item(name="fft_shift_fine",id=0x101C,
+            self.spead_ig.add_item(name="fft_shift_fine",id=0x101C,
                 description="The FFT bitshift pattern for the fine channelisation FFT. F-engine correlator internals.",
                 shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
                 init_val=self.config['fft_shift_fine'])
-            ig.add_item(name="fft_shift_coarse",id=0x101D,
+            self.spead_ig.add_item(name="fft_shift_coarse",id=0x101D,
                 description="The FFT bitshift pattern for the coarse channelisation FFT. F-engine correlator internals.",
                 shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
                 init_val=self.config['fft_shift_coarse'])
 
-        ig.add_item(name="xeng_acc_len",id=0x101F,
+        self.spead_ig.add_item(name="xeng_acc_len",id=0x101F,
             description="Number of spectra accumulated inside X engine. Determines minimum integration time and user-configurable integration time stepsize. X-engine correlator internals.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['xeng_acc_len'])
 
-        ig.add_item(name="requant_bits",id=0x1020,
+        self.spead_ig.add_item(name="requant_bits",id=0x1020,
             description="Number of bits after requantisation in the F engines (post FFT and any phasing stages).",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['feng_bits'])
 
-        ig.add_item(name="feng_pkt_len",id=0x1021,
+        self.spead_ig.add_item(name="feng_pkt_len",id=0x1021,
             description="Payload size of 10GbE packet exchange between F and X engines in 64 bit words. Usually equal to the number of spectra accumulated inside X engine. F-engine correlator internals.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['10gbe_pkt_len'])
 
-        ig.add_item(name="rx_udp_port",id=0x1022,
+        self.spead_ig.add_item(name="rx_udp_port",id=0x1022,
             description="Destination UDP port for X engine output.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['rx_udp_port'])
 
-        ig.add_item(name="feng_udp_port",id=0x1023,
+        self.spead_ig.add_item(name="feng_udp_port",id=0x1023,
             description="Destination UDP port for F engine data exchange.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['10gbe_port'])
 
-        ig.add_item(name="rx_udp_ip_str",id=0x1024,
+        self.spead_ig.add_item(name="rx_udp_ip_str",id=0x1024,
             description="Destination IP address for X engine output UDP packets.",
             shape=[-1],fmt=spead.STR_FMT,
             init_val=self.config['rx_udp_ip_str'])
 
-        ig.add_item(name="feng_start_ip",id=0x1025,
+        self.spead_ig.add_item(name="feng_start_ip",id=0x1025,
             description="F engine starting IP address.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['10gbe_ip'])
 
-        ig.add_item(name="xeng_rate",id=0x1026,
+        self.spead_ig.add_item(name="xeng_rate",id=0x1026,
             description="Target clock rate of processing engines (xeng).",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['xeng_clk'])
 
-#        ig.add_item(name="n_stokes",id=0x1040,
+#        self.spead_ig.add_item(name="n_stokes",id=0x1040,
 #            description="Number of Stokes parameters in output.",
 #            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
 #            init_val=self.config['n_stokes'])
 
-        ig.add_item(name="x_per_fpga",id=0x1041,
+        self.spead_ig.add_item(name="x_per_fpga",id=0x1041,
             description="Number of X engines per FPGA.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['x_per_fpga'])
 
-        ig.add_item(name="n_ants_per_xaui",id=0x1042,
+        self.spead_ig.add_item(name="n_ants_per_xaui",id=0x1042,
             description="Number of antennas' data per XAUI link.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['n_ants_per_xaui'])
 
-        ig.add_item(name="ddc_mix_freq",id=0x1043,
+        self.spead_ig.add_item(name="ddc_mix_freq",id=0x1043,
             description="Digital downconverter mixing freqency as a fraction of the ADC sampling frequency. eg: 0.25. Set to zero if no DDC is present.",
             shape=[],fmt=spead.mkfmt(('f',64)),
             init_val=self.config['ddc_mix_freq'])
 
-#        ig.add_item(name="ddc_bandwidth",id=0x1044,
+#        self.spead_ig.add_item(name="ddc_bandwidth",id=0x1044,
 #            description="Digitally processed bandwidth, post DDC, in Hz.",
 #            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
 #            init_val=self.config['bandwidth']) #/self.config['ddc_decimation']) config's bandwidth is already divided by ddc decimation
 
 #0x1044 should be ddc_bandwidth, not ddc_decimation.
-#        ig.add_item(name="ddc_decimation",id=0x1044,
+#        self.spead_ig.add_item(name="ddc_decimation",id=0x1044,
 #            description="Frequency decimation of the digital downconverter (determines how much bandwidth is processed) eg: 4",
 #            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
 #            init_val=self.config['ddc_decimation'])
 
-        ig.add_item(name="adc_bits",id=0x1045,
+        self.spead_ig.add_item(name="adc_bits",id=0x1045,
             description="ADC quantisation (bits).",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['adc_bits'])
 
-        ig.add_item(name="xeng_out_bits_per_sample",id=0x1048,
+        self.spead_ig.add_item(name="xeng_out_bits_per_sample",id=0x1048,
             description="The number of bits per value of the xeng accumulator output. Note this is for a single value, not the combined complex size.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['xeng_sample_bits'])
 
-        tx.send_heap(ig.get_heap())
+        self.spead_tx.send_heap(self.spead_ig.get_heap())
         self.syslogger.info("Issued misc SPEAD metadata to %s:%i."%(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
 
     def spead_time_meta_issue(self):
         """Issues a SPEAD packet to notify the receiver that we've resync'd the system, acc len has changed etc."""
-        #tested ok corr-0.5.0 2010-08-07
-        import spead
-        tx=spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
-        ig=spead.ItemGroup()
 
-        ig.add_item(name="n_accs",id=0x1015,
+        self.spead_ig.add_item(name="n_accs",id=0x1015,
             description="The number of spectra that are accumulated per integration.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.acc_n_get())
 
-        ig.add_item(name="int_time",id=0x1016,
+        self.spead_ig.add_item(name="int_time",id=0x1016,
             description="Approximate (it's a float!) integration time per accumulation in seconds.",
             shape=[],fmt=spead.mkfmt(('f',64)),
             init_val=self.acc_time_get())
 
-        ig.add_item(name='sync_time',id=0x1027,
+        self.spead_ig.add_item(name='sync_time',id=0x1027,
             description="Time at which the system was last synchronised (armed and triggered by a 1PPS) in seconds since the Unix Epoch.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.config['sync_time'])
 
-        ig.add_item(name="scale_factor_timestamp",id=0x1046,
+        self.spead_ig.add_item(name="scale_factor_timestamp",id=0x1046,
             description="Timestamp scaling factor. Divide the SPEAD data packet timestamp by this number to get back to seconds since last sync.",
             shape=[],fmt=spead.mkfmt(('f',64)),
             init_val=self.config['spead_timestamp_scale_factor'])
 
-        tx.send_heap(ig.get_heap())
+        self.spead_tx.send_heap(self.spead_ig.get_heap())
         self.syslogger.info("Issued SPEAD timing metadata to %s:%i."%(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
 
     def spead_eq_meta_issue(self):
         """Issues a SPEAD heap for the RF gain and EQ settings."""
-        import spead
-        tx=spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
-        ig=spead.ItemGroup()
-
         if self.config['adc_type'] == 'katadc':
             for input_n,ant_str in enumerate(self.config._get_ant_mapping_list()):
-                ig.add_item(name="rf_gain_%i"%(input_n),id=0x1200+input_n,
+                self.spead_ig.add_item(name="rf_gain_%i"%(input_n),id=0x1200+input_n,
                     description="The analogue RF gain applied at the ADC for input %i (ant %s) in dB."%(input_n,ant_str),
                     shape=[],fmt=spead.mkfmt(('f',64)),
                     init_val=self.config['rf_gain_%i'%(input_n)])
 
         if self.config['eq_type']=='scalar':
             for in_n,ant_str in enumerate(self.config._get_ant_mapping_list()):
-                ig.add_item(name="eq_coef_%s"%(ant_str),id=0x1400+in_n,
+                self.spead_ig.add_item(name="eq_coef_%s"%(ant_str),id=0x1400+in_n,
                     description="The unitless per-channel digital amplitude scaling factors implemented prior to requantisation, post-FFT, for input %s."%(ant_str),
                     init_val=self.eq_spectrum_get(ant_str))
 
         elif self.config['eq_type']=='complex':
             for in_n,ant_str in enumerate(self.config._get_ant_mapping_list()):
-                ig.add_item(name="eq_coef_%s"%(ant_str),id=0x1400+in_n,
+                self.spead_ig.add_item(name="eq_coef_%s"%(ant_str),id=0x1400+in_n,
                     description="The unitless per-channel digital scaling factors implemented prior to requantisation, post-FFT, for input %s. Complex number real,imag 32 bit integers."%(ant_str),
                     shape=[self.config['n_chans'],2],fmt=spead.mkfmt(('u',32)),
                     init_val=[[numpy.real(coeff),numpy.imag(coeff)] for coeff in self.eq_spectrum_get(ant_str)])
 
         else: raise RuntimeError("I don't know how to deal with your EQ type.")
 
-        tx.send_heap(ig.get_heap())
+        self.spead_tx.send_heap(self.spead_ig.get_heap())
         self.syslogger.info("Issued SPEAD EQ metadata to %s:%i."%(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
 
     def spead_data_descriptor_issue(self):
         """ Issues the SPEAD data descriptors for the HW 10GbE output, to enable receivers to decode the data."""
         #tested ok corr-0.5.0 2010-08-07
-        import spead
-        tx=spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
-        ig=spead.ItemGroup()
 
         if self.config['xeng_sample_bits'] != 32: raise RuntimeError("Invalid bitwidth of X engine output. You specified %i, but I'm hardcoded for 32."%self.config['xeng_sample_bits'])
 
         if self.config['xeng_format'] == 'cont':
-            ig.add_item(name=('timestamp'), id=0x1600,
+            self.spead_ig.add_item(name=('timestamp'), id=0x1600,
                 description='Timestamp of start of this integration. uint counting multiples of ADC samples since last sync (sync_time, id=0x1027). Divide this number by timestamp_scale (id=0x1046) to get back to seconds since last sync when this integration was actually started. Note that the receiver will need to figure out the centre timestamp of the accumulation (eg, by adding half of int_time, id 0x1016).',
                 shape=[], fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
                 init_val=0)
 
-            ig.add_item(name=("xeng_raw"),id=0x1800,
+            self.spead_ig.add_item(name=("xeng_raw"),id=0x1800,
                 description="Raw data for %i xengines in the system. This item represents a full spectrum (all frequency channels) assembled from lowest frequency to highest frequency. Each frequency channel contains the data for all baselines (n_bls given by SPEAD ID 0x100B). Each value is a complex number -- two (real and imaginary) unsigned integers."%(self.config['n_xeng']),
             ndarray=(numpy.dtype(numpy.int32),(self.config['n_chans'],self.config['n_bls'],2)))
 
         elif self.config['xeng_format'] =='inter':
             for x in range(self.config['n_xeng']):
 
-                ig.add_item(name=('timestamp%i'%x), id=0x1600+x,
+                self.spead_ig.add_item(name=('timestamp%i'%x), id=0x1600+x,
                     description='Timestamp of start of this integration. uint counting multiples of ADC samples since last sync (sync_time, id=0x1027). Divide this number by timestamp_scale (id=0x1046) to get back to seconds since last sync when this integration was actually started. Note that the receiver will need to figure out the centre timestamp of the accumulation (eg, by adding half of int_time, id 0x1016).',
                     shape=[], fmt=spead.mkfmt(('u',spead.ADDRSIZE)),init_val=0)
 
-                ig.add_item(name=("xeng_raw%i"%x),id=(0x1800+x),
+                self.spead_ig.add_item(name=("xeng_raw%i"%x),id=(0x1800+x),
                     description="Raw data for xengine %i out of %i. Frequency channels are split amongst xengines. Frequencies are distributed to xengines in a round-robin fashion, starting with engine 0. Data from all X engines must thus be combed or interleaved together to get continuous frequencies. Each xengine calculates all baselines (n_bls given by SPEAD ID 0x100B) for a given frequency channel. For a given baseline, -SPEAD ID 0x1040- stokes parameters are calculated (nominally 4 since xengines are natively dual-polarisation; software remapping is required for single-baseline designs). Each stokes parameter consists of a complex number (two real and imaginary unsigned integers)."%(x,self.config['n_xeng']),
                     ndarray=(numpy.dtype(numpy.int32),(self.config['n_chans']/self.config['n_xeng'],self.config['n_bls'],2)))
 
-        tx.send_heap(ig.get_heap())
+        self.spead_tx.send_heap(self.spead_ig.get_heap())
         self.syslogger.info("Issued SPEAD data descriptor to %s:%i."%(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
 
     def spead_issue_all(self):
