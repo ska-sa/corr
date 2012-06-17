@@ -189,6 +189,7 @@ def get_data_nb_quant(pol):
         temp = corr.corr_nb.get_snap_quant(c, fpgas = [pol['fpga']], offset = offset)
         temp = temp[0][pol['pol']]
         unpacked_vals.extend(temp)
+        # each word from the snap block is 128 bits, 16 bytes. offset is given in bytes.
         offset += (len(temp) * 128/8)
     length = len(unpacked_vals)
     swapped = unpacked_vals[length/2:]
