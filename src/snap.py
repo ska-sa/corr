@@ -161,7 +161,9 @@ def get_quant_snapshot(correlator, ant_str, n_spectra = 1, man_trig = False, man
                 logging.debug('get_quant_snapshot: nb, read snap - have %i/%i channels' % (len(tempdata), correlator.config['n_chans']))
                 quanttemp = corr.corr_nb.get_snap_quant_wbc_compat(correlator, [fpga], offset = offset)[0][feng_input]
                 tempdata.extend(quanttemp)
-                offset = offset + len(quanttemp)
+                # the debug snap block is 1024 128-bit words, so it's 16kbytes long. The offset is in BYTES!
+                # the data in tempdata represents 128-bit WORDS
+                offset = offset + (len(quanttemp) * 128/8)
             unpacked_vals.extend(tempdata)
         else:
             raise RuntimeError('Unknown mode.')
