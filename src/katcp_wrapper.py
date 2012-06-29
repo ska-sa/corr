@@ -431,6 +431,75 @@ class FpgaClient(BlockingClient):
         super(FpgaClient,self).stop()
         self.join(timeout=self._timeout)
 
+    def get_10gbe_core_details(self,dev_name):
+        """Prints 10GbE core details. 
+           @param dev_name string: Name of the core.
+        """
+        #assemble struct for header stuff...
+        #0x00 - 0x07: My MAC address
+        #0x08 - 0x0b: Not used
+        #0x0c - 0x0f: Gateway addr
+        #0x10 - 0x13: my IP addr
+        #0x14 - 0x17: Not assigned
+        #0x18 - 0x1b: Buffer sizes
+        #0x1c - 0x1f: Not assigned
+        #0x20       : soft reset (bit 0)
+        #0x21       : fabric enable (bit 0)
+        #0x22 - 0x23: fabric port 
+        #0x24 - 0x27: XAUI status (bit 2,3,4,5=lane sync, bit6=chan_bond)
+        #0x28 - 0x2b: PHY config
+        #0x28       : RX_eq_mix
+        #0x29       : RX_eq_pol
+        #0x2a       : TX_preemph
+        #0x2b       : TX_diff_ctrl
+        #0x1000     : CPU TX buffer
+        #0x2000     : CPU RX buffer
+        #0x3000     : ARP tables start
+
+        port_dump=list(struct.unpack('>16384B',self.read(dev_name,16384)))
+        ip_prefix= '%3d.%3d.%3d.'%(port_dump[0x10],port_dump[0x11],port_dump[0x12])
+
+        rv={}
+        mymac=((port_dump[02]<<40) + (port_dump[03]<<32) + (port_dump[04]<<24) + (port_dump[05]<<16) + (port_dump[06]<<8) + port_dump[07])
+        rv['mymac']=mymac
+
+        gateway=((port_dump[0x0c]<<24) + (port_dump[0x0d]<<16) + (port_dump[0x0e]<<8) + (port_dump[0x0f]))
+        rv['gateway_ip']=gateway
+
+        my_ip=((port_dump[0x10]<<24) + (port_dump[0x11]<<16) + (port_dump[0x12]<<8) + (port_dump[0x13]))
+        rv['my_ip']=my_ip
+
+        fabric_port=((port_dump[0x22]<<8) + (port_dump[0x23]))
+        rv['fabric_port']=fabric_port
+
+        fabic_enabled=bool(port_dump[0x21]&1)
+        rv['fabric_en']=fabric_enabled
+
+        xaui_lane0_sync=bool(port_dump[0x27]&4)
+        xaui_lane1_sync=bool(port_dump[0x27]&8)
+        xaui_lane2_sync=bool(port_dump[0x27]&16)
+        xaui_lane3_sync=bool(port_dump[0x27]&32)
+        xaui_chan_bond=bool(port_dump[0x27]&64)
+        xaui_status=((port_dump[0x24]<<24) + (port_dump[0x25]<<16) + (port_dump[0x26]<<8) + (port_dump[0x27]))
+        rv['xaui_lane_sync']=[xaui_lane0_sync, xaui_lane1_sync, xaui_lane2_sync, xaui_lane3_sync]
+        rv['xaui_status']=xaui_status
+
+        xaui_phy_rx_eq_mix=port_dump[0x28]
+        xaui_phy_rx_eq_pol=port_dump[0x29]
+        xaui_phy_tx_preemph=port_dump[0x2a]
+        xaui_phy_tx_swing=port_dump[0x2b]
+        rv['xaui_phy_rx_eq_mix']=xaui_phy_rx_eq_mix
+        rv['xaui_phy_rx_eq_pol']=xaui_phy_rx_eq_pol
+        rv['xaui_phy_tx_preemph']=xaui_phy_tx_preemph
+        rv['xaui_phy_tx_swing']=xaui_phy_tx_swing
+
+        arp=[]
+        for i in range(256):
+            arp.append(((port_dump[0x3000+i*8+2]<<40) + (port_dump[0x3000+i*8+3]<<32) + (port_dump[0x3000+i*8+4]<<24) + (port_dump[0x3000+i*8+5]<<16) + (port_dump[0x3000+i*8+6]<<8) + port_dump[0x3000+i*8+7]))
+        rv['arp']=arp
+
+        return rv
+
     def print_10gbe_core_details(self,dev_name,arp=False, cpu=False):
         """Prints 10GbE core details. 
            @param dev_name string: Name of the core.
