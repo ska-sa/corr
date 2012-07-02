@@ -472,7 +472,7 @@ class FpgaClient(BlockingClient):
         fabric_port=((port_dump[0x22]<<8) + (port_dump[0x23]))
         rv['fabric_port']=fabric_port
 
-        fabic_enabled=bool(port_dump[0x21]&1)
+        fabric_enabled=bool(port_dump[0x21]&1)
         rv['fabric_en']=fabric_enabled
 
         xaui_lane0_sync=bool(port_dump[0x27]&4)
@@ -483,6 +483,7 @@ class FpgaClient(BlockingClient):
         xaui_status=((port_dump[0x24]<<24) + (port_dump[0x25]<<16) + (port_dump[0x26]<<8) + (port_dump[0x27]))
         rv['xaui_lane_sync']=[xaui_lane0_sync, xaui_lane1_sync, xaui_lane2_sync, xaui_lane3_sync]
         rv['xaui_status']=xaui_status
+        rv['xaui_chan_bond']=xaui_chan_bond
 
         xaui_phy_rx_eq_mix=port_dump[0x28]
         xaui_phy_rx_eq_pol=port_dump[0x29]
