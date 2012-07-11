@@ -1203,24 +1203,24 @@ class Correlator:
                 raise RuntimeError('Requested delay (%es) is out of range (+-%es).'%(
                 float(coarse_delay)/self.config['adc_clk'],
                 float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
-            else: self.floggers[ffpga_n].warn('Delay actually set to %e seconds.'%act_delay)
+            else: self.floggers[ffpga_n].info('Delay actually set to %e seconds.'%act_delay)
 
         if (delay_rate != 0):
             if (fine_delay_rate==0): self.floggers[ffpga_n].error('Requested delay rate too slow for this configuration.')
             if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)): 
                 self.floggers[ffpga_n].error('Requested delay rate out of range (+-%e).'%(2**(bitshift_schedule-1)))
                 raise RuntimeError('Requested delay rate is out of range (+-%e).'%(1./(2**(bitshift_schedule))))
-            else: self.floggers[ffpga_n].warn('Delay rate actually set to %e seconds per second.'%act_delay_rate) 
+            else: self.floggers[ffpga_n].info('Delay rate actually set to %e seconds per second.'%act_delay_rate) 
 
         if (fringe_phase !=0):
             if (fr_offset == 0): 
                 self.floggers[ffpga_n].error('Requested fringe phase is too small for this configuration (we do not have enough resolution).')
-            else: self.floggers[ffpga_n].warn('Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
+            else: self.floggers[ffpga_n].info('Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
 
         if (fringe_rate != 0):
             if (fr_rate==0): 
                 self.floggers[ffpga_n].error('Requested fringe rate is too slow for this configuration.')
-            else: self.floggers[ffpga_n].warn('Fringe rate actually set to %e Hz.'%act_fringe_rate)
+            else: self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.'%act_fringe_rate)
 
         #get the current mcnt for this feng:
         mcnt=self.mcnt_current_get(ant_str)
@@ -1394,7 +1394,7 @@ class Correlator:
                     raise RuntimeError('Requested delay (%es) is out of range (+-%es).'%(
                         float(coarse_delay)/self.config['adc_clk'],
                         float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
-            self.floggers[ffpga_n].warn('Delay actually set to %e seconds.'%act_delay)
+            self.floggers[ffpga_n]info('Delay actually set to %e seconds.'%act_delay)
 
             if (delay_rate != 0):
                 if (fine_delay_rate==0): self.floggers[ffpga_n].error('Requested delay rate too slow for this configuration.')
@@ -1406,12 +1406,12 @@ class Correlator:
             if (fringe_phase !=0):
                 if (fr_offset == 0): 
                     self.floggers[ffpga_n].error('Requested fringe phase is too small for this configuration (we do not have enough resolution).')
-            self.floggers[ffpga_n].warn('Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
+            self.floggers[ffpga_n].info('Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
 
             if (fringe_rate != 0):
                 if (fr_rate==0): 
                     self.floggers[ffpga_n].error('Requested fringe rate is too slow for this configuration.')
-            self.floggers[ffpga_n].warn('Fringe rate actually set to %e Hz.'%act_fringe_rate)
+            self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.'%act_fringe_rate)
 
             #setup the delays:
             self.ffpgas[ffpga_n].write_int('coarse_delay%i'%feng_input,coarse_delay)
