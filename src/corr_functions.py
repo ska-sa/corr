@@ -1394,7 +1394,7 @@ class Correlator:
                     raise RuntimeError('Requested delay (%es) is out of range (+-%es).'%(
                         float(coarse_delay)/self.config['adc_clk'],
                         float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
-            self.floggers[ffpga_n]info('Delay actually set to %e seconds.'%act_delay)
+            self.floggers[ffpga_n].info('Delay actually set to %e seconds.'%act_delay)
 
             if (delay_rate != 0):
                 if (fine_delay_rate==0): self.floggers[ffpga_n].error('Requested delay rate too slow for this configuration.')
