@@ -1192,7 +1192,7 @@ class Correlator:
 
         if (delay != 0):
             if (fine_delay_i==0) and (coarse_delay==0): 
-                self.floggers[ffpga_n].error('Requested delay is too small for this configuration (our resolution is too low).')
+                self.floggers[ffpga_n].info('Requested delay is too small for this configuration (our resolution is too low).')
             elif abs(fine_delay_i) > 2**(fine_delay_bits): 
                 self.floggers[ffpga_n].error('Internal logic error calculating fine delays.')
                 raise RuntimeError('Internal logic error calculating fine delays.')
@@ -1206,7 +1206,7 @@ class Correlator:
             else: self.floggers[ffpga_n].info('Delay actually set to %e seconds.'%act_delay)
 
         if (delay_rate != 0):
-            if (fine_delay_rate==0): self.floggers[ffpga_n].error('Requested delay rate too slow for this configuration.')
+            if (fine_delay_rate==0): self.floggers[ffpga_n].info('Requested delay rate too slow for this configuration.')
             if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)): 
                 self.floggers[ffpga_n].error('Requested delay rate out of range (+-%e).'%(2**(bitshift_schedule-1)))
                 raise RuntimeError('Requested delay rate is out of range (+-%e).'%(1./(2**(bitshift_schedule))))
@@ -1214,12 +1214,12 @@ class Correlator:
 
         if (fringe_phase !=0):
             if (fr_offset == 0): 
-                self.floggers[ffpga_n].error('Requested fringe phase is too small for this configuration (we do not have enough resolution).')
+                self.floggers[ffpga_n].info('Requested fringe phase is too small for this configuration (we do not have enough resolution).')
             else: self.floggers[ffpga_n].info('Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
 
         if (fringe_rate != 0):
             if (fr_rate==0): 
-                self.floggers[ffpga_n].error('Requested fringe rate is too slow for this configuration.')
+                self.floggers[ffpga_n].info('Requested fringe rate is too slow for this configuration.')
             else: self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.'%act_fringe_rate)
 
         #get the current mcnt for this feng:
