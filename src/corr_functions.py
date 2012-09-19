@@ -1361,7 +1361,7 @@ class Correlator:
             fine_delay_rate=int(float(delay_rate) * (2**(bitshift_schedule + fine_delay_rate_bits-1))) 
 
             #figure out the fringe as a fraction of a cycle        
-            fr_offset=int(fringe_phase/float(360) * (2**(fringe_offset_bits)))
+            fr_offset=int((fringe_phase%360)/float(360) * (2**(fringe_offset_bits)))
             #figure out the fringe rate. Input is in cycles per second (Hz). 1) divide by brd clock rate to get cycles per clock. 2) multiply by 2**20
             fr_rate = int(float(fringe_rate) / self.config['feng_clk'] * (2**(bitshift_schedule + fringe_rate_bits-1)))
 

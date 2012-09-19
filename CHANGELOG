@@ -1,4 +1,8 @@
 Changelog:
+
+Version 0.7.0 (2012-09-19)
+    - fringe phase input now mod-360.
+
 Version 0.6.9 ()
     - Updates to several snap scripts to improve compatibility with narrow band.
     - Bugfix to xstatus to reset terminal after clean exit
