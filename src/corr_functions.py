@@ -1286,9 +1286,10 @@ class Correlator:
             after_mcnt=self.mcnt_current_get(ant_str) 
             #print 'before: %i, target: %i, after: %i'%(mcnt,ld_mcnt,after_mcnt)
             #print 'start: %10.3f, target: %10.3f, after: %10.3f'%(self.time_from_mcnt(mcnt),self.time_from_mcnt(ld_mcnt),self.time_from_mcnt(after_mcnt))
-            if after_mcnt > ld_mcnt: 
-                self.floggers[ffpga_n].error('We missed loading the registers by about %4.1f ms.'%((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000))
-                raise RuntimeError('We missed loading the registers by about %4.1f ms.'%((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000))
+            if after_mcnt > ld_mcnt:
+                errstr = 'We missed loading the registers by about %4.1f ms.' % ((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000) 
+                self.floggers[ffpga_n].error(errstr)
+                raise RuntimeError(errstr)
             else: 
                 self.floggers[ffpga_n].error('Ant %s (Feng %i) did not load correctly for an unknown reason.'%(ant_str,feng_input))
                 raise RuntimeError('Ant %s (Feng %i on %s) did not load correctly for an unknown reason.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))

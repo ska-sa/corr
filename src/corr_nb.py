@@ -431,7 +431,7 @@ def get_snap_buffer_pfb(c, fpgas = [], pol = 0, setup_snap = True, pfb = False):
 #            fdata.append(p0c)
 #        rd.append(fdata)
 #    return rd
-fine_fft_bitwidth = 32;
+fine_fft_bitwidth = 31;
 snap_fengine_debug_fine_fft = construct.BitStruct(snap_debug,
     construct.Padding(128 - (4*fine_fft_bitwidth)),
     construct.BitField("p0_r", fine_fft_bitwidth),
