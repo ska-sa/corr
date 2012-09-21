@@ -88,7 +88,8 @@ def write_masked_register(device_list, bitstruct, names = None, **kwargs):
     pulse_keys = []
     for c in currentValues:
         for key in kwargs:
-            if not c.__dict__.has_key(key): raise RuntimeError('Attempting to write key %s but it doesn\'t exist in bitfield.' % key)
+            if not c.__dict__.has_key(key):
+                raise RuntimeError('Attempting to write key %s but it doesn\'t exist in bitfield.' % key)
             if kwargs[key] == 'pulse':
                 if pulse_keys.count(key) == 0: pulse_keys.append(key)
             else:
@@ -108,13 +109,16 @@ def read_masked_register(device_list, bitstruct, names = None, return_dict = Tru
     Read a 32-bit register from each of the devices (anything that provides the read_uint interface) in the supplied list and apply the given construct.BitStruct to the data.
     A list of Containers or dictionaries is returned, indexing the same as the supplied list.
     """
-    if bitstruct == None: return
-    if bitstruct.sizeof() !=  4: raise RuntimeError('Function can only work with 32-bit bitfields.')
+    if bitstruct == None:
+        return
+    if bitstruct.sizeof() != 4:
+        raise RuntimeError('Function can only work with 32-bit bitfields.')
     registerNames = names
     if registerNames == None:
         registerNames = []
         for d in device_list: registerNames.append(bitstruct.name)
-    if len(registerNames) !=  len(device_list): raise RuntimeError('Length of list of register names does not match length of list of devices given.')
+    if len(registerNames) !=  len(device_list):
+        raise RuntimeError('Length of list of register names does not match length of list of devices given.')
     rv = []
     for d, device in enumerate(device_list):
         vuint = device.read_uint(registerNames[d])
@@ -140,6 +144,13 @@ def pulse_masked_register(device_list, bitstruct, fields):
     write_masked_register(device_list, bitstruct, **zeroKwargs)
     write_masked_register(device_list, bitstruct, **oneKwargs)
     write_masked_register(device_list, bitstruct, **zeroKwargs)
+
+def log_runtimeerror(logger, err):
+    """
+    Have the logger log an error and then raise it.
+    """
+    logger.error(err)
+    raise RuntimeError(err)
 
 class Correlator:
 
@@ -802,12 +813,10 @@ class Correlator:
         self.config.write_var('sync_time', str(numpy.floor(done_time)))
         elapsed_time=numpy.floor(done_time)-numpy.ceil(start_time)
         if (elapsed_time) > self.config['feng_sync_delay']:
-            self.syslogger.error('We expected to trigger the boards in %i 1PPS pulses, but %i seconds have elapsed.'%(self.config['feng_sync_delay'],elapsed_time))
-            raise RuntimeError('We expected to trigger the boards in %i 1PPS pulses, but %i seconds have elapsed.'%(self.config['feng_sync_delay'],elapsed_time))
+            log_runtimeerror(self.syslogger, 'We expected to trigger the boards in %i 1PPS pulses, but %i seconds have elapsed.' % (self.config['feng_sync_delay'],elapsed_time))
         #print 'Recorded sync time as at %f.'%numpy.floor(done_time)
         if rv == False:
-            self.syslogger.error("Failed to arm and trigger the system properly.")
-            raise RuntimeError("Failed to arm and trigger the system properly.")
+            log_runtimeerror(self.syslogger, "Failed to arm and trigger the system properly.")
         if spead_update:
             self.spead_time_meta_issue()
         self.syslogger.info("Arm OK, sync time recorded as %i."%numpy.floor(done_time))
@@ -901,7 +910,8 @@ class Correlator:
     def check_xaui_error(self):
         """Returns a boolean indicating if any X engines have bad incomming XAUI links.
         Checks that data is flowing and that no errors have occured. Returns True/False."""
-        if self.config['feng_out_type'] != 'xaui': raise RuntimeError("According to your config file, you don't have any XAUI cables connected to your F engines!")
+        if self.config['feng_out_type'] != 'xaui':
+            raise RuntimeError("According to your config file, you don't have any XAUI cables connected to your F engines!")
         rv = True
         for x in range(self.config['n_xaui_ports_per_xfpga']):
             cnt_check = self.xread_uint_all('xaui_cnt%i'%(x))
@@ -1193,34 +1203,31 @@ class Correlator:
         if (delay != 0):
             if (fine_delay_i==0) and (coarse_delay==0): 
                 self.floggers[ffpga_n].info('Requested delay is too small for this configuration (our resolution is too low).')
-            elif abs(fine_delay_i) > 2**(fine_delay_bits): 
-                self.floggers[ffpga_n].error('Internal logic error calculating fine delays.')
-                raise RuntimeError('Internal logic error calculating fine delays.')
-            elif abs(coarse_delay) > (2**(coarse_delay_bits)): 
-                self.floggers[ffpga_n].error('Requested coarse delay (%es) is out of range (+-%es).'%(
-                float(coarse_delay)/self.config['adc_clk'],
-                float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
-                raise RuntimeError('Requested delay (%es) is out of range (+-%es).'%(
-                float(coarse_delay)/self.config['adc_clk'],
-                float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
-            else: self.floggers[ffpga_n].info('Delay actually set to %e seconds.'%act_delay)
-
+            elif abs(fine_delay_i) > 2**(fine_delay_bits):
+                log_runtimeerror('Internal logic error calculating fine delays.')
+            elif abs(coarse_delay) > (2**(coarse_delay_bits)):
+                log_runtimeerror(self.floggers[ffpga_n], 'Requested coarse delay (%es) is out of range (+-%es).' % (float(coarse_delay)/self.config['adc_clk'], float(2**(coarse_delay_bits-1))/self.config['adc_clk'])))
+            else:
+                self.floggers[ffpga_n].info('Delay actually set to %e seconds.' % act_delay)
         if (delay_rate != 0):
-            if (fine_delay_rate==0): self.floggers[ffpga_n].info('Requested delay rate too slow for this configuration.')
-            if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)): 
-                self.floggers[ffpga_n].error('Requested delay rate out of range (+-%e).'%(2**(bitshift_schedule-1)))
-                raise RuntimeError('Requested delay rate is out of range (+-%e).'%(1./(2**(bitshift_schedule))))
-            else: self.floggers[ffpga_n].info('Delay rate actually set to %e seconds per second.'%act_delay_rate) 
+            if (fine_delay_rate==0):
+                self.floggers[ffpga_n].info('Requested delay rate too slow for this configuration.')
+            if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)):
+                log_runtimeerror(self.floggers[ffpga_n], 'Requested delay rate out of range (+-%e).' % (2**(bitshift_schedule-1)))
+            else:
+                self.floggers[ffpga_n].info('Delay rate actually set to %e seconds per second.' % act_delay_rate) 
 
         if (fringe_phase !=0):
             if (fr_offset == 0): 
                 self.floggers[ffpga_n].info('Requested fringe phase is too small for this configuration (we do not have enough resolution).')
-            else: self.floggers[ffpga_n].info('Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
+            else:
+                self.floggers[ffpga_n].info('Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
 
         if (fringe_rate != 0):
             if (fr_rate==0): 
                 self.floggers[ffpga_n].info('Requested fringe rate is too slow for this configuration.')
-            else: self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.'%act_fringe_rate)
+            else:
+                self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.'%act_fringe_rate)
 
         #get the current mcnt for this feng:
         mcnt=self.mcnt_current_get(ant_str)
@@ -1231,14 +1238,12 @@ class Correlator:
             #figure out the load-time mcnt:
             ld_mcnt=int(mcnt + self.config['mcnt_scale_factor']*(min_ld_time))
         else:
-            if (ld_time < (time.time() + min_ld_time)): 
-                self.syslogger.error("Cannot load at a time in the past.")
-                raise RuntimeError("Cannot load at a time in the past.")
+            if (ld_time < (time.time() + min_ld_time)):
+                log_runtimeerror(self.syslogger, "Cannot load at a time in the past.")
             ld_mcnt=self.mcnt_from_time(ld_time)
 
-#        if (ld_mcnt < (mcnt + self.config['mcnt_scale_factor']*min_ld_time)): 
-#            self.syslogger.error("This works out to a loadtime in the past! Logic error :(")
-#            raise RuntimeError("This works out to a loadtime in the past! Logic error :(")
+#        if (ld_mcnt < (mcnt + self.config['mcnt_scale_factor']*min_ld_time)):
+#            log_runtimeerror(self.syslogger, "This works out to a loadtime in the past! Logic error :(") 
         
         #setup the delays:
         self.ffpgas[ffpga_n].write_int('coarse_delay%i'%feng_input,coarse_delay)
@@ -1276,23 +1281,18 @@ class Correlator:
 
         cnts=self.ffpgas[ffpga_n].read_uint('delay_tr_status%i'%feng_input)
         if (arm_cnt0 == (cnts>>16)): 
-            if (cnts>>16)==0: 
-                self.floggers[ffpga_n].error('Ant %s (Feng %i) appears to be held in master reset. Load failed.'%(ant_str,feng_input))
-                raise RuntimeError('Ant %s (Feng %i on %s) appears to be held in master reset. Load failed.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
-            else: 
-                self.floggers[ffpga_n].error('Ant %s (Feng %i) did not arm. Load failed.'%(ant_str,feng_input,))
-                raise RuntimeError('Ant %s (Feng %i on %s) did not arm. Load failed.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
+            if (cnts>>16)==0:
+                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) appears to be held in master reset. Load failed.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
+            else:
+                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not arm. Load failed.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
         if (ld_cnt0 >= (cnts&0xffff)): 
             after_mcnt=self.mcnt_current_get(ant_str) 
             #print 'before: %i, target: %i, after: %i'%(mcnt,ld_mcnt,after_mcnt)
             #print 'start: %10.3f, target: %10.3f, after: %10.3f'%(self.time_from_mcnt(mcnt),self.time_from_mcnt(ld_mcnt),self.time_from_mcnt(after_mcnt))
             if after_mcnt > ld_mcnt:
-                errstr = 'We missed loading the registers by about %4.1f ms.' % ((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000) 
-                self.floggers[ffpga_n].error(errstr)
-                raise RuntimeError(errstr)
-            else: 
-                self.floggers[ffpga_n].error('Ant %s (Feng %i) did not load correctly for an unknown reason.'%(ant_str,feng_input))
-                raise RuntimeError('Ant %s (Feng %i on %s) did not load correctly for an unknown reason.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
+                log_runtimeerror(self.floggers[ffpga_n], 'We missed loading the registers by about %4.1f ms.' % ((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000))
+            else:
+                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not load correctly for an unknown reason.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
 
         return {
             'act_delay': act_delay,
@@ -1337,11 +1337,11 @@ class Correlator:
             #figure out the load-time mcnt:
             ld_mcnt=int(mcnt + self.config['mcnt_scale_factor']*(min_ld_time))
         else:
-            if (ld_time < (time.time() + min_ld_time)): 
-                self.syslogger.error("Cannot load at a time in the past.")
-                raise RuntimeError("Cannot load at a time in the past.")
+            if (ld_time < (time.time() + min_ld_time)):
+                log_runtimeerror(self.syslogger, "Cannot load at a time in the past.")
             ld_mcnt=self.mcnt_from_time(ld_time)
-        if (ld_mcnt < (mcnt + self.config['mcnt_scale_factor']*min_ld_time)): raise RuntimeError("This works out to a loadtime in the past!")
+        if (ld_mcnt < (mcnt + self.config['mcnt_scale_factor']*min_ld_time)):
+            raise RuntimeError("This works out to a loadtime in the past!")
 
         for ant_str,ant_coeffs in coeffs.iteritems():
             locs.append(self.get_ant_str_location(ant_str))
@@ -1385,23 +1385,16 @@ class Correlator:
             if (delay != 0):
                 if (fine_delay_i==0) and (coarse_delay==0): 
                     self.floggers[ffpga_n].error('Requested delay is too small for this configuration (our resolution is too low).')
-                elif abs(fine_delay_i) > 2**(fine_delay_bits): 
-                    self.floggers[ffpga_n].error('Internal logic error calculating fine delays.')
-                    raise RuntimeError('Internal logic error calculating fine delays.')
-                elif abs(coarse_delay) > (2**(coarse_delay_bits)): 
-                    self.floggers[ffpga_n].error('Requested coarse delay (%es) is out of range (+-%es).'%(
-                        float(coarse_delay)/self.config['adc_clk'],
-                        float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
-                    raise RuntimeError('Requested delay (%es) is out of range (+-%es).'%(
-                        float(coarse_delay)/self.config['adc_clk'],
-                        float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
+                elif abs(fine_delay_i) > 2**(fine_delay_bits):
+                    log_runtimeerror(self.floggers[ffpga_n], 'Internal logic error calculating fine delays.')
+                elif abs(coarse_delay) > (2**(coarse_delay_bits)):
+                    log_runtimeerror(self.floggers[ffpga_n], 'Requested coarse delay (%es) is out of range (+-%es).' % (float(coarse_delay)/self.config['adc_clk'], float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
             self.floggers[ffpga_n].info('Delay actually set to %e seconds.'%act_delay)
 
             if (delay_rate != 0):
                 if (fine_delay_rate==0): self.floggers[ffpga_n].error('Requested delay rate too slow for this configuration.')
-                if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)): 
-                    self.floggers[ffpga_n].error('Requested delay rate out of range (+-%e).'%(2**(bitshift_schedule-1)))
-                    raise RuntimeError('Requested delay rate is out of range (+-%e).'%(1./(2**(bitshift_schedule))))
+                if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)):
+                    log_runtimeerror(self.floggers[ffpga_n], 'Requested delay rate out of range (+-%e).' % (2**(bitshift_schedule-1)))
             self.floggers[ffpga_n].warn('Delay rate actually set to %e seconds per second.'%act_delay_rate) 
 
             if (fringe_phase !=0):
@@ -1436,34 +1429,28 @@ class Correlator:
             self.ffpgas[ffpga_n].write_int('ld_time_msw%i'%feng_input,(ld_mcnt>>32)|(1<<31))
             self.ffpgas[ffpga_n].write_int('ld_time_msw%i'%feng_input,(ld_mcnt>>32)&0x7fffffff)
 
-
         #check that they all loaded correctly:
         #wait 'till the time has elapsed
         sleep_time=self.time_from_mcnt(ld_mcnt) - self.time_from_mcnt(mcnt)
         #print 'waiting %2.3f seconds (now: %i, ldtime: %i)'%(sleep_time, self.time_from_mcnt(ld_mcnt),self.time_from_mcnt(mcnt))
         time.sleep(sleep_time)
 
-
         for input_n,(ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input) in enumerate(locs):
             cnts=self.ffpgas[ffpga_n].read_uint('delay_tr_status%i'%feng_input)
 
             if (arm_cnt_before[input_n] == cnts>>16): 
-                if (cnts>>16)==0: 
-                    self.floggers[ffpga_n].error('Ant %s (Feng %i) appears to be held in master reset. Load failed.'%(self.map_input_to_ant(input_n),feng_input))
-                    raise RuntimeError('Ant %s (Feng %i on %s) appears to be held in master reset. Load failed.'%(self.map_input_to_ant(input_n),feng_input,self.fsrvs[ffpga_n]))
-                else: 
-                    self.floggers[ffpga_n].error('Ant %s (Feng %i) did not arm. Load failed.'%(self.map_input_to_ant(input_n),feng_input))
-                    raise RuntimeError('Ant %s (Feng %i on %s) did not arm. Load failed.'%(self.map_input_to_ant(input_n),feng_input,self.fsrvs[ffpga_n]))
+                if (cnts>>16)==0:
+                    log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) appears to be held in master reset. Load failed.' % (self.map_input_to_ant(input_n),feng_input,self.fsrvs[ffpga_n]))
+                else:
+                    log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not arm. Load failed.'%(self.map_input_to_ant(input_n),feng_input,self.fsrvs[ffpga_n]))
             if (ld_cnt_before[input_n] >= (cnts&0xffff)): 
                 after_mcnt=self.mcnt_current_get(self.map_input_to_ant(input_n)) 
                 #print 'before: %i, target: %i, after: %i'%(mcnt,ld_mcnt,after_mcnt)
                 #print 'start: %10.3f, target: %10.3f, after: %10.3f'%(self.time_from_mcnt(mcnt),self.time_from_mcnt(ld_mcnt),self.time_from_mcnt(after_mcnt))
-                if after_mcnt > ld_mcnt: 
-                    self.floggers[ffpga_n].error('We missed loading the registers by about %4.1f ms.'%((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000))
-                    raise RuntimeError('We missed loading the registers by about %4.1f ms.'%((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000))
-                else: 
-                    self.floggers[ffpga_n].error('Ant %s (Feng %i) did not load correctly for an unknown reason.'%(ant_str,feng_input))
-                    raise RuntimeError('Ant %s (Feng %i on %s) did not load correctly for an unknown reason.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
+                if after_mcnt > ld_mcnt:
+                    log_runtimeerror(self.floggers[ffpga_n], 'We missed loading the registers by about %4.1f ms.'%((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000))
+                else:
+                    log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not load correctly for an unknown reason.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
         return rv
         #return {
         #    'act_delay': act_delay,
@@ -1513,9 +1500,8 @@ class Correlator:
         n_accs_all=numpy.array(self.xread_uint_all('acc_len'))*self.config['xeng_acc_len']
         n_accs=n_accs_all[0]
         for xn,xeng in enumerate(self.xsrvs):
-            if n_accs_all[xn] != n_accs: 
-                self.syslogger.error('Not all boards have the same accumulation length set!')
-                raise RuntimeError('Not all boards have the same accumulation length set!') 
+            if n_accs_all[xn] != n_accs:
+                log_runtimeerror(self.syslogger, 'Not all boards have the same accumulation length set!')
         return n_accs
     
     def acc_time_get(self):
@@ -1565,8 +1551,7 @@ class Correlator:
             input_n = self.config._get_ant_mapping_list().index(ant_str)
             return input_n
         except:
-            self.syslogger.error('Unable to map antenna %s.'%ant_str)
-            raise RuntimeError('Unable to map antenna %s.'%ant_str)
+            log_runtimeerror(self.syslogger, 'Unable to map antenna %s.'%ant_str)
      
     def map_input_to_ant(self,input_n):
         """Maps an input number to an antenna string."""
@@ -1578,7 +1563,8 @@ class Correlator:
         
     def get_xeng_location(self, xeng_n):
         """ Returns the (xfpga_n,xeng_core) location for a given x engine."""
-        if xeng_n>=self.config['n_xeng']: raise RuntimeError("There are only %i X engines in this design! Xeng %i is invalid."%(self.config['n_xeng'],xeng_n))
+        if xeng_n>=self.config['n_xeng']:
+            raise RuntimeError("There are only %i X engines in this design! Xeng %i is invalid."%(self.config['n_xeng'],xeng_n))
         return xeng_n/self.config['x_per_fpga'],xeng_n%self.config['x_per_fpga']
 
     def get_input_location(self, input_n):
@@ -1740,14 +1726,11 @@ class Correlator:
         if ld_time < 0:
             ld_time = t_start + min_ld_time
         if (ld_time < t_start + min_ld_time):
-            err_msg =  "Cannot load at a time in the past. Need at least %2.2f seconds leadtime." % min_ld_time
-            self.syslogger.error(err_msg)
-            raise RuntimeError(err_msg)
+            log_runtimeerror(self.syslogger, "Cannot load at a time in the past. Need at least %2.2f seconds leadtime." % min_ld_time)
         ld_pcnt = self.pcnt_from_time(ld_time)
         #print 'ld_time set to', time.ctime(ld_time)
-        if (ld_pcnt <= self.pcnt_current_get()): 
-            self.syslogger.error("Error occurred. Cannot load at a time in the past.")
-            raise RuntimeError("Error occurred. Cannot load at a time in the past.")
+        if (ld_pcnt <= self.pcnt_current_get()):
+            log_runtimeerror(self.syslogger, "Error occurred. Cannot load at a time in the past.")
         if ld_pcnt > ((2**48)-1):
             self.syslogger.warning("Looks like the 48bit pcnt has wrapped.")
             ld_pcnt = ld_pcnt & 0xffffffffffff
@@ -1785,13 +1768,9 @@ class Correlator:
                 #print "xeng_index(%i) arm_cnt(%i) ld_cnt(%i)" % (xeng['xeng_index'], xeng['arm_cnt'], xeng['ld_cnt'])
                 # the arm count should have increased
                 if (xeng['arm_cnt'] == 0):
-                    err_msg = 'VACC %i on %s appears to be held in reset (arm count = 0).' % (xeng['xeng_number'], srvkey)
-                    xlog.error(err_msg)
-                    raise RuntimeError(err_msg)
+                    log_runtimeerror(xlog, 'VACC %i on %s appears to be held in reset (arm count = 0).' % (xeng['xeng_number'], srvkey))
                 if (xengbefore['arm_cnt'] == xeng['arm_cnt']):
-                    err_msg = 'VACC %i on %s did not arm (arm count didn''t increment).' % (xeng['xeng_number'], srvkey)
-                    xlog.error(err_msg)
-                    raise RuntimeError(err_msg)
+                    log_runtimeerror(xlog, 'VACC %i on %s did not arm (arm count didn''t increment).' % (xeng['xeng_number'], srvkey))
                 # so should the load count
                 if (xengbefore['ld_cnt'] >= xeng['ld_cnt']):
                     print "ldcnt_before(%i) ldcnt_after(%i)" % (xengbefore['ld_cnt'], xeng['ld_cnt'])
@@ -1800,9 +1779,7 @@ class Correlator:
                     sys.stdout.flush()
                     if after_pcnt > ld_pcnt:
                         miss_ms = (self.time_from_pcnt(after_pcnt) - self.time_from_pcnt(ld_pcnt)) * 1000.
-                        err_msg = 'We missed loading the registers by about %4.1f ms.' % miss_ms
-                        xlog.error(err_msg)
-                        raise RuntimeError('vacc_sync: ', err_msg)
+                        log_runtimeerror(xlog, 'We missed loading the registers by about %4.1f ms.' % miss_ms)
                     else:
                         raise RuntimeError('Xeng %i on %s did not load correctly for an unknown reason.' % (xeng['xeng_number'], srvkey))
                 #print 'xeng(%s, %i) VACC armed correctly.' % (srv, loc_xeng_n) 
@@ -1846,7 +1823,8 @@ class Correlator:
          merely that the F engines were reset between the same 1PPS pulses.
         Returns boolean true/false if system is in sync.
         """
-        if self.config['feng_out_type'] != 'xaui': raise RuntimeError("According to your config file, you don't have any XAUI cables connected to your F engines!")
+        if self.config['feng_out_type'] != 'xaui':
+            raise RuntimeError("According to your config file, you don't have any XAUI cables connected to your F engines!")
         max_mcnt_difference=4
         mcnts=dict()
         mcnts_list=[]
@@ -1865,8 +1843,7 @@ class Correlator:
 
         mcnts['mode']=statsmode(mcnts_list)
         if mcnts['mode']==0:
-            self.syslogger.error("Too many XAUI links are receiving no data. Unable to produce a reliable mcnt result.")
-            raise RuntimeError("Too many XAUI links are receiving no data. Unable to produce a reliable result.")
+            log_runtimeerror(self.syslogger, "Too many XAUI links are receiving no data. Unable to produce a reliable mcnt result.")
         mcnts['modalmean']=numpy.mean(mcnts['mode'])
 
 #        mcnts:['mean']=stats.mean(mcnts_list)
@@ -1889,14 +1866,12 @@ class Correlator:
         #RF switch is in MSb.
         ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input = self.get_ant_str_location(ant_str)
         input_n = self.map_ant_to_input(ant_str)
-        if self.config['adc_type'] != 'katadc' : 
-            self.floggers[ffpga_n].error("RF gain cannot be configured on ADC type %s."%self.config['adc_type'])
-            raise RuntimeError("Unsupported ADC type of %s. Only katadc is supported."%self.config['adc_type'])
+        if self.config['adc_type'] != 'katadc':
+            log_runtimeerror(self.floggers[ffpga_n], "RF gain cannot be configured on ADC type %s."%self.config['adc_type'])
         if gain == None:
             gain = self.config['rf_gain_%s' % (input_n)] 
         if gain > 20 or gain < -11.5:
-             self.floggers[ffpga_n].error("Invalid gain setting of %i. Valid range for KATADC is -11.5 to +20")
-             raise RuntimeError("Invalid gain setting of %i. Valid range for KATADC is -11.5 to +20")
+            log_runtimeerror(self.floggers[ffpga_n], "Invalid gain setting of %i. Valid range for KATADC is -11.5 to +20")
         self.ffpgas[ffpga_n].write_int('adc_ctrl%i' % feng_input, (1<<31) + int((20 - gain) * 2))
         #self.config.write('equalisation','rf_gain_%s'%(ant_str),gain)
         self.floggers[ffpga_n].info("KATADC %i RF gain set to %2.1f." % (feng_input, round(gain * 2) / 2))
@@ -2002,9 +1977,8 @@ class Correlator:
             nacexp=(numpy.reshape(nac,(n_coeffs,1))*numpy.ones((1,self.config['eq_decimation']))).reshape(self.config['n_chans'])
             return nacexp
             
-        else: 
-            self.syslogger.error("Unable to interpret eq_type from config file. Expecting scalar or complex.")
-            raise RuntimeError("Unable to interpret eq_type from config file. Expecting scalar or complex.")
+        else:
+            log_runtimeerror(self.syslogger, "Unable to interpret eq_type from config file. Expecting scalar or complex.")
 
     def eq_spectrum_set(self, ant_str, init_coeffs = [], init_poly = []):
         """
@@ -2031,19 +2005,16 @@ class Correlator:
         
         if self.config['eq_type'] == 'scalar':
             coeffs = numpy.real(coeffs) 
-            if numpy.max(coeffs) > ((2**16)-1) or numpy.min(coeffs)<0: 
-                self.floggers[ffpga_n].error("Sorry, your EQ settings are out of range!")
-                raise RuntimeError("Sorry, your EQ settings are out of range!")
+            if numpy.max(coeffs) > ((2**16)-1) or numpy.min(coeffs)<0:
+                log_runtimeerror(self.floggers[ffpga_n], "Sorry, your scalar EQ settings are out of range!")
             coeff_str = struct.pack('>%iH'%n_coeffs,coeffs)
         elif self.config['eq_type'] == 'complex':
-            if numpy.max(coeffs) > ((2**15)-1) or numpy.min(coeffs)<-((2**15)-1): 
-                self.floggers[ffpga_n].error("Sorry, your EQ settings are out of range!")
-                raise RuntimeError("Sorry, your EQ settings are out of range!")
+            if numpy.max(coeffs) > ((2**15)-1) or numpy.min(coeffs)<-((2**15)-1):
+                log_runtimeerror(self.floggers[ffpga_n], "Sorry, your complex EQ settings are out of range!")
             coeffs = numpy.array(coeffs, dtype = numpy.complex128)
             coeff_str = struct.pack('>%ih' % (2 * n_coeffs), *coeffs.view(dtype=numpy.float64))
-        else: 
-            self.floggers[ffpga_n].error("Sorry, your EQ type is not supported. Expecting scalar or complex.")
-            raise RuntimeError('EQ type not supported.')
+        else:
+            log_runtimeerror(self.floggers[ffpga_n], "Sorry, your EQ type is not supported. Expecting scalar or complex.")
 
         #self.floggers[ffpga_n].info('Writing new EQ coefficient values to config file...')
         #self.config.write('equalisation','eq_coeffs_%i%c'%(ant,pol),str(coeffs.tolist()))
@@ -2298,7 +2269,8 @@ class Correlator:
                     shape=[self.config['n_chans'],2],fmt=spead.mkfmt(('u',32)),
                     init_val=[[numpy.real(coeff),numpy.imag(coeff)] for coeff in self.eq_spectrum_get(ant_str)])
 
-        else: raise RuntimeError("I don't know how to deal with your EQ type.")
+        else:
+            raise RuntimeError("I don't know how to deal with your EQ type.")
 
         self.spead_tx.send_heap(self.spead_ig.get_heap())
         self.syslogger.info("Issued SPEAD EQ metadata to %s:%i."%(self.config['rx_meta_ip_str'],self.config['rx_udp_port']))
@@ -2307,7 +2279,8 @@ class Correlator:
         """ Issues the SPEAD data descriptors for the HW 10GbE output, to enable receivers to decode the data."""
         #tested ok corr-0.5.0 2010-08-07
 
-        if self.config['xeng_sample_bits'] != 32: raise RuntimeError("Invalid bitwidth of X engine output. You specified %i, but I'm hardcoded for 32."%self.config['xeng_sample_bits'])
+        if self.config['xeng_sample_bits'] != 32:
+            raise RuntimeError("Invalid bitwidth of X engine output. You specified %i, but I'm hardcoded for 32."%self.config['xeng_sample_bits'])
 
         if self.config['xeng_format'] == 'cont':
             self.spead_ig.add_item(name=('timestamp'), id=0x1600,
