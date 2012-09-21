@@ -1155,7 +1155,8 @@ class Correlator:
                     self.xwrite_int_all('xeng_tvg%i_tv%i'%(xeng,i),v)
 
     def fr_delay_set(self,ant_str,delay=0,delay_rate=0,fringe_phase=0,fringe_rate=0,ld_time=-1,ld_check=True):
-        """Configures a given antenna to a delay in seconds using both the coarse and the fine delay. Also configures the fringe rotation components. This is a blocking call. \n
+        """
+        Configures a given antenna to a delay in seconds using both the coarse and the fine delay. Also configures the fringe rotation components. This is a blocking call. \n
         By default, it will wait 'till load time and verify that things worked as expected. This check can be disabled by setting ld_check param to False. \n
         Load time is optional; if not specified, load ASAP.\n
         \t Fringe offset is in degrees.\n
@@ -1166,42 +1167,41 @@ class Correlator:
         IS A ONCE-OFF UPDATE (no babysitting by software)\n"""
         #Fix to fine delay calc on 2010-11-19
 
-        fine_delay_bits=16
-        coarse_delay_bits=16
-        fine_delay_rate_bits=16
-        fringe_offset_bits=16
-        fringe_rate_bits=16
-
-        bitshift_schedule=23
+        fine_delay_bits =       16
+        coarse_delay_bits =     16
+        fine_delay_rate_bits =  16
+        fringe_offset_bits =    16
+        fringe_rate_bits =      16
+        bitshift_schedule =     23
         
-        min_ld_time = 0.1 #assume we're able to set and check all the registers in 100ms
+        min_ld_time = 0.1 # assume we're able to set and check all the registers in 100ms
         ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_ant_str_location(ant_str)
 
-        #delays in terms of ADC clock cycles:
-        delay_n=delay*self.config['adc_clk']    #delay in clock cycles
-        #coarse_delay = int(numpy.round(delay_n)) #delay in whole clock cycles #good for rev 369.
-        coarse_delay = int(delay_n) #delay in whole clock cycles #testing for rev370
-        fine_delay = (delay_n-coarse_delay)    #delay remainder. need a negative slope for positive delay
-        fine_delay_i = int(fine_delay*(2**(fine_delay_bits)))  #16 bits of signed data over range 0 to +pi
+        # delays in terms of ADC clock cycles:
+        delay_n = delay*self.config['adc_clk']                  # delay in clock cycles
+        #coarse_delay = int(numpy.round(delay_n))               # delay in whole clock cycles #good for rev 369.
+        coarse_delay = int(delay_n)                             # delay in whole clock cycles #testing for rev370
+        fine_delay = (delay_n-coarse_delay)                     # delay remainder. need a negative slope for positive delay
+        fine_delay_i = int(fine_delay*(2**(fine_delay_bits)))   # 16 bits of signed data over range 0 to +pi
     
-        fine_delay_rate=int(float(delay_rate) * (2**(bitshift_schedule + fine_delay_rate_bits-1))) 
+        fine_delay_rate = int(float(delay_rate) * (2**(bitshift_schedule + fine_delay_rate_bits-1))) 
 
-        #figure out the fringe as a fraction of a cycle        
-        fr_offset=int(fringe_phase/float(360) * (2**(fringe_offset_bits)))
-        #figure out the fringe rate. Input is in cycles per second (Hz). 1) divide by brd clock rate to get cycles per clock. 2) multiply by 2**20
+        # figure out the fringe as a fraction of a cycle        
+        fr_offset = int(fringe_phase/float(360) * (2**(fringe_offset_bits)))
+        # figure out the fringe rate. Input is in cycles per second (Hz). 1) divide by brd clock rate to get cycles per clock. 2) multiply by 2**20
         fr_rate = int(float(fringe_rate) / self.config['feng_clk'] * (2**(bitshift_schedule + fringe_rate_bits-1)))
 
-        cnts=self.ffpgas[ffpga_n].read_uint('delay_tr_status%i'%feng_input)
-        arm_cnt0=cnts>>16
-        ld_cnt0=cnts&0xffff
+        cnts = self.ffpgas[ffpga_n].read_uint('delay_tr_status%i'%feng_input)
+        arm_cnt0 = cnts >> 16
+        ld_cnt0 = cnts & 0xffff
 
-        act_delay=(coarse_delay + float(fine_delay_i)/2**fine_delay_bits)/self.config['adc_clk']
+        act_delay = (coarse_delay + float(fine_delay_i)/2**fine_delay_bits)/self.config['adc_clk']
         act_fringe_offset = float(fr_offset)/(2**fringe_offset_bits)*360 
         act_fringe_rate = float(fr_rate)/(2**(fringe_rate_bits+bitshift_schedule-1))*self.config['feng_clk']
         act_delay_rate = float(fine_delay_rate)/(2**(bitshift_schedule + fine_delay_rate_bits-1))
 
         if (delay != 0):
-            if (fine_delay_i==0) and (coarse_delay==0): 
+            if (fine_delay_i == 0) and (coarse_delay == 0): 
                 self.floggers[ffpga_n].info('Requested delay is too small for this configuration (our resolution is too low).')
             elif abs(fine_delay_i) > 2**(fine_delay_bits):
                 log_runtimeerror('Internal logic error calculating fine delays.')
@@ -1210,61 +1210,61 @@ class Correlator:
             else:
                 self.floggers[ffpga_n].info('Delay actually set to %e seconds.' % act_delay)
         if (delay_rate != 0):
-            if (fine_delay_rate==0):
+            if fine_delay_rate == 0:
                 self.floggers[ffpga_n].info('Requested delay rate too slow for this configuration.')
             if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)):
                 log_runtimeerror(self.floggers[ffpga_n], 'Requested delay rate out of range (+-%e).' % (2**(bitshift_schedule-1)))
             else:
                 self.floggers[ffpga_n].info('Delay rate actually set to %e seconds per second.' % act_delay_rate) 
 
-        if (fringe_phase !=0):
-            if (fr_offset == 0): 
+        if fringe_phase != 0:
+            if fr_offset == 0: 
                 self.floggers[ffpga_n].info('Requested fringe phase is too small for this configuration (we do not have enough resolution).')
             else:
-                self.floggers[ffpga_n].info('Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
+                self.floggers[ffpga_n].info('Fringe offset actually set to %6.3f degrees.' % act_fringe_offset)
 
-        if (fringe_rate != 0):
-            if (fr_rate==0): 
+        if fringe_rate != 0:
+            if fr_rate == 0: 
                 self.floggers[ffpga_n].info('Requested fringe rate is too slow for this configuration.')
             else:
-                self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.'%act_fringe_rate)
+                self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.' % act_fringe_rate)
 
-        #get the current mcnt for this feng:
-        mcnt=self.mcnt_current_get(ant_str)
+        # get the current mcnt for this feng:
+        mcnt = self.mcnt_current_get(ant_str)
 
-        #figure out the load time
+        # figure out the load time
         if ld_time < 0: 
-            #User did not ask for a specific time; load now!
-            #figure out the load-time mcnt:
-            ld_mcnt=int(mcnt + self.config['mcnt_scale_factor']*(min_ld_time))
+            # User did not ask for a specific time; load now!
+            # figure out the load-time mcnt:
+            ld_mcnt = int(mcnt + self.config['mcnt_scale_factor']*(min_ld_time))
         else:
             if (ld_time < (time.time() + min_ld_time)):
                 log_runtimeerror(self.syslogger, "Cannot load at a time in the past.")
-            ld_mcnt=self.mcnt_from_time(ld_time)
+            ld_mcnt = self.mcnt_from_time(ld_time)
 
 #        if (ld_mcnt < (mcnt + self.config['mcnt_scale_factor']*min_ld_time)):
 #            log_runtimeerror(self.syslogger, "This works out to a loadtime in the past! Logic error :(") 
         
-        #setup the delays:
-        self.ffpgas[ffpga_n].write_int('coarse_delay%i'%feng_input,coarse_delay)
-        self.floggers[ffpga_n].debug("Set a coarse delay of %i clocks."%coarse_delay)
-        #fine delay (LSbs) is fraction of a cycle * 2^15 (16 bits allocated, signed integer). 
-        #increment fine_delay by MSbs much every FPGA clock cycle shifted 2**20???
-        self.ffpgas[ffpga_n].write('a1_fd%i'%feng_input,struct.pack('>hh',fine_delay_rate,fine_delay_i))
-        self.floggers[ffpga_n].debug("Wrote %4x to fine_delay and %4x to fine_delay_rate register a1_fd%i."%(fine_delay_i,fine_delay_rate,feng_input))
+        # setup the delays:
+        self.ffpgas[ffpga_n].write_int('coarse_delay%i' % feng_input,coarse_delay)
+        self.floggers[ffpga_n].debug("Set a coarse delay of %i clocks." % coarse_delay)
+        # fine delay (LSbs) is fraction of a cycle * 2^15 (16 bits allocated, signed integer). 
+        # increment fine_delay by MSbs much every FPGA clock cycle shifted 2**20???
+        self.ffpgas[ffpga_n].write('a1_fd%i' % feng_input,struct.pack('>hh', fine_delay_rate,fine_delay_i))
+        self.floggers[ffpga_n].debug("Wrote %4x to fine_delay and %4x to fine_delay_rate register a1_fd%i." % (fine_delay_i, fine_delay_rate, feng_input))
         
-        #setup the fringe rotation
-        #LSbs is offset as a fraction of a cycle in fix_16_15 (1 = pi radians ; -1 = -1radians). 
-        #MSbs is fringe rate as fractional increment to fr_offset per FPGA clock cycle as fix_16.15. FPGA divides this rate by 2**20 internally.
+        # setup the fringe rotation
+        # LSbs is offset as a fraction of a cycle in fix_16_15 (1 = pi radians ; -1 = -1radians). 
+        # MSbs is fringe rate as fractional increment to fr_offset per FPGA clock cycle as fix_16.15. FPGA divides this rate by 2**20 internally.
         self.ffpgas[ffpga_n].write('a0_fd%i'%feng_input,struct.pack('>hh',fr_rate,fr_offset))  
         self.floggers[ffpga_n].debug("Wrote %4x to fringe_offset and %4x to fringe_rate register a0_fd%i."%(fr_offset,fr_rate,feng_input))
         #print 'Phase offset: %2.3f (%i), phase rate: %2.3f (%i).'%(fringe_phase,fr_offset,fringe_rate,fr_rate)
 
-        #set the load time:
-        #MSb (load-it! bit) is pos-edge triggered.
-        self.ffpgas[ffpga_n].write_int('ld_time_lsw%i'%feng_input,(ld_mcnt&0xffffffff))
-        self.ffpgas[ffpga_n].write_int('ld_time_msw%i'%feng_input,(ld_mcnt>>32)&0x7fffffff)
-        self.ffpgas[ffpga_n].write_int('ld_time_msw%i'%feng_input,(ld_mcnt>>32)|(1<<31))
+        # set the load time:
+        # MSb (load-it! bit) is pos-edge triggered.
+        self.ffpgas[ffpga_n].write_int('ld_time_lsw%i'%feng_input, (ld_mcnt&0xffffffff))
+        self.ffpgas[ffpga_n].write_int('ld_time_msw%i'%feng_input, (ld_mcnt>>32)&0x7fffffff)
+        self.ffpgas[ffpga_n].write_int('ld_time_msw%i'%feng_input, (ld_mcnt>>32)|(1<<31))
 
         if ld_check == False:
             return {
@@ -1338,10 +1338,10 @@ class Correlator:
             ld_mcnt=int(mcnt + self.config['mcnt_scale_factor']*(min_ld_time))
         else:
             if (ld_time < (time.time() + min_ld_time)):
-                log_runtimeerror(self.syslogger, "Cannot load at a time in the past.")
+                log_runtimeerror(self.syslogger, "fr_delay_set_all - Cannot load at a time in the past.")
             ld_mcnt=self.mcnt_from_time(ld_time)
         if (ld_mcnt < (mcnt + self.config['mcnt_scale_factor']*min_ld_time)):
-            raise RuntimeError("This works out to a loadtime in the past!")
+            raise RuntimeError("fr_delay_set_all - This works out to a loadtime in the past!")
 
         for ant_str,ant_coeffs in coeffs.iteritems():
             locs.append(self.get_ant_str_location(ant_str))
@@ -1384,36 +1384,36 @@ class Correlator:
 
             if (delay != 0):
                 if (fine_delay_i==0) and (coarse_delay==0): 
-                    self.floggers[ffpga_n].error('Requested delay is too small for this configuration (our resolution is too low).')
+                    self.floggers[ffpga_n].error('fr_delay_set_all - Requested delay is too small for this configuration (our resolution is too low).')
                 elif abs(fine_delay_i) > 2**(fine_delay_bits):
-                    log_runtimeerror(self.floggers[ffpga_n], 'Internal logic error calculating fine delays.')
+                    log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Internal logic error calculating fine delays.')
                 elif abs(coarse_delay) > (2**(coarse_delay_bits)):
-                    log_runtimeerror(self.floggers[ffpga_n], 'Requested coarse delay (%es) is out of range (+-%es).' % (float(coarse_delay)/self.config['adc_clk'], float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
-            self.floggers[ffpga_n].info('Delay actually set to %e seconds.'%act_delay)
+                    log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Requested coarse delay (%es) is out of range (+-%es).' % (float(coarse_delay)/self.config['adc_clk'], float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
+            self.floggers[ffpga_n].info('fr_delay_set_all - Delay actually set to %e seconds.'%act_delay)
 
             if (delay_rate != 0):
-                if (fine_delay_rate==0): self.floggers[ffpga_n].error('Requested delay rate too slow for this configuration.')
+                if (fine_delay_rate==0): self.floggers[ffpga_n].error('fr_delay_set_all - Requested delay rate too slow for this configuration.')
                 if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)):
-                    log_runtimeerror(self.floggers[ffpga_n], 'Requested delay rate out of range (+-%e).' % (2**(bitshift_schedule-1)))
-            self.floggers[ffpga_n].warn('Delay rate actually set to %e seconds per second.'%act_delay_rate) 
+                    log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Requested delay rate out of range (+-%e).' % (2**(bitshift_schedule-1)))
+            self.floggers[ffpga_n].warn('fr_delay_set_all - Delay rate actually set to %e seconds per second.'%act_delay_rate) 
 
             if (fringe_phase !=0):
                 if (fr_offset == 0): 
-                    self.floggers[ffpga_n].error('Requested fringe phase is too small for this configuration (we do not have enough resolution).')
-            self.floggers[ffpga_n].info('Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
+                    self.floggers[ffpga_n].error('fr_delay_set_all - Requested fringe phase is too small for this configuration (we do not have enough resolution).')
+            self.floggers[ffpga_n].info('fr_delay_set_all - Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
 
             if (fringe_rate != 0):
                 if (fr_rate==0): 
-                    self.floggers[ffpga_n].error('Requested fringe rate is too slow for this configuration.')
-            self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.'%act_fringe_rate)
+                    self.floggers[ffpga_n].error('fr_delay_set_all - Requested fringe rate is too slow for this configuration.')
+            self.floggers[ffpga_n].info('fr_delay_set_all - Fringe rate actually set to %e Hz.'%act_fringe_rate)
 
             #setup the delays:
             self.ffpgas[ffpga_n].write_int('coarse_delay%i'%feng_input,coarse_delay)
-            self.floggers[ffpga_n].debug("Set a coarse delay of %i clocks."%coarse_delay)
+            self.floggers[ffpga_n].debug("fr_delay_set_all - Set a coarse delay of %i clocks."%coarse_delay)
             #fine delay (LSbs) is fraction of a cycle * 2^15 (16 bits allocated, signed integer). 
             #increment fine_delay by MSbs much every FPGA clock cycle shifted 2**20???
             self.ffpgas[ffpga_n].write('a1_fd%i'%feng_input,struct.pack('>hh',fine_delay_rate,fine_delay_i))
-            self.floggers[ffpga_n].debug("Wrote %4x to fine_delay and %4x to fine_delay_rate register a1_fd%i."%(fine_delay_i,fine_delay_rate,feng_input))
+            self.floggers[ffpga_n].debug("fr_delay_set_all - Wrote %4x to fine_delay and %4x to fine_delay_rate register a1_fd%i."%(fine_delay_i,fine_delay_rate,feng_input))
             
             #print 'Coarse delay: %i, fine delay: %2.3f (%i), delay_rate: %2.2f (%i).'%(coarse_delay,fine_delay,fine_delay_i,delay_rate,fine_delay_rate)
 
@@ -1421,7 +1421,7 @@ class Correlator:
             #LSbs is offset as a fraction of a cycle in fix_16_15 (1 = pi radians ; -1 = -1radians). 
             #MSbs is fringe rate as fractional increment to fr_offset per FPGA clock cycle as fix_16.15. FPGA divides this rate by 2**20 internally.
             self.ffpgas[ffpga_n].write('a0_fd%i'%feng_input,struct.pack('>hh',fr_rate,fr_offset))  
-            self.floggers[ffpga_n].debug("Wrote %4x to fringe_offset and %4x to fringe_rate register a0_fd%i."%(fr_offset,fr_rate,feng_input))
+            self.floggers[ffpga_n].debug("fr_delay_set_all - Wrote %4x to fringe_offset and %4x to fringe_rate register a0_fd%i."%(fr_offset,fr_rate,feng_input))
             #print 'Phase offset: %2.3f (%i), phase rate: %2.3f (%i).'%(fringe_phase,fr_offset,fringe_rate,fr_rate)
 
             #set the load time:
@@ -1440,17 +1440,17 @@ class Correlator:
 
             if (arm_cnt_before[input_n] == cnts>>16): 
                 if (cnts>>16)==0:
-                    log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) appears to be held in master reset. Load failed.' % (self.map_input_to_ant(input_n),feng_input,self.fsrvs[ffpga_n]))
+                    log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Ant %s (Feng %i on %s) appears to be held in master reset. Load failed.' % (self.map_input_to_ant(input_n),feng_input,self.fsrvs[ffpga_n]))
                 else:
-                    log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not arm. Load failed.'%(self.map_input_to_ant(input_n),feng_input,self.fsrvs[ffpga_n]))
+                    log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Ant %s (Feng %i on %s) did not arm. Load failed.'%(self.map_input_to_ant(input_n),feng_input,self.fsrvs[ffpga_n]))
             if (ld_cnt_before[input_n] >= (cnts&0xffff)): 
                 after_mcnt=self.mcnt_current_get(self.map_input_to_ant(input_n)) 
                 #print 'before: %i, target: %i, after: %i'%(mcnt,ld_mcnt,after_mcnt)
                 #print 'start: %10.3f, target: %10.3f, after: %10.3f'%(self.time_from_mcnt(mcnt),self.time_from_mcnt(ld_mcnt),self.time_from_mcnt(after_mcnt))
                 if after_mcnt > ld_mcnt:
-                    log_runtimeerror(self.floggers[ffpga_n], 'We missed loading the registers by about %4.1f ms.'%((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000))
+                    log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - We missed loading the registers by about %4.1f ms.'%((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000))
                 else:
-                    log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not load correctly for an unknown reason.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
+                    log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Ant %s (Feng %i on %s) did not load correctly for an unknown reason.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
         return rv
         #return {
         #    'act_delay': act_delay,
