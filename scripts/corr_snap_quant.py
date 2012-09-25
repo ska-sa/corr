@@ -49,7 +49,7 @@ def drawDataCallback():
         pol['plot'].set_xlim(0, c.config['n_chans'] + 1)
         pol['plot'].set_title('Quantiser amplitude output for input %s, averaged over %i spectra.' % (pol['ant_str'], pol['num_accs']))
         pol['plot'].set_xlabel('Frequency channel')
-        pol['plot'].set_ylabel('Average level')
+        pol['plot'].set_ylabel('Average power level')
         if logscale:
             pol['plot'].semilogy(numpy.divide(pol['accumulations'], pol['num_accs']))
         else:
@@ -71,7 +71,7 @@ def get_data(pol):
     print 'done.'
     print ' Accumulating...',
     sys.stdout.flush()
-    unpacked_vals = numpy.abs(unpacked_vals)
+    unpacked_vals = numpy.square(numpy.abs(unpacked_vals))
     if spectra > 1:
         unpacked_vals = numpy.sum(unpacked_vals, axis = 0)
     pol['accumulations'] = numpy.sum([pol['accumulations'], unpacked_vals], axis = 0)
