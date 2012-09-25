@@ -168,7 +168,7 @@ def get_data_nb_fine_fft(pol):
     while len(unpacked_vals) < pol['fine_chans']:
         print '(%i/%i)' % (len(unpacked_vals), pol['fine_chans']),
         sys.stdout.flush()
-        temp = corr.corr_nb.get_snap_fine_fft(c, fpgas = [pol['fpga']], offset = offset)
+        temp = corr.corr_nb.get_snap_fine_fft(c, fpgas = [pol['fpga']], offset = offset, setup_snap = (offset == 0))
         temp = temp[0][pol['pol']]
         unpacked_vals.extend(temp)
         offset += (len(temp) * 128/8)
