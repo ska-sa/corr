@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 
-'''
-Grabs the contents of "snap_xaui" on the F engines for analysis.
+'''Grabs the contents of "snap_xaui" on the F engines for analysis.
 Assumes 4 bit values for power calculations.
 Assumes the correlator is already initialsed and running etc.
-
+\n
 Author: Jason Manley
-
-Revisions:
-2010-07-22: JRM Copied from corr_snap_xaui.py
+\n
+Revisions:\n
+2010-07-22: JRM Copied from corr_snap_xaui.py\n
 2011-09-09: PVP Updated for new snapshot blocks.
 '''
 import corr, time, numpy, struct, sys, logging
@@ -46,13 +45,15 @@ def print_packet_info_basic(server, count, d):
     print ''
 
 def print_packet_info(server, header_index, length, unpacked, chans):
-    print '[%s] [Pkt@ %4i Len: %2i]     (MCNT %16u ANT: %1i, Freq: %4i)  RMS: X: %1.2f Y: %1.2f.  {X: %1.2f+%1.2fj (%2.1f & %2.1f bits), Y:%1.2f+%1.2fj (%2.1f & %2.1f bits)} {Pk: X,Y: %1.2f,%1.2f (%2.1f,%2.1f bits)}' % \
+    print '[%s] [Pkt@ %4i Len: %2i] pcnt_curr(%10i) MCNT(%10i) ANT(%1i) Freq(%4i) Tstamp(%10i) RMS: X: %1.2f Y: %1.2f. {X: %1.2f+%1.2fj (%2.1f & %2.1f bits), Y:%1.2f+%1.2fj (%2.1f & %2.1f bits)} {Pk: X,Y: %1.2f,%1.2f (%2.1f,%2.1f bits)}' % \
         (server,\
         header_index,\
         length,\
+        pcnt_current,\
         unpacked['pkt_mcnt'],\
         unpacked['pkt_ant'],\
-        unpacked['pkt_mcnt'] % chans,\
+        unpacked['pkt_pcnt'],\
+        unpacked['pkt_timestamp'],\
         unpacked['rms_polQ'],\
         unpacked['rms_polI'],\
         unpacked['level_polQ_r'],\
@@ -70,9 +71,11 @@ def print_packet_info(server, header_index, length, unpacked, chans):
 
 def feng_unpack(f, hdr_index, pkt_len, skip_indices):
     pkt_64bit = data[f]['data'][hdr_index].data #struct.unpack('>Q',bram_dmp['bram_msb'][f][(4*hdr_index):(4*hdr_index)+4]+bram_dmp['bram_lsb'][f][(4*hdr_index):(4*hdr_index)+4])[0]
-    pkt_mcnt = (pkt_64bit & ((2**64)-(2**16)))>>16
+    pkt_mcnt = pkt_64bit >> 16
     pkt_ant  = pkt_64bit & ((2**16)-1)
-    pkt_freq = pkt_mcnt % n_chans
+    pkt_timestamp = pkt_mcnt >> chan_bits
+    pkt_pcnt = pkt_mcnt & (n_chans-1)
+    pkt_freq = pkt_pcnt
     sum_polQ_r = 0
     sum_polQ_i = 0
     sum_polI_r = 0
@@ -89,7 +92,7 @@ def feng_unpack(f, hdr_index, pkt_len, skip_indices):
         #pkt_64bit = struct.unpack('>Q',bram_dmp['bram_msb'][f][(4*abs_index):(4*abs_index)+4]+bram_dmp['bram_lsb'][f][(4*abs_index):(4*abs_index)+4])[0]
         pkt_64bit = data[f]['data'][abs_index].data
         raw_data.append(pkt_64bit)
-        for offset in range(0,64,16):
+        for offset in range(0, 64, 16):
             polQ_r = (pkt_64bit & ((2**(offset+16)) - (2**(offset+12))))>>(offset+12)
             polQ_i = (pkt_64bit & ((2**(offset+12)) - (2**(offset+8))))>>(offset+8)
             polI_r = (pkt_64bit & ((2**(offset+8)) - (2**(offset+4))))>>(offset+4)
@@ -132,6 +135,8 @@ def feng_unpack(f, hdr_index, pkt_len, skip_indices):
             'pkt_mcnt': pkt_mcnt,\
             'pkt_ant':pkt_ant,\
             'pkt_freq':pkt_freq,\
+            'pkt_timestamp':pkt_timestamp,\
+            'pkt_pcnt':pkt_pcnt,\
             'rms_polQ':rms_polQ,\
             'rms_polI':rms_polI,\
             'level_polQ_r':level_polQ_r,\
@@ -187,6 +192,7 @@ try:
     binary_point = c.config['feng_fix_pnt_pos']
     packet_len = c.config['10gbe_pkt_len']
     n_chans = c.config['n_chans']
+    chan_bits = int(numpy.log2(n_chans))
     num_bits = c.config['feng_bits']
 
     if num_bits != 4:
@@ -202,7 +208,7 @@ try:
             corr.corr_functions.write_masked_register(c.ffpgas, corr.corr_nb.register_fengine_control, tvg_en = False, tvgsel_pkt = True)
         elif c.is_wideband():
             raise RuntimeError('No TVG in wideband yet.')
-        else
+        else:
             raise RuntimeError('Unknown mode.')
 
     # 33 = one 64-bit packet in 128-bit snap, 4 16-bit (2 pols, 4.3r+i each) values in each packet. So 128-deep collections of f-channels take 32 packets. Plus one header packet.
@@ -215,6 +221,14 @@ try:
     #bram_dmp = c.fsnap_all(dev_name,brams,man_trig=man_trigger,wait_period=3,offset=opts.offset*num_bits*2*2/64*packet_len)
     data = corr.snap.get_xaui_snapshot(c, offset = offset, man_trigger = opts.man_trigger, man_valid = opts.man_valid)
     print 'done.'
+
+    # read peecount
+    msw = c.ffpgas[0].read_uint('mcount_msw')
+    lsw = c.ffpgas[0].read_uint('mcount_lsw')
+    mcount = (msw << 32) + lsw
+    pcnt_current = int(((msw << 32) + lsw) * c.config['pcnt_scale_factor'] / c.config['mcnt_scale_factor'])
+
+    print 'pcnt_sf(%i) mcnt_sf(%i) mcount(%i) pcnt_current(%i)' % (c.config['pcnt_scale_factor'], c.config['mcnt_scale_factor'], mcount, pcnt_current)
 
     print 'Analysing packets...'
     skip_indices = []

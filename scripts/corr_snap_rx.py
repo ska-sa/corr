@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 '''
-Grabs the contents of "snap_rx" for analysis.
+Grabs the contents of "snap_rx0" on the x-engine for analysis.
 
 Rev:
 2011-06-29  PVP Port to use new snapshot blocks.

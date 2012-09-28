@@ -108,7 +108,7 @@ try:
             
             vacc_cnt   = [c.xread_uint_all('vacc_cnt%i'%x) for x in range(n_xeng_per_fpga)]
             vacc_err_cnt = [c.xread_uint_all('vacc_err_cnt%i'%x) for x in range(n_xeng_per_fpga)]
-            vacc_ld_stat = c.vacc_ld_stat_get()
+            vacc_ld_stat = c.vacc_ld_status_get()
 
             sum_bad_pkts = sum([sum(x_miss_n) for x_miss_n in x_miss])/xeng_acc_len
             sum_spectra = sum([sum(engcnt) for engcnt in x_cnt])

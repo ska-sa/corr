@@ -497,9 +497,9 @@ class Correlator:
         """Reads and decodes the status registers for all xengines."""
         rv = {}
         for loc_xeng_n in range(self.config['x_per_fpga']):
-            for xf_n, srv in enumerate(self.xsrvs):
-                xeng_id = 'xeng%i' % (loc_xeng_n + self.config['x_per_fpga'] * xf_n)
-                rv[xeng_id] = read_masked_register([self.xfpgas[xf_n]], corr.corr_wb.register_xengine_status, names = ['xstatus%i' % loc_xeng_n])[0]
+            for xfpga_num, srv in enumerate(self.xsrvs):
+                xeng_id = 'xeng%i' % (loc_xeng_n + self.config['x_per_fpga'] * xfpga_num)
+                rv[xeng_id] = read_masked_register([self.xfpgas[xfpga_num]], corr.corr_wb.register_xengine_status, names = ['xstatus%i' % loc_xeng_n])[0]
                 if (rv[xeng_id]['gbe_lnkdn'] or rv[xeng_id]['xeng_err'] or 
                     rv[xeng_id]['vacc_err'] or rv[xeng_id]['rx_bad_pkt'] or 
                     rv[xeng_id]['rx_bad_frame'] or rv[xeng_id]['tx_over'] or 
@@ -775,7 +775,8 @@ class Correlator:
         "Returns the current packet count. ASSUMES THE SYSTEM IS SYNC'd!"
         msw = self.ffpgas[0].read_uint('mcount_msw')
         lsw = self.ffpgas[0].read_uint('mcount_lsw')
-        return int(((msw << 32) + lsw)*self.config['pcnt_scale_factor']/self.config['mcnt_scale_factor'])
+        mcount = (msw << 32) + lsw
+        return int(mcount * self.config['pcnt_scale_factor'] / self.config['mcnt_scale_factor'])
     
     def arm(self, spead_update = True):
         """Arms all F engines, records arm time in config file and issues SPEAD update. Returns the UTC time at which the system was sync'd in seconds since the Unix epoch (MCNT=0)"""
@@ -1206,7 +1207,7 @@ class Correlator:
             elif abs(fine_delay_i) > 2**(fine_delay_bits):
                 log_runtimeerror('Internal logic error calculating fine delays.')
             elif abs(coarse_delay) > (2**(coarse_delay_bits)):
-                log_runtimeerror(self.floggers[ffpga_n], 'Requested coarse delay (%es) is out of range (+-%es).' % (float(coarse_delay)/self.config['adc_clk'], float(2**(coarse_delay_bits-1))/self.config['adc_clk'])))
+                log_runtimeerror(self.floggers[ffpga_n], 'Requested coarse delay (%es) is out of range (+-%es).' % (float(coarse_delay)/self.config['adc_clk'], float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
             else:
                 self.floggers[ffpga_n].info('Delay actually set to %e seconds.' % act_delay)
         if (delay_rate != 0):
@@ -1262,9 +1263,9 @@ class Correlator:
 
         # set the load time:
         # MSb (load-it! bit) is pos-edge triggered.
-        self.ffpgas[ffpga_n].write_int('ld_time_lsw%i'%feng_input, (ld_mcnt&0xffffffff))
-        self.ffpgas[ffpga_n].write_int('ld_time_msw%i'%feng_input, (ld_mcnt>>32)&0x7fffffff)
-        self.ffpgas[ffpga_n].write_int('ld_time_msw%i'%feng_input, (ld_mcnt>>32)|(1<<31))
+        self.ffpgas[ffpga_n].write_int('ld_time_lsw%i' % feng_input, (ld_mcnt&0xffffffff))
+        self.ffpgas[ffpga_n].write_int('ld_time_msw%i' % feng_input, (ld_mcnt>>32)&0x7fffffff)
+        self.ffpgas[ffpga_n].write_int('ld_time_msw%i' % feng_input, (ld_mcnt>>32)|(1<<31))
 
         if ld_check == False:
             return {
@@ -1273,26 +1274,26 @@ class Correlator:
                 'act_fringe_rate': act_fringe_rate,
                 'act_delay_rate': act_delay_rate}
 
-        #check that it loaded correctly:
-        #wait 'till the time has elapsed
+        # check that it loaded correctly:
+        # wait 'till the time has elapsed
         sleep_time=self.time_from_mcnt(ld_mcnt) - self.time_from_mcnt(mcnt)
-        self.floggers[ffpga_n].debug('waiting %2.3f seconds (now: %i, ldtime: %i)'%(sleep_time, self.time_from_mcnt(ld_mcnt),self.time_from_mcnt(mcnt)))
+        self.floggers[ffpga_n].debug('waiting %2.3f seconds (now: %i, ldtime: %i)' % (sleep_time, self.time_from_mcnt(ld_mcnt), self.time_from_mcnt(mcnt)))
         time.sleep(sleep_time)
 
-        cnts=self.ffpgas[ffpga_n].read_uint('delay_tr_status%i'%feng_input)
-        if (arm_cnt0 == (cnts>>16)): 
+        cnts = self.ffpgas[ffpga_n].read_uint('delay_tr_status%i' % feng_input)
+        if (arm_cnt0 == (cnts>>16)):
             if (cnts>>16)==0:
-                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) appears to be held in master reset. Load failed.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
+                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) appears to be held in master reset. Load failed.' % (ant_str, feng_input, self.fsrvs[ffpga_n]))
             else:
-                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not arm. Load failed.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
-        if (ld_cnt0 >= (cnts&0xffff)): 
-            after_mcnt=self.mcnt_current_get(ant_str) 
-            #print 'before: %i, target: %i, after: %i'%(mcnt,ld_mcnt,after_mcnt)
-            #print 'start: %10.3f, target: %10.3f, after: %10.3f'%(self.time_from_mcnt(mcnt),self.time_from_mcnt(ld_mcnt),self.time_from_mcnt(after_mcnt))
+                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not arm. Load failed.' % (ant_str, feng_input, self.fsrvs[ffpga_n]))
+        if (ld_cnt0 >= (cnts & 0xffff)):
+            after_mcnt = self.mcnt_current_get(ant_str)
+            print 'before: %i, target: %i, after: %i' % (mcnt, ld_mcnt, after_mcnt)
+            print 'start: %10.3f, target: %10.3f, after: %10.3f' % (self.time_from_mcnt(mcnt), self.time_from_mcnt(ld_mcnt), self.time_from_mcnt(after_mcnt))
             if after_mcnt > ld_mcnt:
                 log_runtimeerror(self.floggers[ffpga_n], 'We missed loading the registers by about %4.1f ms.' % ((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000))
             else:
-                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not load correctly for an unknown reason.'%(ant_str,feng_input,self.fsrvs[ffpga_n]))
+                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not load correctly for an unknown reason.' % (ant_str, feng_input, self.fsrvs[ffpga_n]))
 
         return {
             'act_delay': act_delay,
@@ -1674,15 +1675,15 @@ class Correlator:
             for x in range(self.config['n_xaui_ports_per_xfpga']):
                 fpga.tap_stop('gbe%i'%x)
 
-    def vacc_ld_stat_get(self):
-        "grabs and decodes the VACC load status registers."
-        rv={}
-        for xf_n,srv in enumerate(self.xsrvs):
-            rv[srv]={}
-            for loc_xeng_n in range(self.config['x_per_fpga']):
-                cnts=self.xfpgas[xf_n].read_uint('vacc_ld_status%i'%loc_xeng_n)
-                rv[srv]['arm_cnt%i'%loc_xeng_n] = cnts>>16
-                rv[srv]['ld_cnt%i'%loc_xeng_n] = cnts&0xffff
+    def vacc_ld_status_get(self):
+        "Grabs and decodes the VACC load status registers from all the correlator's X-engines."
+        rv = {}
+        for xfpga_num, server in enumerate(self.xsrvs):
+            rv[server] = {}
+            for xeng_location in range(self.config['x_per_fpga']):
+                reg_data = self.xfpgas[xfpga_num].read_uint('vacc_ld_status%i' % xeng_location)
+                rv[server]['arm_cnt%i' % xeng_location] = reg_data >> 16
+                rv[server]['ld_cnt%i'  % xeng_location] = reg_data & 0xffff
         return rv
 
     def vacc_sync(self, ld_time = -1, network_wait = 0.5, min_load_time = 1.0):
@@ -1690,101 +1691,124 @@ class Correlator:
         #rev: 2011-02-02 JRM:   added warning calc for leadtime. fewer time.time() calls.
         min_ld_time = min_load_time
 
-        def load_ldstatus(c):
+        def load_vacc_status(correlator):
+            ld_status_reg_data = correlator.vacc_ld_status_get()
             rv = {}
-            for xf_n, srv in enumerate(c.xsrvs):
-                tsrv = {}
-                tsrv['xfpga_number'] = xf_n
-                tsrv['xengs'] = []
-                for loc_xeng_n in range(c.config['x_per_fpga']):
-                    xeng_index = loc_xeng_n + (c.config['x_per_fpga'] * xf_n)
-                    ldstat = c.xfpgas[xf_n].read_uint('vacc_ld_status%i' % loc_xeng_n)
-                    rtemp = {}
-                    rtemp['xeng_number'] = loc_xeng_n
-                    rtemp['arm_cnt'] = ldstat >> 16
-                    rtemp['ld_cnt'] = ldstat & 0xffff
-                    rtemp['xeng_index'] = xeng_index
-                    tsrv['xengs'].append(rtemp)
-                rv[srv] = tsrv 
+            for xfpga_num, server in enumerate(correlator.xsrvs):
+                server_data = {}
+                server_data['xfpga_number'] = xfpga_num
+                server_data['xengs'] = []
+                for xeng_location in range(correlator.config['x_per_fpga']):
+                    xeng_index = xeng_location + (correlator.config['x_per_fpga'] * xfpga_num)
+                    tmp = {}
+                    tmp['xeng_number'] = xeng_location
+                    tmp['arm_cnt'] = ld_status_reg_data[server]['arm_cnt%i' % xeng_location]
+                    tmp['ld_cnt'] =  ld_status_reg_data[server]['ld_cnt%i'  % xeng_location]
+                    tmp['xeng_index'] = xeng_index
+                    server_data['xengs'].append(tmp)
+                rv[server] = server_data 
             return rv
 
+        def print_vacc_status(data):
+            print '\n***************************'
+            for key, server in data.items():
+                print 'Xeng_fpga(%s, %i):' % (key, server['xfpga_number'])
+                for xeng in server['xengs']:
+                    print '\txeng(%i) xeng_index(%i) arm_cnt(%i) ld_cnt(%i)' % (xeng['xeng_number'], xeng['xeng_index'], xeng['arm_cnt'], xeng['ld_cnt'])
+            print '***************************\n'
+
         # read the vacc status registers before syncing
-        xldstatus_before = load_ldstatus(self)
+        vacc_status_before = load_vacc_status(self)
+        #print_vacc_status(vacc_status_before)
         reset_required = False
-        for srv in xldstatus_before.values():
-            for xeng in srv['xengs']:
+        for key, server in vacc_status_before.items():
+            for xeng in server['xengs']:
                 if xeng['arm_cnt'] != xeng['ld_cnt']: 
-                    self.xloggers[s['xfpga_number']].warning("VACC syncing: xfpga(%i), xeng(%i) - arm count(%i) and load count(%i) differ by %i, resetting VACCs." % (srv['xfpga_number'], xeng['xeng_number'], xeng['arm_cnt'], xeng['ld_cnt'], xeng['arm_cnt'] - xeng['ld_cnt']))
+                    self.xloggers[server['xfpga_number']].warning("VACC syncing: xfpga(%i), xeng(%i) - arm count(%i) and load count(%i) differ by %i, resetting VACCs." % (server['xfpga_number'], xeng['xeng_number'], xeng['arm_cnt'], xeng['ld_cnt'], xeng['arm_cnt'] - xeng['ld_cnt']))
                     reset_required = True
         # reset the vaccs if any were out of alignment
         if reset_required:
             print 'Resetting vaccs...'
-            c.rst_vaccs()
+            self.rst_vaccs()
+            vacc_status_before = load_vacc_status(self)
+            for k, s in vacc_status_before.items():
+                for x in s['xengs']:
+                    if (x['arm_cnt'] != 0) or (x['ld_cnt'] != 0):
+                        log_runtimeerror(self.syslogger, 'Xeng(%i) on %s: could not reset vacc correctly. arm_cnt(%i) != 0? ld_cnt(%i) != 0?' % (x['xeng_number'], k, x['arm_cnt'], x['ld_cnt']))
+            #print_vacc_status(vacc_status_before)
+
+        # get current pcnt from f-engines
+        pcnt_before = self.pcnt_current_get()
 
         # figure out the load time as a pcnt
-        t_start = time.time()
+        time_start = time.time()
         if ld_time < 0:
-            ld_time = t_start + min_ld_time
-        if (ld_time < t_start + min_ld_time):
+            ld_time = time_start + min_ld_time
+        if ld_time < time_start + min_ld_time:
             log_runtimeerror(self.syslogger, "Cannot load at a time in the past. Need at least %2.2f seconds leadtime." % min_ld_time)
-        ld_pcnt = self.pcnt_from_time(ld_time)
-        #print 'ld_time set to', time.ctime(ld_time)
-        if (ld_pcnt <= self.pcnt_current_get()):
+        pcnt_ld = self.pcnt_from_time(ld_time)
+        #print 'pcnt_ld(%i) gives load time(%s)' % (pcnt_ld, time.ctime(ld_time))
+        if pcnt_ld <= pcnt_before:
             log_runtimeerror(self.syslogger, "Error occurred. Cannot load at a time in the past.")
-        if ld_pcnt > ((2**48)-1):
+        if pcnt_ld > ((2**48)-1):
+            print 'Warning: the 48-bit pcnt has wrapped!'
             self.syslogger.warning("Looks like the 48bit pcnt has wrapped.")
-            ld_pcnt = ld_pcnt & 0xffffffffffff
+            pcnt_ld = pcnt_ld & 0xffffffffffff
 
         # round to the nearest spectrum cycle. this is: n_ants*(n_chans_per_xeng)*(xeng_acc_len) clock cycles.
         # pcnts themselves are rounded to nearest xeng_acc_len.
         # round_target = self.config['n_ants'] * self.config['n_chans'] / self.config['n_xeng']
         # However, hardware rounds to n_chans, irrespective of anything else (oops!).
-        # ld_pcnt = (ld_pcnt / self.config['n_chans']) * self.config['n_chans']
-
-        # get current pcnt from f-engines
-        pcnt = self.pcnt_current_get()
+        # pcnt_ld = (pcnt_ld / self.config['n_chans']) * self.config['n_chans']
 
         # arm the x-engine vaccs
-        self.xwrite_int_all('vacc_time_msw', (ld_pcnt >> 32) + (0 << 31))
-        self.xwrite_int_all('vacc_time_lsw', (ld_pcnt &  0xffffffff))
-        self.xwrite_int_all('vacc_time_msw', (ld_pcnt >> 32) + (1 << 31))
-        self.xwrite_int_all('vacc_time_msw', (ld_pcnt >> 32) + (0 << 31))
+        self.xwrite_int_all('vacc_time_msw', (pcnt_ld >> 32) + (0 << 31))
+        self.xwrite_int_all('vacc_time_lsw', (pcnt_ld &  0xffffffff))
+        self.xwrite_int_all('vacc_time_msw', (pcnt_ld >> 32) + (1 << 31))
+        self.xwrite_int_all('vacc_time_msw', (pcnt_ld >> 32) + (0 << 31))
 
         # wait for the load time to elapse
-        time.sleep(self.time_from_pcnt(ld_pcnt) - self.time_from_pcnt(pcnt))
+        #print 'waiting %2.3f seconds' % sleep_time
+        time.sleep(self.time_from_pcnt(pcnt_ld) - self.time_from_pcnt(pcnt_before))
         # allow for the fact that reading/writing over the network may take some time
         time.sleep(network_wait) # account for a crazy network latency
-        after_pcnt = self.pcnt_current_get()
-        #print 'waiting %2.3f seconds'%sleep_time
+        pcnt_after = self.pcnt_current_get()
+        """
+        pcnt_difference = pcnt_after - pcnt_ld
+        time_before = self.time_from_pcnt(pcnt_before)
+        time_ld = self.time_from_pcnt(pcnt_ld)
+        time_after = self.time_from_pcnt(pcnt_after)
+        time_difference = time_after - time_ld
+        print 'PCNT: before(%15i) target(%15i) after(%15i) after-target(%15i)' % (pcnt_before, pcnt_ld, pcnt_after, pcnt_difference)
+        print 'TIME: before(%15.3f) target(%15.3f) after(%15.3f) after-target(%15.3f)' % (time_before, time_ld, time_after, time_difference)
+        """
 
-        xldstatus_after = load_ldstatus(self)
-        for item in xldstatus_after.items():
-            srvkey = item[0]
-            srv = item[1]
-            srvbefore = xldstatus_before[srvkey]
-            xlog = self.xloggers[srv['xfpga_number']]
-            for xeng in srv['xengs']:
-                xengbefore = srvbefore['xengs'][xeng['xeng_number']]
+        # read the vacc ld register again after the load time has elapsed
+        vacc_status_after = load_vacc_status(self)
+        #print_vacc_status(vacc_status_after)
+
+        # loop through the x-engines and check that their load counts incremented correctly
+        for serverkey, server in vacc_status_after.items():
+            server_status_before = vacc_status_before[serverkey]
+            xeng_logger = self.xloggers[server['xfpga_number']]
+            for xeng in server['xengs']:
+                xeng_status_before = server_status_before['xengs'][xeng['xeng_number']]
                 #print "xeng_index(%i) arm_cnt(%i) ld_cnt(%i)" % (xeng['xeng_index'], xeng['arm_cnt'], xeng['ld_cnt'])
                 # the arm count should have increased
                 if (xeng['arm_cnt'] == 0):
-                    log_runtimeerror(xlog, 'VACC %i on %s appears to be held in reset (arm count = 0).' % (xeng['xeng_number'], srvkey))
-                if (xengbefore['arm_cnt'] == xeng['arm_cnt']):
-                    log_runtimeerror(xlog, 'VACC %i on %s did not arm (arm count didn''t increment).' % (xeng['xeng_number'], srvkey))
+                    log_runtimeerror(xeng_logger, 'VACC %i on %s appears to be held in reset (arm count = 0).' % (xeng['xeng_number'], serverkey))
+                if (xeng_status_before['arm_cnt'] == xeng['arm_cnt']):
+                    log_runtimeerror(xeng_logger, 'VACC %i on %s did not arm (arm count didn''t increment).' % (xeng['xeng_number'], serverkey))
                 # so should the load count
-                if (xengbefore['ld_cnt'] >= xeng['ld_cnt']):
-                    print "ldcnt_before(%i) ldcnt_after(%i)" % (xengbefore['ld_cnt'], xeng['ld_cnt'])
-                    print '\nPCNT: start: %i, target: %i, after: %i, diff: %i' % (pcnt, ld_pcnt, after_pcnt, after_pcnt - ld_pcnt)
-                    print 'TIME: start: %10.3f, target: %10.3f, after: %10.3f' % (self.time_from_pcnt(pcnt), self.time_from_pcnt(ld_pcnt), self.time_from_pcnt(after_pcnt))
-                    sys.stdout.flush()
-                    if after_pcnt > ld_pcnt:
-                        miss_ms = (self.time_from_pcnt(after_pcnt) - self.time_from_pcnt(ld_pcnt)) * 1000.
-                        log_runtimeerror(xlog, 'We missed loading the registers by about %4.1f ms.' % miss_ms)
+                #print "\nxeng_ldcnt_before(%i) xeng_ldcnt_after(%i)" % (xeng_status_before['ld_cnt'], xeng['ld_cnt'])
+                sys.stdout.flush()
+                if xeng['ld_cnt'] <= xeng_status_before['ld_cnt']:
+                    if pcnt_after > pcnt_ld:
+                        miss_ms = (self.time_from_pcnt(pcnt_after) - self.time_from_pcnt(pcnt_ld)) * 1000.
+                        log_runtimeerror(xeng_logger, 'vacc_sync - We missed loading the registers by about %4.1f ms.' % miss_ms)
                     else:
-                        raise RuntimeError('Xeng %i on %s did not load correctly for an unknown reason.' % (xeng['xeng_number'], srvkey))
-                #print 'xeng(%s, %i) VACC armed correctly.' % (srv, loc_xeng_n) 
-
-        return True
+                        raise RuntimeError('Xeng %i on %s did not load correctly for an unknown reason.' % (xeng['xeng_number'], serverkey))
+                #print 'xeng(%s, %i) VACC armed correctly.' % (server, loc_xeng_n) 
 
 #    def freq_to_chan(self,frequency):
 #        """Returns the channel number where a given frequency is to be found. Frequency is in Hz."""
@@ -1794,7 +1818,6 @@ class Correlator:
 #            #print 'you want',frequency
 #        if frequency>self.config['bandwidth']: raise RuntimeError("that frequency is too high.")
 #        return round(float(frequency)/self.config['bandwidth']*self.config['n_chans'])%self.config['n_chans']
-
 
     def get_adc_snapshots(self,ant_strs,trig_level=-1,sync_to_pps=True):
         """Retrieves raw ADC samples from the specified antennas. Optionally capture the data at the same time. Optionally set a trigger level."""

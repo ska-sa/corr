@@ -15,13 +15,13 @@ import corr, time, numpy, struct, sys, logging, construct
 from construct import *
 
 # OOB signalling bit offsets - seem to be the same for wb and nb:
-data_bs = construct.BitStruct("oob",
+data_bitstruct = construct.BitStruct("oob",
     BitField("data", 16),
     BitField("mcnt", 13),
     Flag("valid"),
     Flag("flag"),
     Flag("received"))
-data_rp = construct.GreedyRepeater(data_bs)
+data_repeater = construct.GreedyRepeater(data_bitstruct)
 
 dev_prefix = 'snap_descramble'
 
@@ -148,7 +148,7 @@ def create_data(c, xeng_number):
         if snapdump['lengths'][f] == 0:
             print 'Warning: got nothing back from snap block %s on %s.' % (dev_name, c.xsrvs[f])
         else:
-            oobdata[f] = data_rp.parse(snapdump['data'][f])
+            oobdata[f] = data_repeater.parse(snapdump['data'][f])
     print 'done.'
 
     if opts.verbose:

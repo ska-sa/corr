@@ -83,22 +83,22 @@ try:
         offset = (ch_offset)%(n_chans_per_x) * n_bls * 2   #hardcoded for demux of 8
 
     print '------------------------'
-    print 'Triggering capture at word offset %i...'%offset,
+    print 'Triggering capture at word offset %i...' % offset,
     sys.stdout.flush()
-    bram_dmp=corr.snap.snapshots_get(c.xfpgas,dev_name, man_trig = False, wait_period = 2, offset = offset)
+    bram_dmp = corr.snap.snapshots_get(c.xfpgas,dev_name, man_trig = False, wait_period = 2, offset = offset)
     print 'done.'
 
     print 'Unpacking bram contents...'
     #hardcode unpack of 16 bit values. Assumes bitgrowth of log2(128)=7 bits and input of 4_3 * 4_3.
     sys.stdout.flush()
-    bram_data=[]
+    bram_data = []
     for f, fpga in enumerate(c.xfpgas):
-        unpack_length=(bram_dmp['lengths'][f])
-        print " Unpacking %i values from %s."%(unpack_length, c.xsrvs[f])
-        if unpack_length>0:
-            bram_data.append(struct.unpack('>%ii'%(unpack_length), bram_dmp[brams[0]][f]))
+        unpack_length = bram_dmp['lengths'][f]
+        print " Unpacking %i values from %s." % (unpack_length, c.xsrvs[f])
+        if unpack_length > 0:
+            bram_data.append(struct.unpack('>%ii' % (unpack_length / 4), bram_dmp['data'][f]))
         else:
-            print " Got no data back for %s."%c.xsrvs[f]
+            print " Got no data back for %s." % c.xsrvs[f]
             bram_data.append([])
     print 'Done.'
     print '========================\n'
