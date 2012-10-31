@@ -277,7 +277,8 @@ class FpgaClient(CallbackClient):
 
             Please note that the function definition changed from corr-0.4.0 to corr-0.4.1 to include the tap_dev identifier.
            """
-        if len(tap_dev) > 8: raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s for device %s."%(tap_dev,dev_name))
+        if len(tap_dev) > 8:
+            raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s for device %s." % (tap_dev, device))
 
         ip_1 = (ip/(2**24))
         ip_2 = (ip%(2**24))/(2**16)
@@ -547,7 +548,7 @@ class FpgaClient(CallbackClient):
         super(FpgaClient,self).stop()
         self.join(timeout=self._timeout)
 
-    def get_10gbe_core_details(self,dev_name):
+    def get_10gbe_core_details(self, dev_name):
         """Prints 10GbE core details. 
            @param dev_name string: Name of the core.
         """
