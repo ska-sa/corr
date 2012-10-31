@@ -152,6 +152,49 @@ def log_runtimeerror(logger, err):
     logger.error(err)
     raise RuntimeError(err)
 
+def non_blocking_request(fpgas, request, timeout, *args): 
+    verbose = False 
+    replies = {} 
+    requests = {} 
+    # reply callback 
+    def reply_cb(host, request_id): 
+        if verbose: print 'Reply(%s) from host(%s)' % (request_id, host); sys.stdout.flush() 
+        if not requests.has_key(host): 
+            raise RuntimeError('Received reply %s for host %s but did not send request?' % (request_id, host)) 
+        if replies.has_key(host): 
+            raise RuntimeError('Already have reply from %s for request_id %s?' % (host, request_id)) 
+        replies[host] = request_id 
+    # start the requests 
+    if verbose: print 'Send request(%s) to %i hosts.' % (request, len(fpgas)) 
+    for f in fpgas: 
+        r = f._nb_request(request, None, reply_cb, *args) 
+        requests[r['host']] = [r['request'], r['id']] 
+    # wait for replies 
+    timedout = False 
+    timenow = time.time() 
+    while len(replies) < len(fpgas): 
+        if (time.time() > timenow + timeout): 
+            timedout = True 
+            break 
+        time.sleep(0.01) 
+    if timedout: 
+        if verbose: print "non_blocking_request timeout after %is" % timeout 
+    # process the responses 
+    rv = {} 
+    for f in fpgas: 
+        frv = {} 
+        request_id = replies[f.host] 
+        reply, informs = f._nb_get_request_result(request_id) 
+        frv['request'] = requests[f.host][0] 
+        frv['reply'] = reply.arguments[0] 
+        informlist = [] 
+        for inf in informs: 
+            informlist.append(inf.arguments[0]) 
+        frv['informs'] = informlist 
+        rv[f.host] = frv 
+        f._nb_pop_request_by_id(request_id) 
+    return rv
+
 class Correlator:
 
     def __init__(self, connect = True, config_file = None, log_handler = None, log_level = logging.INFO):
@@ -299,6 +342,17 @@ class Correlator:
         return (pol1+pol1,pol2+pol2,pol1+pol2,pol2+pol1) 
 
     def prog_all(self):
+        """Progam all the FPGAs asynchronously."""
+        non_blocking_request(self.ffpgas, 'progdev', 5, self.config['bitstream_f'])
+        non_blocking_request(self.xfpgas, 'progdev', 5, self.config['bitstream_x'])
+        if not self.check_fpga_comms(): 
+            raise RuntimeError("Failed to successfully program FPGAs.")
+        else:
+            self.syslogger.info("All FPGAs programmed ok.")
+            time.sleep(1)
+            self.get_rcs()
+
+    def prog_all_old(self):
         """Programs all the FPGAs."""
         #tested ok corr-0.5.0 2010-07-19
         for fpga in self.ffpgas:
@@ -757,25 +811,27 @@ class Correlator:
         arm_stat = [bool(val & 0x80000000) for val in all_values]
         return [(arm_stat[fn],pps_cnt[fn]) for fn in range(len(self.ffpgas))]
 
-    def mcnt_current_get(self,ant_str=None):
+    def mcnt_current_get(self, ant_str = None, fpga_num = -1):
         "Returns the current mcnt for a given antenna. If not specified, return a list of mcnts for all connected f engine FPGAs"
         #tested ok corr-0.5.0 2010-07-19
-        if ant_str==None:
+        if (ant_str == None) and (fpga_num == -1):
             msw = self.fread_uint_all('mcount_msw')
             lsw = self.fread_uint_all('mcount_lsw')
             mcnt = [(msw[i] << 32) + lsw[i] for i,srv in enumerate(self.fsrvs)]
             return mcnt
         else:
-            ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_ant_str_location(ant_str)
-            msw = self.ffpgas[ffpga_n].read_uint('mcount_msw')
-            lsw = self.ffpgas[ffpga_n].read_uint('mcount_lsw')
+            if ant_str != None:
+                if fpga_num != -1:
+                    raise RuntimeError('Cannot specify ant_str(%s) and fpga_num(%i)' % (ant_str, fpga_num, ))
+                ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input = self.get_ant_str_location(ant_str)
+                fpga_num = ffpga_n
+            msw = self.ffpgas[fpga_num].read_uint('mcount_msw')
+            lsw = self.ffpgas[fpga_num].read_uint('mcount_lsw')
             return (msw << 32) + lsw 
     
-    def pcnt_current_get(self):
+    def pcnt_current_get(self, ant_str = None, fpga_num = 0):
         "Returns the current packet count. ASSUMES THE SYSTEM IS SYNC'd!"
-        msw = self.ffpgas[0].read_uint('mcount_msw')
-        lsw = self.ffpgas[0].read_uint('mcount_lsw')
-        mcount = (msw << 32) + lsw
+        mcount = self.mcnt_current_get(ant_str = ant_str, fpga_num = fpga_num)
         return int(mcount * self.config['pcnt_scale_factor'] / self.config['mcnt_scale_factor'])
     
     def arm(self, spead_update = True):
@@ -1155,7 +1211,7 @@ class Correlator:
                 for xeng in range(self.config['x_per_fpga']):
                     self.xwrite_int_all('xeng_tvg%i_tv%i'%(xeng,i),v)
 
-    def fr_delay_set(self,ant_str,delay=0,delay_rate=0,fringe_phase=0,fringe_rate=0,ld_time=-1,ld_check=True):
+    def fr_delay_set(self, ant_str, delay=0, delay_rate=0, fringe_phase=0, fringe_rate=0, ld_time=-1, ld_check = True, extra_wait_time = 0):
         """
         Configures a given antenna to a delay in seconds using both the coarse and the fine delay. Also configures the fringe rotation components. This is a blocking call. \n
         By default, it will wait 'till load time and verify that things worked as expected. This check can be disabled by setting ld_check param to False. \n
@@ -1173,13 +1229,15 @@ class Correlator:
         fine_delay_rate_bits =  16
         fringe_offset_bits =    16
         fringe_rate_bits =      16
-        bitshift_schedule =     23
-        
+        bitshift_schedule =     23 
         min_ld_time = 0.1 # assume we're able to set and check all the registers in 100ms
+        network_latency_adjust = 0.015
+
+        # decode the ant_str
         ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_ant_str_location(ant_str)
 
         # delays in terms of ADC clock cycles:
-        delay_n = delay*self.config['adc_clk']                  # delay in clock cycles
+        delay_n = delay * self.config['adc_clk']                # delay in clock cycles
         #coarse_delay = int(numpy.round(delay_n))               # delay in whole clock cycles #good for rev 369.
         coarse_delay = int(delay_n)                             # delay in whole clock cycles #testing for rev370
         fine_delay = (delay_n-coarse_delay)                     # delay remainder. need a negative slope for positive delay
@@ -1192,9 +1250,10 @@ class Correlator:
         # figure out the fringe rate. Input is in cycles per second (Hz). 1) divide by brd clock rate to get cycles per clock. 2) multiply by 2**20
         fr_rate = int(float(fringe_rate) / self.config['feng_clk'] * (2**(bitshift_schedule + fringe_rate_bits-1)))
 
-        cnts = self.ffpgas[ffpga_n].read_uint('delay_tr_status%i'%feng_input)
-        arm_cnt0 = cnts >> 16
-        ld_cnt0 = cnts & 0xffff
+        # read the arm and load counts - they must increment after the delay has been loaded
+        delay_fr_status_before = self.ffpgas[ffpga_n].read_uint('delay_tr_status%i'%feng_input)
+        arm_count_before = delay_fr_status_before >> 16
+        ld_count_before = delay_fr_status_before & 0xffff
 
         act_delay = (coarse_delay + float(fine_delay_i)/2**fine_delay_bits)/self.config['adc_clk']
         act_fringe_offset = float(fr_offset)/(2**fringe_offset_bits)*360 
@@ -1230,20 +1289,21 @@ class Correlator:
             else:
                 self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.' % act_fringe_rate)
 
-        # get the current mcnt for this feng:
-        mcnt = self.mcnt_current_get(ant_str)
+        # get the current mcnt for this feng
+        mcnt_before = self.mcnt_current_get(ant_str)
 
         # figure out the load time
         if ld_time < 0: 
             # User did not ask for a specific time; load now!
             # figure out the load-time mcnt:
-            ld_mcnt = int(mcnt + self.config['mcnt_scale_factor']*(min_ld_time))
+            mcnt_ld = int(mcnt_before + (self.config['mcnt_scale_factor'] * min_ld_time))
+            mcnt_ld = mcnt_ld + (self.config['mcnt_scale_factor'] * extra_wait_time)
         else:
             if (ld_time < (time.time() + min_ld_time)):
                 log_runtimeerror(self.syslogger, "Cannot load at a time in the past.")
-            ld_mcnt = self.mcnt_from_time(ld_time)
-
-#        if (ld_mcnt < (mcnt + self.config['mcnt_scale_factor']*min_ld_time)):
+            mcnt_ld = self.mcnt_from_time(ld_time)
+    
+#        if (mcnt_ld < (mcnt_before + self.config['mcnt_scale_factor']*min_ld_time)):
 #            log_runtimeerror(self.syslogger, "This works out to a loadtime in the past! Logic error :(") 
         
         # setup the delays:
@@ -1263,9 +1323,9 @@ class Correlator:
 
         # set the load time:
         # MSb (load-it! bit) is pos-edge triggered.
-        self.ffpgas[ffpga_n].write_int('ld_time_lsw%i' % feng_input, (ld_mcnt&0xffffffff))
-        self.ffpgas[ffpga_n].write_int('ld_time_msw%i' % feng_input, (ld_mcnt>>32)&0x7fffffff)
-        self.ffpgas[ffpga_n].write_int('ld_time_msw%i' % feng_input, (ld_mcnt>>32)|(1<<31))
+        self.ffpgas[ffpga_n].write_int('ld_time_lsw%i' % feng_input, (mcnt_ld&0xffffffff))
+        self.ffpgas[ffpga_n].write_int('ld_time_msw%i' % feng_input, (mcnt_ld>>32)&0x7fffffff)
+        self.ffpgas[ffpga_n].write_int('ld_time_msw%i' % feng_input, (mcnt_ld>>32)|(1<<31))
 
         if ld_check == False:
             return {
@@ -1274,24 +1334,35 @@ class Correlator:
                 'act_fringe_rate': act_fringe_rate,
                 'act_delay_rate': act_delay_rate}
 
-        # check that it loaded correctly:
-        # wait 'till the time has elapsed
-        sleep_time=self.time_from_mcnt(ld_mcnt) - self.time_from_mcnt(mcnt)
-        self.floggers[ffpga_n].debug('waiting %2.3f seconds (now: %i, ldtime: %i)' % (sleep_time, self.time_from_mcnt(ld_mcnt), self.time_from_mcnt(mcnt)))
+        # check that it loaded correctly
+        # wait until the time has elapsed
+        sleep_time = self.time_from_mcnt(mcnt_ld) - self.time_from_mcnt(mcnt_before) + network_latency_adjust
+        self.floggers[ffpga_n].debug('waiting %2.3f seconds (now: %i, ldtime: %i)' % (sleep_time, self.time_from_mcnt(mcnt_ld), self.time_from_mcnt(mcnt_before)))
+        print 'waiting %2.3f seconds (now: %i, ldtime: %i)' % (sleep_time, self.time_from_mcnt(mcnt_ld), self.time_from_mcnt(mcnt_before))
+        sys.stdout.flush()
         time.sleep(sleep_time)
 
-        cnts = self.ffpgas[ffpga_n].read_uint('delay_tr_status%i' % feng_input)
-        if (arm_cnt0 == (cnts>>16)):
-            if (cnts>>16)==0:
-                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) appears to be held in master reset. Load failed.' % (ant_str, feng_input, self.fsrvs[ffpga_n]))
+        # get the arm and load counts after the fact
+        delay_fr_status_after = self.ffpgas[ffpga_n].read_uint('delay_tr_status%i' % feng_input)
+        arm_count_after = delay_fr_status_after >> 16
+        ld_count_after = delay_fr_status_after & 0xffff
+        print 'BEFORE: delay_fr_status(%15i) arm_count(%10i) ld_count(%10i)' % (delay_fr_status_before, arm_count_before, ld_count_before, )
+        print 'AFTER:  delay_fr_status(%15i) arm_count(%10i) ld_count(%10i)' % (delay_fr_status_after, arm_count_after, ld_count_after, )
+
+        # did the system arm?
+        if (arm_count_before == arm_count_after):
+            if arm_count_after == 0:
+                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) appears to be held in master reset - delay arm count stays zero. Load failed.' % (ant_str, feng_input, self.fsrvs[ffpga_n]))
             else:
-                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not arm. Load failed.' % (ant_str, feng_input, self.fsrvs[ffpga_n]))
-        if (ld_cnt0 >= (cnts & 0xffff)):
-            after_mcnt = self.mcnt_current_get(ant_str)
-            print 'before: %i, target: %i, after: %i' % (mcnt, ld_mcnt, after_mcnt)
-            print 'start: %10.3f, target: %10.3f, after: %10.3f' % (self.time_from_mcnt(mcnt), self.time_from_mcnt(ld_mcnt), self.time_from_mcnt(after_mcnt))
-            if after_mcnt > ld_mcnt:
-                log_runtimeerror(self.floggers[ffpga_n], 'We missed loading the registers by about %4.1f ms.' % ((after_mcnt-ld_mcnt)/self.config['mcnt_scale_factor']*1000))
+                log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not arm - arm count = %i. Load failed.' % (ant_str, feng_input, self.fsrvs[ffpga_n], arm_count_after))
+
+        # did the system arm but not load?
+        if (ld_count_before >= ld_count_after):
+            mcnt_after = self.mcnt_current_get(ant_str)
+            print 'MCNT: before: %10i, target: %10i, after: %10i, after-target(%10i)' % (mcnt_before, mcnt_ld, mcnt_after, mcnt_after - mcnt_ld, )
+            print 'TIME: before: %10.3f, target: %10.3f, after: %10.3f, after-target(%10.3f)' % (self.time_from_mcnt(mcnt_before), self.time_from_mcnt(mcnt_ld), self.time_from_mcnt(mcnt_after), self.time_from_mcnt(mcnt_after - mcnt_ld), )
+            if mcnt_after > mcnt_ld:
+                log_runtimeerror(self.floggers[ffpga_n], 'We missed loading the registers by about %4.1f ms.' % ((mcnt_after - mcnt_ld)/self.config['mcnt_scale_factor']*1000.0))
             else:
                 log_runtimeerror(self.floggers[ffpga_n], 'Ant %s (Feng %i on %s) did not load correctly for an unknown reason.' % (ant_str, feng_input, self.fsrvs[ffpga_n]))
 

@@ -13,8 +13,51 @@ import struct, re, threading, socket, select, traceback, logging, sys, time, os
 from katcp import *
 log = logging.getLogger("katcp")
 
+class FpgaAsyncRequest:
+    """A class to hold information about a specific KATCP request made by a Fpga.
+       """
+    def __init__(self, host, request, request_id, inform_cb = None, reply_cb = None):
+        self.host = host
+        self.request = request
+        self.request_id = request_id
+        self.time_tx = time.time()
+        self.informs = []
+        self.inform_times = []
+        self.reply = None
+        self.reply_time = -1
+        self.reply_cb = reply_cb
+        self.inform_cb = inform_cb
+    def __str__(self):
+        return '%s(%s)@(%10.5f) - reply%s - informs(%i)' % (self.request, self.request_id, self.time_tx, str(self.reply), len(self.informs))
+    def got_reply(self, reply_message):
+        if not (reply_message.name == self.request):
+            error_string = 'rx reply(%s) does not match request(%s)' % (reply_message.name, self.request)
+            print error_string
+            raise RuntimeError(error_string)
+        self.reply = reply_message
+        self.reply_time = time.time()
+        if self.reply_cb != None:
+            self.reply_cb(self.host, self.request_id)
+    def got_inform(self, inform_message):
+        if self.reply != None:
+            raise RuntimeError('Received inform for message(%s,%s) after reply. Invalid?' % (self.request, self.request_id))
+        if not (inform_message.name == self.request):
+            error_string = 'rx inform(%s) does not match request(%s)' % (inform_message.name, self.request)
+            print error_string
+            raise RuntimeError(error_string)
+        self.informs.append(inform_message)
+        self.inform_times.append(time.time())
+        if self.inform_cb != None:
+            self.inform_cb(self.host, self.request_id)
+    def complete_ok(self):
+        '''Has this request completed successfully?
+        '''
+        if self.reply == None:
+            return False
+        return self.reply.arguments[0] == Message.OK
 
-class FpgaClient(BlockingClient):
+#class FpgaClient(BlockingClient):
+class FpgaClient(CallbackClient):
     """Client for communicating with a ROACH board.
 
        Notes:
@@ -42,9 +85,81 @@ class FpgaClient(BlockingClient):
         self._timeout = timeout
         self.start(daemon = True)
 
-    def inform_log(self,message):
-        "If we get a log inform, log it."
-        DeviceLogger.log_to_python(self._logger, message)
+        # async stuff
+        self._nb_request_id = 0
+        self._nb_requests = {}
+        self._nb_max_requests = 10
+
+    """**********************************************************************************"""
+    """**********************************************************************************"""
+
+    def _nb_get_request_by_id(self, request_id):
+        try:
+            return self._nb_requests[request_id]
+        except KeyError:
+            return None
+
+    def _nb_pop_request_by_id(self, request_id):
+        try:
+            return self._nb_requests.pop(request_id)
+        except KeyError:
+            return None
+
+    def _nb_pop_oldest_request(self):
+        req = self._nb_requests[self._nb_requests.keys()[0]]
+        for k, v in self._nb_requests.iteritems():
+            if v.time_tx < req.time_tx:
+                req = v
+        return self._nb_pop_request_by_id(req.request_id)
+
+    def _nb_get_request_result(self, request_id):
+        req = self._nb_get_request_by_id(request_id)
+        return req.reply, req.informs
+
+    def _nb_add_request(self, request_name, request_id, inform_cb, reply_cb):
+        if self._nb_requests.has_key(request_id):
+            raise RuntimeError('Trying to add request with id(%s) but it already exists.' % request_id)
+        self._nb_requests[request_id] = FpgaAsyncRequest(self.host, request_name, request_id, inform_cb, reply_cb)
+
+    def _nb_get_next_request_id(self):
+        self._nb_request_id += 1
+        return str(self._nb_request_id)
+
+    def _nb_replycb(self, msg, *userdata):
+        """The callback for request replies. Check that the ID exists and call that request's got_reply function.
+           """
+        request_id = ''.join(userdata)
+        if not self._nb_requests.has_key(request_id):
+            raise RuntimeError('Recieved reply for request_id(%s), but no such stored request.' % request_id)
+        self._nb_requests[request_id].got_reply(msg.copy())
+
+    def _nb_informcb(self, msg, *userdata):
+        """The callback for request informs. Check that the ID exists and call that request's got_inform function.
+           """
+        request_id = ''.join(userdata)
+        if not self._nb_requests.has_key(request_id):
+            raise RuntimeError('Recieved inform for request_id(%s), but no such stored request.' % request_id)
+        self._nb_requests[request_id].got_inform(msg.copy())
+
+    def _nb_request(self, request, inform_cb = None, reply_cb = None, *args):
+        """Make a non-blocking request.
+           @param self      This object.
+           @param request   The request string.
+           @param inform_cb An optional callback function, called upon receipt of every inform to the request.
+           @param inform_cb An optional callback function, called upon receipt of the reply to the request.
+           @param args      Arguments to the katcp.Message object.
+           """
+        if len(self._nb_requests) == self._nb_max_requests:
+            oldreq = self._nb_pop_oldest_request()
+            self._logger.info("Request list full, removing oldest one(%s,%s)." % (oldreq.request, oldreq.request_id))
+            print "Request list full, removing oldest one(%s,%s)." % (oldreq.request, oldreq.request_id)
+        request_id = self._nb_get_next_request_id()
+        self.request(msg = Message.request(request, *args), reply_cb = self._nb_replycb, inform_cb = self._nb_informcb, user_data = request_id)
+        self._nb_add_request(request, request_id, inform_cb, reply_cb)
+        return {'host': self.host, 'request': request, 'id': request_id}
+
+    """**********************************************************************************"""
+    """**********************************************************************************"""
 
     def _request(self, name, *args):
         """Make a blocking request and check the result.
@@ -57,7 +172,8 @@ class FpgaClient(BlockingClient):
            @return  Tuple: containing the reply and a list of inform messages.
            """
         request = Message.request(name, *args)
-        reply, informs = self.blocking_request(request,keepalive=True)
+        reply, informs = self.blocking_request(request)
+        #reply, informs = self.blocking_request(request,keepalive=True)
 
         if reply.arguments[0] != Message.OK:
             self._logger.error("Request %s failed.\n  Request: %s\n  Reply: %s."
