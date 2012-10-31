@@ -1262,7 +1262,7 @@ class Correlator:
 
         if (delay != 0):
             if (fine_delay_i == 0) and (coarse_delay == 0): 
-                self.floggers[ffpga_n].info('Requested delay is too small for this configuration (our resolution is too low).')
+                self.floggers[ffpga_n].info('Requested delay is too small for this configuration (our resolution is too low). Setting delay to zero.')
             elif abs(fine_delay_i) > 2**(fine_delay_bits):
                 log_runtimeerror('Internal logic error calculating fine delays.')
             elif abs(coarse_delay) > (2**(coarse_delay_bits)):
@@ -1271,7 +1271,7 @@ class Correlator:
                 self.floggers[ffpga_n].info('Delay actually set to %e seconds.' % act_delay)
         if (delay_rate != 0):
             if fine_delay_rate == 0:
-                self.floggers[ffpga_n].info('Requested delay rate too slow for this configuration.')
+                self.floggers[ffpga_n].info('Requested delay rate too slow for this configuration. Setting delay rate to zero.')
             if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)):
                 log_runtimeerror(self.floggers[ffpga_n], 'Requested delay rate out of range (+-%e).' % (2**(bitshift_schedule-1)))
             else:
@@ -1279,13 +1279,13 @@ class Correlator:
 
         if fringe_phase != 0:
             if fr_offset == 0: 
-                self.floggers[ffpga_n].info('Requested fringe phase is too small for this configuration (we do not have enough resolution).')
+                self.floggers[ffpga_n].info('Requested fringe phase is too small for this configuration (we do not have enough resolution). Setting fringe phase to zero.')
             else:
                 self.floggers[ffpga_n].info('Fringe offset actually set to %6.3f degrees.' % act_fringe_offset)
 
         if fringe_rate != 0:
             if fr_rate == 0: 
-                self.floggers[ffpga_n].info('Requested fringe rate is too slow for this configuration.')
+                self.floggers[ffpga_n].info('Requested fringe rate is too slow for this configuration. Setting fringe rate to zero.')
             else:
                 self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.' % act_fringe_rate)
 
