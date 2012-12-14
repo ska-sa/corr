@@ -19,9 +19,9 @@ import corr
 class CorrRx(threading.Thread):
     def __init__(self, mode = 'cont', port=7148, log_handler = None, log_level = logging.INFO, spead_log_level = spead.logging.WARN, **kwargs):
         if log_handler == None: 
-            log_handler=corr.log_handlers.DebugLogHandler(100)
+            log_handler = corr.log_handlers.DebugLogHandler(100)
         self.log_handler = log_handler
-        self.logger=logging.getLogger('rx')
+        self.logger = logging.getLogger('rx')
         self.logger.addHandler(self.log_handler)
         self.logger.setLevel(log_level)
         spead.logging.getLogger().setLevel(spead_log_level)
