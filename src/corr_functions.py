@@ -152,7 +152,7 @@ def log_runtimeerror(logger, err):
     logger.error(err)
     raise RuntimeError(err)
 
-def non_blocking_request(fpgas, request, timeout, *args): 
+def non_blocking_request(fpgas, request, timeout, spin_func, *args): 
     verbose = False 
     replies = {} 
     requests = {} 
@@ -163,13 +163,20 @@ def non_blocking_request(fpgas, request, timeout, *args):
             raise RuntimeError('Received reply %s for host %s but did not send request?' % (request_id, host)) 
         if replies.has_key(host): 
             raise RuntimeError('Already have reply from %s for request_id %s?' % (host, request_id)) 
-        replies[host] = request_id 
+        replies[host] = request_id
+
     # start the requests 
     if verbose: print 'Send request(%s) to %i hosts.' % (request, len(fpgas)) 
-    for f in fpgas: 
+    for f in fpgas:
         r = f._nb_request(request, None, reply_cb, *args) 
         requests[r['host']] = [r['request'], r['id']] 
-    # wait for replies 
+
+    # call the spin function if necessary
+    if spin_func != None:
+        for f in fpgas:
+            spin_func(f, args)
+
+    # wait for replies from the requests
     timedout = False 
     timenow = time.time() 
     while len(replies) < len(fpgas): 
@@ -179,6 +186,7 @@ def non_blocking_request(fpgas, request, timeout, *args):
         time.sleep(0.01) 
     if timedout: 
         if verbose: print "non_blocking_request timeout after %is" % timeout 
+
     # process the responses 
     rv = {} 
     for f in fpgas: 
@@ -193,7 +201,7 @@ def non_blocking_request(fpgas, request, timeout, *args):
         frv['informs'] = informlist 
         rv[f.host] = frv 
         f._nb_pop_request_by_id(request_id) 
-    return rv
+    return (not timedout), rv
 
 class Correlator:
 
@@ -357,9 +365,9 @@ class Correlator:
 
     def prog_all(self):
         """Progam all the FPGAs asynchronously."""
-        non_blocking_request(self.ffpgas, 'progdev', 5, self.config['bitstream_f'])
-        non_blocking_request(self.xfpgas, 'progdev', 5, self.config['bitstream_x'])
-        if not self.check_fpga_comms(): 
+        frv, = non_blocking_request(self.ffpgas, 'progdev', 5, None, self.config['bitstream_f'])
+        xrv, = non_blocking_request(self.xfpgas, 'progdev', 5, None, self.config['bitstream_x'])
+        if (not (frv and xrv)) or (not self.check_fpga_comms()): 
             raise RuntimeError("Failed to successfully program FPGAs.")
         else:
             self.syslogger.info("All FPGAs programmed ok.")

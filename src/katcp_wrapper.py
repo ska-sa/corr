@@ -80,7 +80,7 @@ class FpgaClient(CallbackClient):
                            client operations.
            @param logger Object: Logger to log to.
            """
-        super(FpgaClient, self).__init__(host, port, tb_limit=tb_limit,timeout=timeout, logger=logger)
+        super(FpgaClient, self).__init__(host, port, tb_limit = tb_limit, timeout = timeout, logger = logger)
         self.host = host
         self._timeout = timeout
         self.start(daemon = True)
@@ -154,14 +154,14 @@ class FpgaClient(CallbackClient):
             self._logger.info("Request list full, removing oldest one(%s,%s)." % (oldreq.request, oldreq.request_id))
             print "Request list full, removing oldest one(%s,%s)." % (oldreq.request, oldreq.request_id)
         request_id = self._nb_get_next_request_id()
-        self.request(msg = Message.request(request, *args), reply_cb = self._nb_replycb, inform_cb = self._nb_informcb, user_data = request_id)
+        self.callback_request(msg = Message.request(request, *args), reply_cb = self._nb_replycb, inform_cb = self._nb_informcb, user_data = request_id)
         self._nb_add_request(request, request_id, inform_cb, reply_cb)
         return {'host': self.host, 'request': request, 'id': request_id}
 
     """**********************************************************************************"""
     """**********************************************************************************"""
 
-    def _request(self, name, *args):
+    def _request(self, name, request_timeout, *args):
         """Make a blocking request and check the result.
         
            Raise an error if the reply indicates a request failure.
@@ -172,7 +172,7 @@ class FpgaClient(CallbackClient):
            @return  Tuple: containing the reply and a list of inform messages.
            """
         request = Message.request(name, *args)
-        reply, informs = self.blocking_request(request)
+        reply, informs = self.blocking_request(request, timeout = request_timeout)
         #reply, informs = self.blocking_request(request,keepalive=True)
 
         if reply.arguments[0] != Message.OK:
@@ -189,7 +189,7 @@ class FpgaClient(CallbackClient):
            @param self  This object.
            @return  A list of register names.
            """
-        reply, informs = self._request("listdev")
+        reply, informs = self._request("listdev", self._timeout)
         return [i.arguments[0] for i in informs]
 
     def listbof(self):
@@ -198,7 +198,7 @@ class FpgaClient(CallbackClient):
            @param self  This object.
            @return  List of strings: list of executable files.
            """
-        reply, informs = self._request("listbof")
+        reply, informs = self._request("listbof", self._timeout)
         return [i.arguments[0] for i in informs]
 
     def listcmd(self):
@@ -219,10 +219,10 @@ class FpgaClient(CallbackClient):
            @return  String: device status.
            """
         if boffile=='' or boffile==None:
-            reply, informs = self._request("progdev", '')
+            reply, informs = self._request("progdev", self._timeout, '')
             self._logger.info("Deprogramming FPGA... %s."%(reply.arguments[0]))
         else:
-            reply, informs = self._request("progdev", boffile)
+            reply, informs = self._request("progdev", self._timeout, boffile)
             self._logger.info("Programming FPGA with %s... %s."%(boffile,reply.arguments[0]))
         return reply.arguments[0]
 
@@ -296,7 +296,7 @@ class FpgaClient(CallbackClient):
         port_str = "%i"%port
  
         self._logger.info("Starting tgtap driver instance for %s: %s %s %s %s %s"%("tap-start", tap_dev, device, ip_str, port_str, mac_str))
-        reply, informs = self._request("tap-start", tap_dev, device, ip_str, port_str, mac_str)
+        reply, informs = self._request("tap-start", self._timeout, tap_dev, device, ip_str, port_str, mac_str)
         if reply.arguments[0]=='ok': return
         else: raise RuntimeError("Failure starting tap device %s with mac %s, %s:%s"%(device,mac_str,ip_str,port_str))
 
@@ -307,36 +307,70 @@ class FpgaClient(CallbackClient):
            @param device  String: name of the device you want to stop.
         """
 
-        reply, informs = self._request("tap-stop", device)
+        reply, informs = self._request("tap-stop", self._timeout, device)
         if reply.arguments[0]=='ok': return
         else: raise RuntimeError("Failure stopping tap device %s."%(device))
 
-    def upload_bof(self, bof_file, port=7148):
+    def upload_bof(self, bof_file, port, timeout = 30):
         """Upload a BORPH file to the ROACH board for execution. 
            @param self  This object.
            @param bof_file  param 
            @param port   Optionally specify the port to use for uploading. Otherwise, default to 7148.
            @return  nothing.
         """
-        #NOT YET IMPLEMENTED
-        #need to register a new handler for uploadbof informs before sending data, so that we know when the transfer is complete.
-
-        #filesize=os.path.getsize(bof_file)
-        #filename=bof_file.split("/")[-1]
-        #reply, informs = self._request("uploadbof",str(port),filename,str(filesize))
-        #if reply.arguments[0]=='ok':
-        #    uploadsocket=socket.socket()
-        #    uploadsocket.connect((self.host,port))
-        #    uploadsocket.send(open(bof_file).read())
-        #    return
-        #else: raise RuntimeError("Failure requesting storage of file %s."%(filename))
+	import os
+	try:
+		filesize = os.path.getsize(bof_file)
+		filename = bof_file.split("/")[-1]
+	except:
+		return False
+	'''
+	import gzip
+	f = gzip.open(bof_file, 'rb')
+	gzipped_already = True
+	try:
+		a = f.read()
+	except:
+		gzipped_already = False
+	if not gzipped_already:
+		tempfile = tempfile.TemporaryFile('w+b')
+		gzipfile = gzip.open('dontcare', 'wb', 9, tempfile)
+		gzipfile.write(f)
+	f.close()	
+	'''
+	import threading, socket, sys
+	request_result = None
+	def make_request():
+		request_result = self._request('uploadbof', timeout, port, filename)
+	def uploadbof(filename):
+		upload_socket = socket.socket()
+		try:
+			upload_socket.connect((self.host, port))
+		except:
+			print 'Could not open socket to', self.host
+			return
+		print 'starting upload of', filename, 'to', self.host, ', port', port
+		sys.stdout.flush()
+		upload_socket.send(open(filename).read())
+		print ' done.'
+		sys.stdout.flush()
+	req_thread = threading.Thread(target = make_request)
+	upl_thread = threading.Thread(target = uploadbof, args=(bof_file,))
+	old_timeout = self._timeout
+	self._timeout = 30
+	req_thread.start()
+	time.sleep(2)
+	upl_thread.start()
+	req_thread.join()
+	self._timeout = old_timeout
+	return True
 
     def status(self):
         """Return the status of the FPGA.
            @param self  This object.
            @return  String: FPGA status.
            """
-        reply, informs = self._request("status")
+        reply, informs = self._request("status", self._timeout)
         return reply.arguments[1]
     
     def ping(self):
@@ -344,7 +378,7 @@ class FpgaClient(CallbackClient):
            @param self  This object.
            @return  boolean: ping result.
            """
-        reply, informs = self._request("watchdog")
+        reply, informs = self._request("watchdog", self._timeout)
         if reply.arguments[0]=='ok': return True
         else: return False
 
@@ -369,7 +403,7 @@ class FpgaClient(CallbackClient):
            @param offset  Integer: offset to read data from (in bytes).
            @return  Bindary string: data read.
            """
-        reply, informs = self._request("bulkread", device_name, str(offset), str(size))
+        reply, informs = self._request("bulkread", self._timeout, device_name, str(offset), str(size))
         return ''.join([i.arguments[0] for i in informs])
 
     def read(self, device_name, size, offset=0):
@@ -382,7 +416,7 @@ class FpgaClient(CallbackClient):
            @param offset  Integer: offset to read data from (in bytes).
            @return  Bindary string: data read.
            """
-        reply, informs = self._request("read", device_name, str(offset),
+        reply, informs = self._request("read", self._timeout, device_name, str(offset),
             str(size))
         return reply.arguments[1]
 
@@ -489,7 +523,7 @@ class FpgaClient(CallbackClient):
         assert (type(data)==str) , 'You need to supply binary packed string data!'
         assert (len(data)%4) ==0 , 'You must write 32bit-bounded words!'
         assert ((offset%4) ==0) , 'You must write 32bit-bounded words!'
-        self._request("write", device_name, str(offset), data)
+        self._request("write", self._timeout, device_name, str(offset), data)
 
     def read_int(self, device_name):
         """Calls .read() command with size=4, offset=0 and
