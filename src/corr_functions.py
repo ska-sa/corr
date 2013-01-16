@@ -146,13 +146,14 @@ def pulse_masked_register(device_list, bitstruct, fields):
     write_masked_register(device_list, bitstruct, **zeroKwargs)
 
 def log_runtimeerror(logger, err):
-    """
-    Have the logger log an error and then raise it.
+    """Have the logger log an error and then raise it.
     """
     logger.error(err)
     raise RuntimeError(err)
 
-def non_blocking_request(fpgas, request, timeout, spin_func, *args): 
+def non_blocking_request(fpgas, request, timeout, *args): 
+    """Make a non-blocking request to one or more FPGAs, using the Asynchronous FPGA client.
+    """
     verbose = False 
     replies = {} 
     requests = {} 
@@ -164,18 +165,11 @@ def non_blocking_request(fpgas, request, timeout, spin_func, *args):
         if replies.has_key(host): 
             raise RuntimeError('Already have reply from %s for request_id %s?' % (host, request_id)) 
         replies[host] = request_id
-
     # start the requests 
     if verbose: print 'Send request(%s) to %i hosts.' % (request, len(fpgas)) 
     for f in fpgas:
         r = f._nb_request(request, None, reply_cb, *args) 
         requests[r['host']] = [r['request'], r['id']] 
-
-    # call the spin function if necessary
-    if spin_func != None:
-        for f in fpgas:
-            spin_func(f, args)
-
     # wait for replies from the requests
     timedout = False 
     timenow = time.time() 
@@ -186,7 +180,6 @@ def non_blocking_request(fpgas, request, timeout, spin_func, *args):
         time.sleep(0.01) 
     if timedout: 
         if verbose: print "non_blocking_request timeout after %is" % timeout 
-
     # process the responses - return a dictionary keyed on hostname
     rv = {} 
     for f in fpgas: 
@@ -203,73 +196,7 @@ def non_blocking_request(fpgas, request, timeout, spin_func, *args):
         f._nb_pop_request_by_id(request_id) 
     return (not timedout), rv
 
-def multithread_request(fpga_list, num_threads = -1, timeout = 5, job_function = None, *args):
-    """Run a provided method on a list of FpgaClient objects in a specified number of threads.
-
-    @param fpga_list: list of FpgaClient objects
-    @param num_threads: how many threads should be used. Default is one per list item
-    @param timeout: not currently implemented
-    @param job_function: the function to be run - MUST take the FpgaClient object as its first argument
-    @param *args: further arugments for the job_function
-   
-    @return a dictionary of results from the functions, keyed on FpgaClient.host
- 
-    """
-    if job_function == None:
-        raise RuntimeError("job_function == None?")
-    import threading, Queue
-    # thread class to perform a job from a queue
-    class Corr_worker(threading.Thread):
-        def __init__(self, request_queue, result_queue, job_function, *args):
-            self.request_queue = request_queue
-            self.result_queue = result_queue
-            self.job = job_function
-            threading.Thread.__init__(self)
-        def run(self):
-            done = False
-            while not done:
-                try:
-                    # get a job from the queue
-                    request_host = self.request_queue.get(False)
-                    # do some work
-                    try:
-                        result = self.job(request_host, *args)
-                    except:
-                        result = RuntimeError("Job function internal error")
-                    # put the result on the result queue
-                    self.result_queue.put((request_host.host, result))
-                    # and notify done
-                    self.request_queue.task_done()
-                except:
-                    done = True
-    if not isinstance(fpga_list, list):
-        raise TypeError("fpga_list should be a list() of FpgaClient objects only.")
-    if num_threads == -1:
-        num_threads = len(fpga_list)
-    # create the request and result queues
-    request_queue = Queue.Queue()
-    result_queue = Queue.Queue()
-    # put the list items into a Thread-safe Queue
-    for f in fpga_list:
-        if not isinstance(f, corr.katcp_wrapper.FpgaClient):
-            raise TypeError('Currently this function only supports FpgaClient objects.')
-        request_queue.put(f)
-    # make as many worker threads a specified and start them off
-    workers = [Corr_worker(request_queue, result_queue, job_function, *args) for i in range(0, num_threads)]
-    for w in workers:
-        w.daemon = True
-        w.start()
-    # join the last one to wait for completion
-    request_queue.join()
-    # format the result into a dictionary by host
-    rv = {}
-    while not result_queue.empty():
-        res = result_queue.get()
-        rv[res[0]] = res[1]
-    return rv
-
 class Correlator:
-
     def __init__(self, connect = True, config_file = None, log_handler = None, log_level = logging.INFO):
         self.MODE_WB = 'wbc'
         self.MODE_NB = 'nbc'
@@ -430,8 +357,8 @@ class Correlator:
 
     def prog_all(self):
         """Progam all the FPGAs asynchronously."""
-        frv, = non_blocking_request(self.ffpgas, 'progdev', 5, None, self.config['bitstream_f'])
-        xrv, = non_blocking_request(self.xfpgas, 'progdev', 5, None, self.config['bitstream_x'])
+        frv, = non_blocking_request(self.ffpgas, 'progdev', 5, self.config['bitstream_f'])
+        xrv, = non_blocking_request(self.xfpgas, 'progdev', 5, self.config['bitstream_x'])
         if (not (frv and xrv)) or (not self.check_fpga_comms()): 
             raise RuntimeError("Failed to successfully program FPGAs.")
         else:
@@ -1172,7 +1099,6 @@ class Correlator:
         else: 
             self.syslogger.error("Failed to achieve loopback lock after %i tries."%n_retries)
             return False
-
 
     def check_loopback_mcnt(self):
         """Checks to see if the mux_pkts block has become stuck waiting for a crazy mcnt Returns boolean true/false."""

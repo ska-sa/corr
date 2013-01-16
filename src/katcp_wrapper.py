@@ -314,56 +314,52 @@ class FpgaClient(CallbackClient):
     def upload_bof(self, bof_file, port, timeout = 30):
         """Upload a BORPH file to the ROACH board for execution. 
            @param self  This object.
-           @param bof_file  param 
-           @param port   Optionally specify the port to use for uploading. Otherwise, default to 7148.
-           @return  nothing.
+           @param bof_file  The path and/or filename of the bof file to upload.
+           @param port  The port to use for uploading.
+           @param timeout  The timeout to use for uploading.
+           @return True if the upload succeeded, else False. Plus a dictionary indicating the result of the request and upload.
         """
-	import os
-	try:
-		filesize = os.path.getsize(bof_file)
-		filename = bof_file.split("/")[-1]
-	except:
-		return False
-	'''
-	import gzip
-	f = gzip.open(bof_file, 'rb')
-	gzipped_already = True
-	try:
-		a = f.read()
-	except:
-		gzipped_already = False
-	if not gzipped_already:
-		tempfile = tempfile.TemporaryFile('w+b')
-		gzipfile = gzip.open('dontcare', 'wb', 9, tempfile)
-		gzipfile.write(f)
-	f.close()	
-	'''
-	import threading, socket, sys
-	request_result = None
-	def make_request():
-		request_result = self._request('uploadbof', timeout, port, filename)
-	def uploadbof(filename):
-		upload_socket = socket.socket()
-		try:
-			upload_socket.connect((self.host, port))
-		except:
-			print 'Could not open socket to', self.host
-			return
-		print 'starting upload of', filename, 'to', self.host, ', port', port
-		sys.stdout.flush()
-		upload_socket.send(open(filename).read())
-		print ' done.'
-		sys.stdout.flush()
-	req_thread = threading.Thread(target = make_request)
-	upl_thread = threading.Thread(target = uploadbof, args=(bof_file,))
-	old_timeout = self._timeout
-	self._timeout = 30
-	req_thread.start()
-	time.sleep(2)
-	upl_thread.start()
-	req_thread.join()
-	self._timeout = old_timeout
-	return True
+        import os
+        try:
+            filesize = os.path.getsize(bof_file)
+            filename = bof_file.split("/")[-1]
+        except:
+            return False, {'request': None,'upload': None}
+        import threading, socket, time, Queue
+        def makerequest(result_queue):
+            result = self._request('uploadbof', timeout, port, filename)
+            result_queue.put(result[0].arguments[0] == Message.OK)
+        def uploadbof(filename, result_queue):
+            upload_socket = socket.socket()
+            stime = time.time()
+            connected = False
+            while (not connected) and (time.time() - stime < 2):
+                try:
+                    upload_socket.connect((self.host, port))
+                    connected = True
+                except:
+                    time.sleep(0.1)
+            if not connected:
+                return
+            try:
+                upload_socket.send(open(filename).read())
+            except:
+                return
+            result_queue.put(True)
+        request_queue = Queue.Queue()
+        req_thread = threading.Thread(target = makerequest, args = (request_queue,))
+        upload_queue = Queue.Queue()
+        upl_thread = threading.Thread(target = uploadbof, args = (bof_file, upload_queue,))
+        old_timeout = self._timeout
+        self._timeout = timeout
+        req_thread.start()
+        upl_thread.start()
+        req_thread.join()
+        self._timeout = old_timeout
+        request_okay = False if request_queue.qsize() != 1 else request_queue.get()
+        upload_okay = False if upload_queue.qsize() != 1 else upload_queue.get()
+        self._logger.info("Bof file upload for '", bof_file,"': request (", request_okay, "), uploaded (", upload_okay,")")
+        return (request_okay and upload_okay), {'request':request_okay, 'upload':upload_okay}
 
     def status(self):
         """Return the status of the FPGA.
