@@ -53,7 +53,9 @@ Revisions:
 
 import corr, time, sys, numpy, os, logging, katcp, struct, construct, socket, spead
 
-DEFAULT_CONFIG='/etc/corr/default'
+CORR_MODE_WB = 'wbc'
+CORR_MODE_NB = 'nbc'
+CORR_MODE_DDC = 'ddc'
 
 def statsmode(inlist):
     """Very rudimentarily calculates the mode of an input list. Only returns one value, the first mode. Can't deal with ties!"""
@@ -270,18 +272,14 @@ def multithread_request(fpga_list, num_threads = -1, timeout = 5, job_function =
 
 class Correlator:
 
-    def __init__(self, connect = True, config_file = None, log_handler = None, log_level = logging.INFO):
-        self.MODE_WB = 'wbc'
-        self.MODE_NB = 'nbc'
-        self.MODE_DDC = 'ddc'
+    def __init__(self, connect = True, config_file = '/etc/corr/default', log_handler = None, log_level = logging.INFO):
         self.log_handler = log_handler if log_handler != None else corr.log_handlers.DebugLogHandler(100)
         self.syslogger = logging.getLogger('corrsys')
         self.syslogger.addHandler(self.log_handler)
         self.syslogger.setLevel(log_level)
 
-        if config_file == None: 
-            config_file = DEFAULT_CONFIG
-            self.syslogger.warn('Defaulting to config file %s.' % DEFAULT_CONFIG)
+        if config_file == '/etc/corr/default': 
+            self.syslogger.warn('Defaulting to config file %s.' % '/etc/corr/default')
         self.config = corr.cn_conf.CorrConf(config_file)
 
         self.xsrvs = self.config['servers_x']
@@ -2511,13 +2509,13 @@ class Correlator:
         self.spead_narrowband_issue()
 
     def is_wideband(self):
-        return self.config['mode'] == self.MODE_WB
+        return self.config['mode'] == CORR_MODE_WB
 
     def is_narrowband(self):
-        return self.config['mode'] == self.MODE_NB
+        return self.config['mode'] == CORR_MODE_NB
     
     def is_ddc(self):
-        return self.config['mode'] == self.MODE_DDC
+        return self.config['mode'] == CORR_MODE_DDC
 
 def dbm_to_dbuv(dbm):
     return dbm+107
