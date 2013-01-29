@@ -153,7 +153,7 @@ def log_runtimeerror(logger, err):
     logger.error(err)
     raise RuntimeError(err)
 
-def non_blocking_request(fpgas, request, timeout, *args): 
+def non_blocking_request(fpgas, timeout, request, request_args): 
     """Make a non-blocking request to one or more FPGAs, using the Asynchronous FPGA client.
     """
     verbose = False 
@@ -170,7 +170,7 @@ def non_blocking_request(fpgas, request, timeout, *args):
     # start the requests 
     if verbose: print 'Send request(%s) to %i hosts.' % (request, len(fpgas)) 
     for f in fpgas:
-        r = f._nb_request(request, None, reply_cb, *args) 
+        r = f._nb_request(request, None, reply_cb, *request_args) 
         requests[r['host']] = [r['request'], r['id']] 
     # wait for replies from the requests
     timedout = False 
@@ -196,7 +196,7 @@ def non_blocking_request(fpgas, request, timeout, *args):
         frv['informs'] = informlist 
         rv[f.host] = frv 
         f._nb_pop_request_by_id(request_id) 
-    return (not timedout), rv
+    return (not timedout), (rv)
 
 class Correlator:
     def __init__(self, connect = True, config_file = '/etc/corr/default', log_handler = None, log_level = logging.INFO):
@@ -355,8 +355,8 @@ class Correlator:
 
     def prog_all(self):
         """Progam all the FPGAs asynchronously."""
-        frv, = non_blocking_request(self.ffpgas, 'progdev', 5, self.config['bitstream_f'])
-        xrv, = non_blocking_request(self.xfpgas, 'progdev', 5, self.config['bitstream_x'])
+        frv,a = non_blocking_request(fpgas = self.ffpgas, timeout = 5, request = 'progdev', request_args = [self.config['bitstream_f']])
+        xrv,a = non_blocking_request(fpgas = self.xfpgas, timeout = 5, request = 'progdev', request_args = [self.config['bitstream_x']])
         if (not (frv and xrv)) or (not self.check_fpga_comms()): 
             raise RuntimeError("Failed to successfully program FPGAs.")
         else:

@@ -154,7 +154,7 @@ class FpgaClient(CallbackClient):
             self._logger.info("Request list full, removing oldest one(%s,%s)." % (oldreq.request, oldreq.request_id))
             print "Request list full, removing oldest one(%s,%s)." % (oldreq.request, oldreq.request_id)
         request_id = self._nb_get_next_request_id()
-        self.callback_request(msg = Message.request(request, *args), reply_cb = self._nb_replycb, inform_cb = self._nb_informcb, user_data = request_id)
+        self.request(msg = Message.request(request, *args), reply_cb = self._nb_replycb, inform_cb = self._nb_informcb, user_data = request_id)
         self._nb_add_request(request, request_id, inform_cb, reply_cb)
         return {'host': self.host, 'request': request, 'id': request_id}
 
