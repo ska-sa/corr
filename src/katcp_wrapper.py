@@ -327,7 +327,11 @@ class FpgaClient(CallbackClient):
 	    raise IOError('File %s not found.' % bof_file)
         import threading, socket, time, Queue
         def makerequest(result_queue):
-            result = self._request('uploadbof', timeout, port, filename)
+	    try:
+            	result = self._request('uploadbof', timeout, port, filename)
+	    except:
+		result_queue.put(False)
+		return
             result_queue.put(result[0].arguments[0] == Message.OK)
         def uploadbof(filename, result_queue):
             upload_socket = socket.socket()
