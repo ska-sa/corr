@@ -27,10 +27,6 @@ class fbf:
         self.syslogger.setLevel(log_level)
         self.c.b = self
 
-        #disable all beam
-        print '__init__: disabling all beams'
-        self.beam_disable(beams=all)
-
         print 'beamformer created'
 
 #    def get_crosspol_order(self):
@@ -42,6 +38,10 @@ class fbf:
     #untested
     def initialise(self, set_cal = True, config_output = True, send_spead = True):
         """Initialises the system and checks for errors."""
+        
+	#disable all beam
+        print 'initialise: disabling all beams'
+        self.beam_disable(beams=all)
        
         if self.config.simulate == False: 
             if self.tx_status_get(): self.tx_stop()
@@ -104,9 +104,9 @@ class fbf:
             self.syslogger.warn("This function only works for systems with 10GbE output!")
             return False
         rv=True
-        stat=self.xeng_ctrl_get_all
+        stat=self.c.xeng_ctrl_get_all()
         
-        for xn,xsrv in enumerate(self.xsrvs):
+        for xn,xsrv in enumerate(self.c.xsrvs):
             if stat[xn]['beng_out_enable'] != True or stat[xn]['gbe_out_rst']!=False: rv=False
         self.syslogger.info('Beamformer output is currently %s'%('enabled' if rv else 'disabled'))
         return rv
@@ -304,7 +304,7 @@ class fbf:
                 #print 'dummy write to %s, %s at offset %i'%(target['fpga'], name, offset)
                 pass
             else:
-                target['fpga'].write_int(name, data, offset)
+                target['fpga'].write_int(name, data[0], offset)
     
     def bf_control_lookup(self, destination, write='on', read='on'):
         control = 0
@@ -349,7 +349,7 @@ class fbf:
 
         #disable writes
         print 'bf_write_int: disabling everything' 
-        self.beam_write_int('control', 0x0, 0)
+        self.beam_write_int('control', [0x0], 0)
         
         if len(data) == 1:
 
@@ -368,41 +368,41 @@ class fbf:
            
             print 'bf_write_int: setting up location' 
             #set up target stream (location of beam in set )
-            self.beam_write_int('stream', location, 0, beams=beams)
+            self.beam_write_int('stream', [location], 0, beams=beams)
 
             #go through antennas (normally just one but may be all or none)
             for antenna_index in antenna_indices:
                 
                 print 'bf_write_int: setting up antenna' 
                 #set up antenna register
-                self.beam_write_int('antenna', antenna_index, 0, beams=beams)
+                self.beam_write_int('antenna', [antenna_index], 0, beams=beams)
                
                 #cycle through frequencies (cannot have frequencies without antenna component) 
                 for frequency_index in frequency_indices:
 
                     print 'bf_write_int: setting up frequency' 
                     #set up frequency register
-                    self.beam_write_int('frequency', frequency_index, 0, beams=beams)
+                    self.beam_write_int('frequency', [frequency_index], 0, beams=beams)
                   
                     #we have a vector of data for each frequency 
                     if len(data) > 1:
                         #set up the value to be written
-                        self.beam_write_int('value_in', data[freq_index], offset, beams=beams)
+                        self.beam_write_int('value_in', [data[freq_index]], offset, beams=beams)
  
                     #trigger the write
-                    self.beam_write_int('control', control, 0, beams=beams)      
+                    self.beam_write_int('control', [control], 0, beams=beams)      
 
                 #if no frequency component, trigger
                 if len(frequency_indices) == 0:
                     #trigger the write
                     print 'bf_write_int: triggering for no frequencies' 
-                    self.beam_write_int('control', control, 0, beams=beams)      
+                    self.beam_write_int('control', [control], 0, beams=beams)      
             
             #if no antenna component, trigger write
             if len(antenna_indices) == 0:
                 #trigger the write
                 print 'bf_write_int: triggering for no antennas' 
-                self.beam_write_int('control', control, 0, beams=beams)      
+                self.beam_write_int('control', [control], 0, beams=beams)      
 
     def config_udp_output(self, beams=all, dest_ip_str=None, dest_port=None):
         """Configures the destination IP and port for B engine outputs. dest_port and dest_ip are optional parameters to override the config file defaults."""
@@ -427,8 +427,8 @@ class fbf:
 
             dest_ip = struct.unpack('>L',socket.inet_aton(dest_ip_str))[0]
 
-            self.beam_write_int('dest', dest_ip, beam_offset*2, beams); #ip                    
-            self.beam_write_int('dest', dest_port, beam_offset*2+1, beams); #port                    
+            self.beam_write_int('dest', [dest_ip], [beam_offset*2], beams); #ip                    
+            self.beam_write_int('dest', [dest_port], [beam_offset*2+1], beams); #port                    
             #each beam output from each beamformer group can be configured differently
             self.syslogger.info("Beam %s configured to %s:%i." % (beams, dest_ip_str, dest_port))
 
