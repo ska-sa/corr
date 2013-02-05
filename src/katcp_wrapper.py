@@ -324,10 +324,14 @@ class FpgaClient(CallbackClient):
             filesize = os.path.getsize(bof_file)
             filename = bof_file.split("/")[-1]
         except:
-            return False, {'request': None,'upload': None}
+            return False, {'request':False, 'upload':False}
         import threading, socket, time, Queue
         def makerequest(result_queue):
-            result = self._request('uploadbof', timeout, port, filename)
+	    try:
+            	result = self._request('uploadbof', timeout, port, filename)
+	    except:
+		result_queue.put(False)
+		return
             result_queue.put(result[0].arguments[0] == Message.OK)
         def uploadbof(filename, result_queue):
             upload_socket = socket.socket()
