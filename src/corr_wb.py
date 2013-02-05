@@ -45,7 +45,8 @@ register_fengine_fstatus = construct.BitStruct('fstatus0',
 
 # x-engine control register
 register_xengine_control = construct.BitStruct('ctrl',
-    construct.Padding(32 - 16 - 1),     # 17 - 31
+    construct.Padding(32 - 16 - 2),     # 18 - 31
+    construct.Flag('beng_out_enable'),  # 17 
     construct.Flag('gbe_out_enable'),   # 16
     construct.Flag('gbe_rst'),          # 15
     construct.Padding(15 - 12 - 1),     # 13 - 14
