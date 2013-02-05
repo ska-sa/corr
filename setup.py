@@ -1,12 +1,12 @@
 from distutils.core import setup, Extension
 import os, sys, glob
 
-__version__ = '0.7.0'
+__version__ = '0.7.2'
 
 setup(name = 'corr',
     version = __version__,
     description = 'Interfaces to CASPER correlators',
-    long_description = 'Provides interfaces to CASPER hardware and functions to configure packetised correlators.',
+    long_description = 'Provides interfaces to CASPER hardware and functions to configure packetised FX correlators and co-located beamformers.',
     license = 'GPL',
     author = 'Jason Manley',
     author_email = 'jason_manley at hotmail.com',
