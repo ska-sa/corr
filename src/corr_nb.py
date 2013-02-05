@@ -210,7 +210,8 @@ def channel_select(c, freq_hz = -1, specific_chan = -1, selectchan = True):
         try:
             corr_functions.write_masked_register(c.ffpgas, register_fengine_coarse_control, channel_select = chan)
             c.config['center_freq'] = chan_cf
-            c.spead_static_meta_issue()
+            c.config['current_coarse_chan'] = chan
+            c.spead_narrowband_issue()
         except:
             errmsg = 'Something bad happened trying to write the coarse channel select register.'
             c.syslogger.error(errmsg)

@@ -121,18 +121,22 @@ try:
             data = []
             data.append([val.real for val in unpacked_vals])
             data.append([val.imag for val in unpacked_vals])
-            globalHistMaxY = [0, 0]
+            globalHistMaxY = [[0,0], [0,0]]
             # real and imag per pol
             for d in 0, 1:
                 subplots[p][d].cla()
-                subplots[p][d].set_xlim(-1, 1)
-                histData, bins, patches = subplots[p][d].hist(data[d], bins = (2**quantBits), range = (-1, 1))
+                #subplots[p][d].set_xlim(-1, 1)
+                #histData, bins, patches = subplots[p][d].hist(data[d], bins = (2**quantBits), range = (-1, 1))
+                histData, bins, patches = subplots[p][d].hist(data[d], bins = (2**quantBits))
                 subplots[p][d].set_title('ant %s %s' % (pol, dataLabel[d]))
-                subplots[p][d].set_xlim(-1, 1)
-                maxHistData = max(histData)
-                globalHistMaxY[d] = max(globalHistMaxY[d], maxHistData)
+                #subplots[p][d].set_xlim(-1, 1)
+                maxHistDataReal = max(histData[0])
+                maxHistDataImag = max(histData[1])
+                globalHistMaxY[d][0] = max(globalHistMaxY[d][0], maxHistDataReal)
+                globalHistMaxY[d][1] = max(globalHistMaxY[d][1], maxHistDataImag)
+                maxBoth = max(maxHistDataReal, maxHistDataImag)
                 if not comparePlots:
-                    matplotlib.pyplot.ylim(ymax = maxHistData * 1.05)
+                    matplotlib.pyplot.ylim(ymax = maxBoth * 1.05)
 
         if comparePlots:
             for p, pol in enumerate(polList):

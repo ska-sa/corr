@@ -132,14 +132,15 @@ class CorrConf:
     def read_wideband(self):
         if not self.file_exists():
             raise RuntimeError('Error opening config file or runtime variables.')
-        self.read_int('correlator','fft_shift')
+        self.read_int('correlator', 'fft_shift')
 
     def read_narrowband(self):
         if not self.file_exists():
             raise RuntimeError('Error opening config file or runtime variables.')
-        self.read_int('correlator','fft_shift_fine')
-        self.read_int('correlator','fft_shift_coarse')
-        self.read_int('correlator','coarse_chans')
+        self.read_int('correlator', 'fft_shift_fine')
+        self.read_int('correlator', 'fft_shift_coarse')
+        self.read_int('correlator', 'coarse_chans')
+        self.config['current_coarse_chan'] = 0
 
     def read_narrowband_ddc(self):
         if not self.file_exists():

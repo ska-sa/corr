@@ -8,5 +8,5 @@ Author: Jason Manley, Aaron Parsons
 Email: jason_manley at hotmail.com, aparsons at astron.berkeley.edu
 Revisions:
 """
-import cn_conf, katcp_wrapper, log_handlers, corr_functions, bf_functions, corr_wb, corr_nb, corr_ddc, scroll, katadc, iadc, termcolors, rx, sim, snap
+import cn_conf, katcp_wrapper, log_handlers, corr_functions, bf_functions, corr_wb, corr_nb, corr_ddc, scroll, katadc, iadc, termcolors, rx, sim, snap, threaded
 

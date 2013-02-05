@@ -13,8 +13,51 @@ import struct, re, threading, socket, select, traceback, logging, sys, time, os
 from katcp import *
 log = logging.getLogger("katcp")
 
+class FpgaAsyncRequest:
+    """A class to hold information about a specific KATCP request made by a Fpga.
+       """
+    def __init__(self, host, request, request_id, inform_cb = None, reply_cb = None):
+        self.host = host
+        self.request = request
+        self.request_id = request_id
+        self.time_tx = time.time()
+        self.informs = []
+        self.inform_times = []
+        self.reply = None
+        self.reply_time = -1
+        self.reply_cb = reply_cb
+        self.inform_cb = inform_cb
+    def __str__(self):
+        return '%s(%s)@(%10.5f) - reply%s - informs(%i)' % (self.request, self.request_id, self.time_tx, str(self.reply), len(self.informs))
+    def got_reply(self, reply_message):
+        if not (reply_message.name == self.request):
+            error_string = 'rx reply(%s) does not match request(%s)' % (reply_message.name, self.request)
+            print error_string
+            raise RuntimeError(error_string)
+        self.reply = reply_message
+        self.reply_time = time.time()
+        if self.reply_cb != None:
+            self.reply_cb(self.host, self.request_id)
+    def got_inform(self, inform_message):
+        if self.reply != None:
+            raise RuntimeError('Received inform for message(%s,%s) after reply. Invalid?' % (self.request, self.request_id))
+        if not (inform_message.name == self.request):
+            error_string = 'rx inform(%s) does not match request(%s)' % (inform_message.name, self.request)
+            print error_string
+            raise RuntimeError(error_string)
+        self.informs.append(inform_message)
+        self.inform_times.append(time.time())
+        if self.inform_cb != None:
+            self.inform_cb(self.host, self.request_id)
+    def complete_ok(self):
+        '''Has this request completed successfully?
+        '''
+        if self.reply == None:
+            return False
+        return self.reply.arguments[0] == Message.OK
 
-class FpgaClient(BlockingClient):
+#class FpgaClient(BlockingClient):
+class FpgaClient(CallbackClient):
     """Client for communicating with a ROACH board.
 
        Notes:
@@ -37,16 +80,88 @@ class FpgaClient(BlockingClient):
                            client operations.
            @param logger Object: Logger to log to.
            """
-        super(FpgaClient, self).__init__(host, port, tb_limit=tb_limit,timeout=timeout, logger=logger)
+        super(FpgaClient, self).__init__(host, port, tb_limit = tb_limit, timeout = timeout, logger = logger)
         self.host = host
         self._timeout = timeout
         self.start(daemon = True)
 
-    def inform_log(self,message):
-        "If we get a log inform, log it."
-        DeviceLogger.log_to_python(self._logger, message)
+        # async stuff
+        self._nb_request_id = 0
+        self._nb_requests = {}
+        self._nb_max_requests = 10
 
-    def _request(self, name, *args):
+    """**********************************************************************************"""
+    """**********************************************************************************"""
+
+    def _nb_get_request_by_id(self, request_id):
+        try:
+            return self._nb_requests[request_id]
+        except KeyError:
+            return None
+
+    def _nb_pop_request_by_id(self, request_id):
+        try:
+            return self._nb_requests.pop(request_id)
+        except KeyError:
+            return None
+
+    def _nb_pop_oldest_request(self):
+        req = self._nb_requests[self._nb_requests.keys()[0]]
+        for k, v in self._nb_requests.iteritems():
+            if v.time_tx < req.time_tx:
+                req = v
+        return self._nb_pop_request_by_id(req.request_id)
+
+    def _nb_get_request_result(self, request_id):
+        req = self._nb_get_request_by_id(request_id)
+        return req.reply, req.informs
+
+    def _nb_add_request(self, request_name, request_id, inform_cb, reply_cb):
+        if self._nb_requests.has_key(request_id):
+            raise RuntimeError('Trying to add request with id(%s) but it already exists.' % request_id)
+        self._nb_requests[request_id] = FpgaAsyncRequest(self.host, request_name, request_id, inform_cb, reply_cb)
+
+    def _nb_get_next_request_id(self):
+        self._nb_request_id += 1
+        return str(self._nb_request_id)
+
+    def _nb_replycb(self, msg, *userdata):
+        """The callback for request replies. Check that the ID exists and call that request's got_reply function.
+           """
+        request_id = ''.join(userdata)
+        if not self._nb_requests.has_key(request_id):
+            raise RuntimeError('Recieved reply for request_id(%s), but no such stored request.' % request_id)
+        self._nb_requests[request_id].got_reply(msg.copy())
+
+    def _nb_informcb(self, msg, *userdata):
+        """The callback for request informs. Check that the ID exists and call that request's got_inform function.
+           """
+        request_id = ''.join(userdata)
+        if not self._nb_requests.has_key(request_id):
+            raise RuntimeError('Recieved inform for request_id(%s), but no such stored request.' % request_id)
+        self._nb_requests[request_id].got_inform(msg.copy())
+
+    def _nb_request(self, request, inform_cb = None, reply_cb = None, *args):
+        """Make a non-blocking request.
+           @param self      This object.
+           @param request   The request string.
+           @param inform_cb An optional callback function, called upon receipt of every inform to the request.
+           @param inform_cb An optional callback function, called upon receipt of the reply to the request.
+           @param args      Arguments to the katcp.Message object.
+           """
+        if len(self._nb_requests) == self._nb_max_requests:
+            oldreq = self._nb_pop_oldest_request()
+            self._logger.info("Request list full, removing oldest one(%s,%s)." % (oldreq.request, oldreq.request_id))
+            print "Request list full, removing oldest one(%s,%s)." % (oldreq.request, oldreq.request_id)
+        request_id = self._nb_get_next_request_id()
+        self.request(msg = Message.request(request, *args), reply_cb = self._nb_replycb, inform_cb = self._nb_informcb, user_data = request_id)
+        self._nb_add_request(request, request_id, inform_cb, reply_cb)
+        return {'host': self.host, 'request': request, 'id': request_id}
+
+    """**********************************************************************************"""
+    """**********************************************************************************"""
+
+    def _request(self, name, request_timeout, *args):
         """Make a blocking request and check the result.
         
            Raise an error if the reply indicates a request failure.
@@ -57,7 +172,8 @@ class FpgaClient(BlockingClient):
            @return  Tuple: containing the reply and a list of inform messages.
            """
         request = Message.request(name, *args)
-        reply, informs = self.blocking_request(request,keepalive=True)
+        reply, informs = self.blocking_request(request, timeout = request_timeout)
+        #reply, informs = self.blocking_request(request,keepalive=True)
 
         if reply.arguments[0] != Message.OK:
             self._logger.error("Request %s failed.\n  Request: %s\n  Reply: %s."
@@ -73,7 +189,7 @@ class FpgaClient(BlockingClient):
            @param self  This object.
            @return  A list of register names.
            """
-        reply, informs = self._request("listdev")
+        reply, informs = self._request("listdev", self._timeout)
         return [i.arguments[0] for i in informs]
 
     def listbof(self):
@@ -82,7 +198,7 @@ class FpgaClient(BlockingClient):
            @param self  This object.
            @return  List of strings: list of executable files.
            """
-        reply, informs = self._request("listbof")
+        reply, informs = self._request("listbof", self._timeout)
         return [i.arguments[0] for i in informs]
 
     def listcmd(self):
@@ -103,10 +219,10 @@ class FpgaClient(BlockingClient):
            @return  String: device status.
            """
         if boffile=='' or boffile==None:
-            reply, informs = self._request("progdev", '')
+            reply, informs = self._request("progdev", self._timeout, '')
             self._logger.info("Deprogramming FPGA... %s."%(reply.arguments[0]))
         else:
-            reply, informs = self._request("progdev", boffile)
+            reply, informs = self._request("progdev", self._timeout, boffile)
             self._logger.info("Programming FPGA with %s... %s."%(boffile,reply.arguments[0]))
         return reply.arguments[0]
 
@@ -161,7 +277,8 @@ class FpgaClient(BlockingClient):
 
             Please note that the function definition changed from corr-0.4.0 to corr-0.4.1 to include the tap_dev identifier.
            """
-        if len(tap_dev) > 8: raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s for device %s."%(tap_dev,dev_name))
+        if len(tap_dev) > 8:
+            raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s for device %s." % (tap_dev, device))
 
         ip_1 = (ip/(2**24))
         ip_2 = (ip%(2**24))/(2**16)
@@ -179,7 +296,7 @@ class FpgaClient(BlockingClient):
         port_str = "%i"%port
  
         self._logger.info("Starting tgtap driver instance for %s: %s %s %s %s %s"%("tap-start", tap_dev, device, ip_str, port_str, mac_str))
-        reply, informs = self._request("tap-start", tap_dev, device, ip_str, port_str, mac_str)
+        reply, informs = self._request("tap-start", self._timeout, tap_dev, device, ip_str, port_str, mac_str)
         if reply.arguments[0]=='ok': return
         else: raise RuntimeError("Failure starting tap device %s with mac %s, %s:%s"%(device,mac_str,ip_str,port_str))
 
@@ -190,36 +307,66 @@ class FpgaClient(BlockingClient):
            @param device  String: name of the device you want to stop.
         """
 
-        reply, informs = self._request("tap-stop", device)
+        reply, informs = self._request("tap-stop", self._timeout, device)
         if reply.arguments[0]=='ok': return
         else: raise RuntimeError("Failure stopping tap device %s."%(device))
 
-    def upload_bof(self, bof_file, port=7148):
+    def upload_bof(self, bof_file, port, timeout = 30):
         """Upload a BORPH file to the ROACH board for execution. 
            @param self  This object.
-           @param bof_file  param 
-           @param port   Optionally specify the port to use for uploading. Otherwise, default to 7148.
-           @return  nothing.
+           @param bof_file  The path and/or filename of the bof file to upload.
+           @param port  The port to use for uploading.
+           @param timeout  The timeout to use for uploading.
+           @return True if the upload succeeded, else False. Plus a dictionary indicating the result of the request and upload.
         """
-        #NOT YET IMPLEMENTED
-        #need to register a new handler for uploadbof informs before sending data, so that we know when the transfer is complete.
-
-        #filesize=os.path.getsize(bof_file)
-        #filename=bof_file.split("/")[-1]
-        #reply, informs = self._request("uploadbof",str(port),filename,str(filesize))
-        #if reply.arguments[0]=='ok':
-        #    uploadsocket=socket.socket()
-        #    uploadsocket.connect((self.host,port))
-        #    uploadsocket.send(open(bof_file).read())
-        #    return
-        #else: raise RuntimeError("Failure requesting storage of file %s."%(filename))
+        import os
+        try:
+            filesize = os.path.getsize(bof_file)
+            filename = bof_file.split("/")[-1]
+        except:
+            return False, {'request': None,'upload': None}
+        import threading, socket, time, Queue
+        def makerequest(result_queue):
+            result = self._request('uploadbof', timeout, port, filename)
+            result_queue.put(result[0].arguments[0] == Message.OK)
+        def uploadbof(filename, result_queue):
+            upload_socket = socket.socket()
+            stime = time.time()
+            connected = False
+            while (not connected) and (time.time() - stime < 2):
+                try:
+                    upload_socket.connect((self.host, port))
+                    connected = True
+                except:
+                    time.sleep(0.1)
+            if not connected:
+                return
+            try:
+                upload_socket.send(open(filename).read())
+            except:
+                return
+            result_queue.put(True)
+        request_queue = Queue.Queue()
+        req_thread = threading.Thread(target = makerequest, args = (request_queue,))
+        upload_queue = Queue.Queue()
+        upl_thread = threading.Thread(target = uploadbof, args = (bof_file, upload_queue,))
+        old_timeout = self._timeout
+        self._timeout = timeout
+        req_thread.start()
+        upl_thread.start()
+        req_thread.join()
+        self._timeout = old_timeout
+        request_okay = False if request_queue.qsize() != 1 else request_queue.get()
+        upload_okay = False if upload_queue.qsize() != 1 else upload_queue.get()
+        self._logger.info("Bof file upload for '", bof_file,"': request (", request_okay, "), uploaded (", upload_okay,")")
+        return (request_okay and upload_okay), {'request':request_okay, 'upload':upload_okay}
 
     def status(self):
         """Return the status of the FPGA.
            @param self  This object.
            @return  String: FPGA status.
            """
-        reply, informs = self._request("status")
+        reply, informs = self._request("status", self._timeout)
         return reply.arguments[1]
     
     def ping(self):
@@ -227,7 +374,7 @@ class FpgaClient(BlockingClient):
            @param self  This object.
            @return  boolean: ping result.
            """
-        reply, informs = self._request("watchdog")
+        reply, informs = self._request("watchdog", self._timeout)
         if reply.arguments[0]=='ok': return True
         else: return False
 
@@ -252,7 +399,7 @@ class FpgaClient(BlockingClient):
            @param offset  Integer: offset to read data from (in bytes).
            @return  Bindary string: data read.
            """
-        reply, informs = self._request("bulkread", device_name, str(offset), str(size))
+        reply, informs = self._request("bulkread", self._timeout, device_name, str(offset), str(size))
         return ''.join([i.arguments[0] for i in informs])
 
     def read(self, device_name, size, offset=0):
@@ -265,7 +412,7 @@ class FpgaClient(BlockingClient):
            @param offset  Integer: offset to read data from (in bytes).
            @return  Bindary string: data read.
            """
-        reply, informs = self._request("read", device_name, str(offset),
+        reply, informs = self._request("read", self._timeout, device_name, str(offset),
             str(size))
         return reply.arguments[1]
 
@@ -372,7 +519,7 @@ class FpgaClient(BlockingClient):
         assert (type(data)==str) , 'You need to supply binary packed string data!'
         assert (len(data)%4) ==0 , 'You must write 32bit-bounded words!'
         assert ((offset%4) ==0) , 'You must write 32bit-bounded words!'
-        self._request("write", device_name, str(offset), data)
+        self._request("write", self._timeout, device_name, str(offset), data)
 
     def read_int(self, device_name):
         """Calls .read() command with size=4, offset=0 and
@@ -431,7 +578,7 @@ class FpgaClient(BlockingClient):
         super(FpgaClient,self).stop()
         self.join(timeout=self._timeout)
 
-    def get_10gbe_core_details(self,dev_name):
+    def get_10gbe_core_details(self, dev_name):
         """Prints 10GbE core details. 
            @param dev_name string: Name of the core.
         """
