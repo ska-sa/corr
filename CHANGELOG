@@ -1,5 +1,11 @@
 Changelog:
 
+Version 0.7.2 (2013-02-05)
+    - Initial beamformer system
+
+Version 0.7.1 (2012-10-02)
+    - Initial beamformer additions
+
 Version 0.7.0 (2012-09-19)
     - fringe phase input now mod-360.
 
