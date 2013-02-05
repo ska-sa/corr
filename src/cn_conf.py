@@ -1,4 +1,4 @@
-import iniparse, exceptions, socket, struct, numpy, os
+import iniparse, exceptions, socket, struct, numpy, os, logging, corr
 """
 Library for parsing CASPER correlator configuration files
 
@@ -32,24 +32,35 @@ MODE_WB  = 'wbc'
 MODE_NB  = 'nbc'
 MODE_DDC = 'ddc'
 
+
 class CorrConf:    
-    def __init__(self, config_file):
+    def __init__(self, config_file,log_handler=None,log_level=logging.INFO):
+        self.logger = logging.getLogger('cn_conf')
+        self.log_handler = log_handler if log_handler != None else corr.log_handlers.DebugLogHandler(100)
+        self.logger.addHandler(self.log_handler)
+        self.logger.setLevel(log_level)
+
         self.config_file = config_file
         self.config_file_name = os.path.split(self.config_file)[1]
+        self.logger.info('Trying to open log file %s.'%self.config_file)
         self.cp = iniparse.INIConfig(open(self.config_file, 'rb'))
         self.config = dict()
         self.read_mode()
         available_modes = [MODE_WB, MODE_NB, MODE_DDC]
         if self.config['mode'] == MODE_WB:
+            self.logger.info('Found a wideband correlator.')
             self.read_wideband()
         elif self.config['mode'] == MODE_NB:
+            self.logger.info('Found a narrowband correlator.')
             self.read_narrowband()
         elif self.config['mode'] == MODE_DDC:
+            self.logger.info('Found a correlator with a DDC.')
             self.read_narrowband_ddc()
         else:
-            print "Available modes are", available_modes
-            raise RuntimeError('Unknown correlator mode,', self.config['mode'])
+            self.logger.error("Mode %s not understood."%(self.config['mode']))
+            raise RuntimeError('Unknown correlator mode %s.'%self.config['mode'])
         self.read_common()
+        self.read_bf()
 
     def __getitem__(self, item):
         if item == 'sync_time':
@@ -74,6 +85,7 @@ class CorrConf:
             f = open(self.config_file, 'r')
         except IOError:
             exists = False
+            self.logger.error('Error opening config file at %s.'%self.config_file)
             raise RuntimeError('Error opening config file at %s.'%self.config_file)
         else:
             exists = True
@@ -309,6 +321,69 @@ class CorrConf:
                         raise RuntimeError('ERR eq_coeffs_%i... incorrect number of coefficients. Expecting %i, got %i.'%(input_n,n_coeffs,len(self.config['eq_coeffs_%i'%(input_n)])))
                 except: raise RuntimeError('ERR eq_coeffs_%i'%(input_n))
 
+    def read_bf(self):
+        try:
+            self.read_int('beamformer', 'bf_n_beams')
+            self.read_str('beamformer', 'bf_register_prefix')
+            self.read_int('beamformer', 'bf_be_per_fpga')
+            self.read_int('beamformer', 'bf_n_beams_per_be')
+            self.read_str('beamformer', 'bf_data_type')
+            self.read_int('beamformer', 'bf_bits_out')
+            self.read_str('beamformer', 'bf_cal_type')
+            self.read_str('beamformer', 'bf_cal_default')
+            if not self.config['bf_cal_default'] in ['poly','coeffs']: raise RuntimeError('ERR invalid bf_cal_default')
+            
+            for beam_n in range(self.config['bf_n_beams']):
+
+#                self.read_int('beamformer', 'bf_start_frequency_beam%i'%(beam_n))
+#                self.read_int('beamformer', 'bf_bandwidth_beam%i'%(beam_n))
+
+                self.read_str('beamformer', 'bf_name_beam%i'%(beam_n));
+                self.read_int('beamformer', 'bf_location_beam%i'%(beam_n));
+
+                #ip destination for data
+                ip_str=self.get_line('beamformer','bf_rx_udp_ip_str_beam%i'%(beam_n))
+                self.config['bf_rx_udp_ip_str_beam%i'%(beam_n)]=[ipstr for ipstr in ip_str.split(LISTDELIMIT)]
+                self.config['bf_rx_udp_ip_beam%i'%(beam_n)]=[struct.unpack('>I',socket.inet_aton(ip_s))[0] for ip_s in self.config['bf_rx_udp_ip_str_beam%i'%(beam_n)]]
+
+                #ip destination for spead meta data
+                ip_str=self.get_line('beamformer','bf_rx_meta_ip_str_beam%i'%(beam_n))
+                self.config['bf_rx_meta_ip_str_beam%i'%(beam_n)]=[ipstr for ipstr in ip_str.split(LISTDELIMIT)]
+                self.config['bf_rx_meta_ip_beam%i'%(beam_n)]=[struct.unpack('>I',socket.inet_aton(ip_s))[0] for ip_s in self.config['bf_rx_meta_ip_str_beam%i'%(beam_n)]]
+
+                #port destination for data
+                self.read_int('beamformer', 'bf_rx_udp_port_beam%i'%(beam_n))
+
+                #calibration
+
+                if self.config['bf_cal_default'] == 'poly':
+                    for input_n in range(self.config['n_inputs']):
+                        try:
+                            ant_cal_str=self.get_line('beamformer','bf_cal_poly_beam%i_input%i'%(beam_n, input_n))
+                            self.config['bf_cal_poly_beam%i_input%i'%(beam_n, input_n)]=[int(coef) for coef in ant_cal_str.split(LISTDELIMIT)]
+                        except: 
+                            print 'error reading polynomial for beam %i,input %i' %(beam_n, input_n)
+                            raise RuntimeError('ERR bf_cal_poly_beam%i_input%i'%(beam_n, input_n))
+
+                #we need to try to read eq_coeffs every time so that this info is available to corr_functions even if it's not how we default program the system.
+                elif self.config['bf_cal_default'] == 'coeffs':
+                    n_coeffs = self.config['n_chans']
+                    for input_n in range(self.config['n_inputs']):
+                        try:
+                            ant_cal_str=self.get_line('beamformer','bf_cal_coeffs_beam%i_ant%i'%(beam_n, input_n))
+                            self.config['bf_cal_coeffs_beam%i_ant%i'%(beam_n, input_n)]=eval(ant_cal_str)
+                            if len(self.config['bf_cal_coeffs_beam%i_ant%i'%(beam_n, input_n)]) != n_coeffs:
+                                raise RuntimeError('ERR bf_cal_coeffs_beam%i_ant%i... incorrect number of coefficients. Expecting %i, got %i.'%(beam_n, input_n, n_coeffs,len(self.config['eq_coeffs_%i'%(input_n)])))
+                        except: raise RuntimeError('ERR bf_cal_coeffs_beam%i_ant%i'%(beam_n,input_n))
+
+            
+            print '%i beam beamformer found in this design outputting %s data.'%(self.config['bf_n_beams'], self.config['bf_data_type'])
+            self.logger.info('%i beam beamformer found in this design outputting %s data.'%(self.config['bf_n_beams'], self.config['bf_data_type']))
+        except Exception:
+            self.logger.info('No beamformer found in this design')
+            print 'No beamformer found in this design'
+            return
+    
     def write(self,section,variable,value):
         print 'Writing to the config file. Mostly, this is a bad idea. Mostly. Doing nothing.'
         return
