@@ -8,9 +8,9 @@ servers_f = roach030268,roach030279,roach030265,roach030203,roach030276,roach030
 servers_x = roach030274,roach030271,roach030270,roach030273,roach030266,roach030263,roach030275,roach030196
 #This is the control port to use when communicating with BORPH. By default, ROACHes use 7147.
 katcp_port = 7147
-#bitstream to load the FPGAs. Should be present and load-able by ROACH's KATCP server - corr will not do this for you.
+#bitstream to load the FPGAs. Should be present and load-able by ROACH's KATCP server - corr will not do this for you
 bitstream_f = r_128w_1024_11_1a_r418_2011_Jul_21_1621.bof
-bitstream_x = r_1f_2x_8a_1k_r352_2011_Jun_29_1057.bof
+bitstream_x = r_1f_2bx_8a_1k_r358_2013_Jan_07_1005.bof
 
 [correlator]
 # the correlator mode - wbc = wideband, nbc = narrowband, nbch1 = narrowband_ddc h1 mode
@@ -70,7 +70,89 @@ pcnt_bits = 48
 # the sync period set in the f-engine design. used for f-engine arming. this default is for WIDEBAND!
 feng_sync_period = 134217728
 # the number of 1PPS pulses that we expect to elapse between arming the system and actually triggering. This is usually 2, to allow any sync pulses in the pipeline to flush before resyncing.
-feng_sync_delay=2
+feng_sync_delay = 2
+
+[beamformer]
+
+#calibration type (complex or scalar)
+bf_cal_type=complex
+#Default values for calibration derived from eq_poly values (poly) or set to eq_coeff values (coef).
+bf_cal_default=poly
+
+# prefix for beamformer related registers
+bf_register_prefix = bf
+#b-engines per fpga
+bf_be_per_fpga = 2
+# data type can be raw or visibilities
+bf_data_type = raw
+#number of beams per beamformer 
+bf_n_beams_per_be = 2
+#complex data output format
+bf_bits_out = 8
+# number of beams (each polarisation is treated as a separate beam)
+# beam id (and subset id) is inserted into HEAP_CNT in SPEAD stream
+bf_n_beams = 2
+
+# beam name
+bf_name_beam0 = i
+#physical beam offset
+bf_location_beam0 = 0
+# center frequency of beams (will be subject to quantization)
+#bf_centre_frequency_beam0 = 200
+# bandwidth of beams (will be subject to quantization)
+#bf_bandwidth_beam0 = 400
+# ip to send SPEAD meta data to
+bf_rx_meta_ip_str_beam0 = 10.0.0.2
+# destination for SPEAD data
+bf_rx_udp_ip_str_beam0 = 10.0.0.2
+bf_rx_udp_port_beam0 = 7148
+
+bf_cal_poly_beam0_input0 = 1 
+bf_cal_poly_beam0_input1 = 1 
+bf_cal_poly_beam0_input2 = 1 
+bf_cal_poly_beam0_input3 = 1 
+bf_cal_poly_beam0_input4 = 1 
+bf_cal_poly_beam0_input5 = 1 
+bf_cal_poly_beam0_input6 = 1 
+bf_cal_poly_beam0_input7 = 1 
+bf_cal_poly_beam0_input8 = 1 
+bf_cal_poly_beam0_input9 = 1 
+bf_cal_poly_beam0_input10 = 1 
+bf_cal_poly_beam0_input11 = 1 
+bf_cal_poly_beam0_input12 = 1 
+bf_cal_poly_beam0_input13 = 1 
+bf_cal_poly_beam0_input14 = 1 
+bf_cal_poly_beam0_input15 = 1 
+
+# beam name
+bf_name_beam1 = q
+#physical beam offset
+bf_location_beam1 = 1
+# center frequency of beams (will be subject to quantization)
+#bf_centre_frequency_beam1 = 200
+# bandwidth of beams (will be subject to quantization)
+#bf_bandwidth_beam1 = 400
+# ip to send SPEAD meta data to
+bf_rx_meta_ip_str_beam1 = 127.0.0.1
+bf_rx_udp_ip_str_beam1 = 10.0.0.2
+bf_rx_udp_port_beam1 = 7148 
+
+bf_cal_poly_beam1_input0 = 1 
+bf_cal_poly_beam1_input1 = 1 
+bf_cal_poly_beam1_input2 = 1 
+bf_cal_poly_beam1_input3 = 1 
+bf_cal_poly_beam1_input4 = 1 
+bf_cal_poly_beam1_input5 = 1 
+bf_cal_poly_beam1_input6 = 1 
+bf_cal_poly_beam1_input7 = 1 
+bf_cal_poly_beam1_input8 = 1 
+bf_cal_poly_beam1_input9 = 1 
+bf_cal_poly_beam1_input10 = 1 
+bf_cal_poly_beam1_input11 = 1 
+bf_cal_poly_beam1_input12 = 1 
+bf_cal_poly_beam1_input13 = 1 
+bf_cal_poly_beam1_input14 = 1 
+bf_cal_poly_beam1_input15 = 1 
 
 [receiver]
 #How is data to be retrieved from the correlator? either ppc or 10GbE. Only 10GbE is fully (ie automatically) supported. ppc will require manual intervention with the cn_tx.py script.
