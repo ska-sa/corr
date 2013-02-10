@@ -7,6 +7,7 @@ Author: Jason Manley, Andrew Martens
 """
 Revisions:
 2012-10-02 JRM Initial
+2013-02-10 AM basic boresight 
 \n"""
 
 import corr, time, sys, numpy, os, logging, katcp, struct, construct, socket, spead
@@ -35,82 +36,10 @@ class fbf:
 #        pol2=self.config['rev_pol_map'][1]
 #        return (pol1+pol1,pol2+pol2,pol1+pol2,pol2+pol1) 
 
-    #untested
-    def initialise(self, set_cal = True, config_output = True, send_spead = True):
-        """Initialises the system and checks for errors."""
-        
-	#disable all beam
-        print 'initialise: disabling all beams'
-        self.beam_disable(beams=all)
-       
-        if self.config.simulate == False: 
-            if self.tx_status_get(): self.tx_stop()
-        else:
-            print 'initialise: stopping transmission'
+	#-----------------------
+	#  helper functions
+	#-----------------------
 
-        self.spead_config_output()
-        self.config_udp_output()
-
-#        if set_cal: self.cal_set_all()
-#        else: self.syslogger.info('Skipped calibration config of beamformer.')
-
-#        if send_spead:
-#            self.spead_issue_all()
-
-        self.syslogger.info("Beamformer initialisation complete.")
-    
-    #untested
-    def tx_start(self):
-        """Start outputting SPEAD products. Only works for systems with 10GbE output atm.""" 
-        if self.config['out_type'] == '10gbe':
-
-            if self.config.simulate == True:
-                print 'tx_start: dummy enabling 10Ge output for beamformer'
-            else:
-                self.c.xeng_ctrl_set_all(beng_out_enable = True)
-
-            self.syslogger.info("Beamformer output started.")
-        else:
-            self.syslogger.error('Sorry, your output type is not supported. Could not enable output.')
-            #raise RuntimeError('Sorry, your output type is not supported.')
-
-    #untested
-    def tx_stop(self, spead_stop=True):
-        """Stops outputting SPEAD data over 10GbE links."""
-        if self.config['out_type'] == '10gbe':
-            if self.config.simulate == True:
-                print 'tx_stop: dummy disabling 10Ge output for beamformer'
-            else:
-                self.xeng_ctrl_set_all(beng_out_enable = False)
-
-            self.syslogger.info("Beamformer output paused.")
-            if spead_stop:
-                if self.config.simulate == True:
-                    print 'tx_stop: dummy ending SPEAD stream'
-                else:
-                    tx_temp = spead.Transmitter(spead.TransportUDPtx(self.config['bf_rx_meta_ip_str'], self.config['bf_rx_udp_port']))
-                    tx_temp.end()
-                self.syslogger.info("Sent SPEAD end-of-stream notification.")
-            else:
-                self.syslogger.info("Did not send SPEAD end-of-stream notification.")
-        else:
-            #raise RuntimeError('Sorry, your output type is not supported.')
-            self.syslogger.warn("Sorry, your output type is not supported. Cannot disable output.")
-    
-    #untested
-    def tx_status_get(self):
-        """Returns boolean true/false if the beamformer is currently outputting data. Currently only works on systems with 10GbE output."""
-        if self.config['out_type']!='10gbe': 
-            self.syslogger.warn("This function only works for systems with 10GbE output!")
-            return False
-        rv=True
-        stat=self.c.xeng_ctrl_get_all()
-        
-        for xn,xsrv in enumerate(self.c.xsrvs):
-            if stat[xn]['beng_out_enable'] != True or stat[xn]['gbe_out_rst']!=False: rv=False
-        self.syslogger.info('Beamformer output is currently %s'%('enabled' if rv else 'disabled'))
-        return rv
-  
     def get_fpgas(self):
         all_fpgas = self.c.xsrvs
         try:
@@ -151,7 +80,7 @@ class fbf:
         if len(frequency_indices) == 0:
             frequency_indices = self.frequency2fft_bin(frequencies)
 
-        bf_be_per_fpga = len(get_bfs()) 
+        bf_be_per_fpga = len(self.get_bfs()) 
         n_fpgas = len(self.c.xsrvs)
         n_bfs = n_fpgas*bf_be_per_fpga
         n_chans = self.config['n_chans']
@@ -301,10 +230,10 @@ class fbf:
             name = '%s%s_%s' %(self.config['bf_register_prefix'], target['bf'], device_name)
             #pretend to write if no FPGA
             if self.config.simulate == True:
-                #print 'dummy write to %s, %s at offset %i'%(target['fpga'], name, offset)
+                print 'dummy write to %s, %s at offset %i'%(target['fpga'], name, offset)
                 pass
             else:
-                target['fpga'].write_int(name, data[0], offset)
+                target['fpga'].write_int(device_name=name, integer=data[0], offset=offset)
     
     def bf_control_lookup(self, destination, write='on', read='on'):
         control = 0
@@ -403,6 +332,86 @@ class fbf:
                 #trigger the write
                 print 'bf_write_int: triggering for no antennas' 
                 self.beam_write_int('control', [control], 0, beams=beams)      
+	
+#-----------------------------------
+#  Interface for standard operation
+#-----------------------------------
+
+    
+    def initialise(self, set_cal = True, config_output = True, send_spead = True):
+        """Initialises the system and checks for errors."""
+        
+	#disable all beam
+        print 'initialise: disabling all beams'
+        self.beam_disable(all)
+	
+	#TODO need small sleep here as heaps flush
+	       
+#        if self.config.simulate == False: 
+#            if self.tx_status_get(): self.tx_stop()
+#        else:
+        #print 'initialise: simulating stopping transmission'
+
+        self.spead_config_output()
+        self.config_udp_output()
+
+#        if set_cal: self.cal_set_all()
+#        else: self.syslogger.info('Skipped calibration config of beamformer.')
+
+#        if send_spead:
+#            self.spead_issue_all()
+
+        self.syslogger.info("Beamformer initialisation complete.")
+    
+    def tx_start(self):
+        """Start outputting SPEAD products. Only works for systems with 10GbE output atm.""" 
+        if self.config['out_type'] == '10gbe':
+
+            if self.config.simulate == True:
+                print 'tx_start: dummy enabling 10Ge output for beamformer'
+            else:
+                self.c.xeng_ctrl_set_all(beng_out_enable = True)
+
+            self.syslogger.info("Beamformer output started.")
+        else:
+            self.syslogger.error('Sorry, your output type is not supported. Could not enable output.')
+            #raise RuntimeError('Sorry, your output type is not supported.')
+
+    def tx_stop(self, spead_stop=True):
+        """Stops outputting SPEAD data over 10GbE links."""
+        if self.config['out_type'] == '10gbe':
+            if self.config.simulate == True:
+                print 'tx_stop: dummy disabling 10Ge output for beamformer'
+            else:
+                self.c.xeng_ctrl_set_all(beng_out_enable = False)
+
+            self.syslogger.info("Beamformer output paused.")
+#            if spead_stop:
+#                if self.config.simulate == True:
+#                    print 'tx_stop: dummy ending SPEAD stream'
+#                else:
+#                    tx_temp = spead.Transmitter(spead.TransportUDPtx(self.config['bf_rx_meta_ip_str'], self.config['bf_rx_udp_port']))
+#                    tx_temp.end()
+#                self.syslogger.info("Sent SPEAD end-of-stream notification.")
+#            else:
+#                self.syslogger.info("Did not send SPEAD end-of-stream notification.")
+        else:
+            #raise RuntimeError('Sorry, your output type is not supported.')
+            self.syslogger.warn("Sorry, your output type is not supported. Cannot disable output.")
+    
+    #untested
+    def tx_status_get(self):
+        """Returns boolean true/false if the beamformer is currently outputting data. Currently only works on systems with 10GbE output."""
+        if self.config['out_type']!='10gbe': 
+            self.syslogger.warn("This function only works for systems with 10GbE output!")
+            return False
+        rv=True
+        stat=self.c.xeng_ctrl_get_all()
+        
+        for xn,xsrv in enumerate(self.c.xsrvs):
+            if stat[xn]['beng_out_enable'] != True or stat[xn]['gbe_out_rst']!=False: rv=False
+        self.syslogger.info('Beamformer output is currently %s'%('enabled' if rv else 'disabled'))
+        return rv
 
     def config_udp_output(self, beams=all, dest_ip_str=None, dest_port=None):
         """Configures the destination IP and port for B engine outputs. dest_port and dest_ip are optional parameters to override the config file defaults."""
@@ -427,8 +436,8 @@ class fbf:
 
             dest_ip = struct.unpack('>L',socket.inet_aton(dest_ip_str))[0]
 
-            self.beam_write_int('dest', [dest_ip], [beam_offset*2], beams); #ip                    
-            self.beam_write_int('dest', [dest_port], [beam_offset*2+1], beams); #port                    
+            self.beam_write_int('dest', data=[dest_ip], offset=(beam_offset*2), beams=beams)                     
+            self.beam_write_int('dest', data=[dest_port], offset=(beam_offset*2+1), beams=beams)                     
             #each beam output from each beamformer group can be configured differently
             self.syslogger.info("Beam %s configured to %s:%i." % (beams, dest_ip_str, dest_port))
 
@@ -444,13 +453,7 @@ class fbf:
         #write to the filter module, ignoring antenna and frequency destinations
         self.bf_write_int(destination='filter', data=[0x0], offset=0x0, beams=beams)  
 
-    def time_from_spead(self, spead_time):
-        """Returns the unix time UTC equivalent to the input packet timestamp. Does not account for wrapping timestamp counters."""
-        return self.config['sync_time']+float(spead_time)/float(self.config['spead_timestamp_scale_factor'])
-        
-    def spead_timestamp_from_time(self,time_seconds):
-        """Returns the packet timestamp from a given UTC system time (seconds since Unix Epoch). Accounts for wrapping timestamp."""
-        return int((time_seconds - self.config['sync_time'])*self.config['spead_timestamp_scale_factor'])%(2**(self.config['spead_flavour'][1]))
+#   CALIBRATION 
 
     def cal_set_all(self, init_poly = [], init_coeffs = []):
         """Initialise all antennas for all beams' calibration factors to given polynomial. If no polynomial or coefficients are given, use defaults from config file."""
@@ -538,6 +541,18 @@ class fbf:
         freqs = range(0, bandwidth, bandwidth/n_chans)
 
         cal_data_set(beam_name_str, ant_str, freqs, coeffs)
+
+	#-----------
+	#   SPEAD
+	#-----------
+
+    def time_from_spead(self, spead_time):
+        """Returns the unix time UTC equivalent to the input packet timestamp. Does not account for wrapping timestamp counters."""
+        return self.config['sync_time']+float(spead_time)/float(self.config['spead_timestamp_scale_factor'])
+        
+    def spead_timestamp_from_time(self,time_seconds):
+        """Returns the packet timestamp from a given UTC system time (seconds since Unix Epoch). Accounts for wrapping timestamp."""
+        return int((time_seconds - self.config['sync_time'])*self.config['spead_timestamp_scale_factor'])%(2**(self.config['spead_flavour'][1]))
  
     def spead_config_output(self):
         '''Sets up configuration registers controlling SPEAD output'''
@@ -547,7 +562,8 @@ class fbf:
             print 'spead_config_output: dummy write to beng_data_id on all x engines'
             print 'spead_config_output: dummy write to beng_time_id on all x engines'
         else:
-            self.c.xwrite_int_all('beng_data_id', 0x00B000) #top 8 bits of data id
+		#TODO data id should increment for beams
+            self.c.xwrite_int_all('beng_data_id', (0x000000 | 0x00B000) #data id
             self.c.xwrite_int_all('beng_time_id', (0x800000 | 5632) ) #same timestamp id as for correlator
         
         n_beams = self.config['bf_n_beams']
