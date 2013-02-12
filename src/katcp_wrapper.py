@@ -311,28 +311,36 @@ class FpgaClient(CallbackClient):
         if reply.arguments[0]=='ok': return
         else: raise RuntimeError("Failure stopping tap device %s."%(device))
 
-    def upload_bof(self, bof_file, port, timeout = 30):
+    def upload_bof(self, bof_file, port, force_upload = False, timeout = 30):
         """Upload a BORPH file to the ROACH board for execution. 
            @param self  This object.
            @param bof_file  The path and/or filename of the bof file to upload.
            @param port  The port to use for uploading.
            @param timeout  The timeout to use for uploading.
-           @return True if the upload succeeded, else False. Plus a dictionary indicating the result of the request and upload.
+           @return
         """
+        # does the bof file exist?
         import os
         try:
             filesize = os.path.getsize(bof_file)
             filename = bof_file.split("/")[-1]
         except:
-            return False, {'request':False, 'upload':False}
+            raise IOError('BOF file not found.')
+        # is it on the FPGA already?
+        if not force_upload:
+            bofs = self.listbof()
+            if bofs.count(filename) == 1:
+                return
         import threading, socket, time, Queue
         def makerequest(result_queue):
-	    try:
-            	result = self._request('uploadbof', timeout, port, filename)
-	    except:
-		result_queue.put(False)
-		return
-            result_queue.put(result[0].arguments[0] == Message.OK)
+            try:
+                result = self._request('uploadbof', timeout, port, filename)
+                if(result[0].arguments[0] == Message.OK):
+                    result_queue.put('')
+                else:
+                    result_queue.put('Request to client returned, but not Message.OK.')
+            except:
+                result_queue.put('Request to client failed.')
         def uploadbof(filename, result_queue):
             upload_socket = socket.socket()
             stime = time.time()
@@ -344,26 +352,32 @@ class FpgaClient(CallbackClient):
                 except:
                     time.sleep(0.1)
             if not connected:
-                return
+                result_queue.put('Could not connect to upload port.')
             try:
                 upload_socket.send(open(filename).read())
             except:
-                return
-            result_queue.put(True)
+                result_queue.put('Could not send file to upload port.')
+            result_queue.put('')
+        # request thread
         request_queue = Queue.Queue()
-        req_thread = threading.Thread(target = makerequest, args = (request_queue,))
+        request_thread = threading.Thread(target = makerequest, args = (request_queue,))
+        # upload thread
         upload_queue = Queue.Queue()
-        upl_thread = threading.Thread(target = uploadbof, args = (bof_file, upload_queue,))
+        upload_thread = threading.Thread(target = uploadbof, args = (bof_file, upload_queue,))
+        # start the threads and join
         old_timeout = self._timeout
         self._timeout = timeout
-        req_thread.start()
-        upl_thread.start()
-        req_thread.join()
+        request_thread.start()
+        upload_thread.start()
+        request_thread.join()
         self._timeout = old_timeout
-        request_okay = False if request_queue.qsize() != 1 else request_queue.get()
-        upload_okay = False if upload_queue.qsize() != 1 else upload_queue.get()
-        self._logger.info("Bof file upload for '", bof_file,"': request (", request_okay, "), uploaded (", upload_okay,")")
-        return (request_okay and upload_okay), {'request':request_okay, 'upload':upload_okay}
+        request_result = request_queue.get()
+        upload_result = upload_queue.get()
+        if (request_result != '') or (upload_result != ''):
+            raise Exception('Error: request(%s), upload(%s)' %(request_result, upload_result))
+        debugstr = "Bof file upload for '", bof_file,"': request (", request_result, "), uploaded (", upload_result,")" 
+        self._logger.info(debugstr)
+        return
 
     def status(self):
         """Return the status of the FPGA.
