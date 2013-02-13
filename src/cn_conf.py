@@ -336,14 +336,14 @@ class CorrConf:
             
             for beam_n in range(self.config['bf_n_beams']):
 
-#                self.read_int('beamformer', 'bf_start_frequency_beam%i'%(beam_n))
-#                self.read_int('beamformer', 'bf_bandwidth_beam%i'%(beam_n))
+                self.read_int('beamformer', 'bf_centre_frequency_beam%i'%beam_n)
+                self.read_int('beamformer', 'bf_bandwidth_beam%i'%beam_n)
 
-                self.read_str('beamformer', 'bf_name_beam%i'%(beam_n));
-                self.read_int('beamformer', 'bf_location_beam%i'%(beam_n));
+                self.read_str('beamformer', 'bf_name_beam%i'%(beam_n))
+                self.read_int('beamformer', 'bf_location_beam%i'%(beam_n))
 
                 #ip destination for data
-                ip_str=self.get_line('beamformer','bf_rx_udp_ip_str_beam%i'%(beam_n))
+                ip_str=self.get_line('beamformer','bf_rx_udp_ip_str_beam%i'%beam_n)
                 self.config['bf_rx_udp_ip_str_beam%i'%(beam_n)]=[ipstr for ipstr in ip_str.split(LISTDELIMIT)]
                 self.config['bf_rx_udp_ip_beam%i'%(beam_n)]=[struct.unpack('>I',socket.inet_aton(ip_s))[0] for ip_s in self.config['bf_rx_udp_ip_str_beam%i'%(beam_n)]]
 
@@ -360,7 +360,7 @@ class CorrConf:
                 if self.config['bf_cal_default'] == 'poly':
                     for input_n in range(self.config['n_inputs']):
                         try:
-                            ant_cal_str=self.get_line('beamformer','bf_cal_poly_beam%i_input%i'%(beam_n, input_n))
+                            ant_cal_str=self.get_line('beamformer','bf_cal_poly_input%i_beam%i'%(input_n, beam_n))
                             self.config['bf_cal_poly_beam%i_input%i'%(beam_n, input_n)]=[int(coef) for coef in ant_cal_str.split(LISTDELIMIT)]
                         except: 
                             print 'error reading polynomial for beam %i,input %i' %(beam_n, input_n)
@@ -376,13 +376,10 @@ class CorrConf:
                             if len(self.config['bf_cal_coeffs_beam%i_ant%i'%(beam_n, input_n)]) != n_coeffs:
                                 raise RuntimeError('ERR bf_cal_coeffs_beam%i_ant%i... incorrect number of coefficients. Expecting %i, got %i.'%(beam_n, input_n, n_coeffs,len(self.config['eq_coeffs_%i'%(input_n)])))
                         except: raise RuntimeError('ERR bf_cal_coeffs_beam%i_ant%i'%(beam_n,input_n))
-
             
-            print '%i beam beamformer found in this design outputting %s data.'%(self.config['bf_n_beams'], self.config['bf_data_type'])
             self.logger.info('%i beam beamformer found in this design outputting %s data.'%(self.config['bf_n_beams'], self.config['bf_data_type']))
         except Exception:
             self.logger.info('No beamformer found in this design')
-            print 'No beamformer found in this design'
             return
     
     def write(self,section,variable,value):
