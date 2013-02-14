@@ -214,17 +214,21 @@ class fbf:
         
         fpgas = self.frequency2fpgas(frequency_indices = frequency_indices)
         bfs = self.frequency2bf_index(frequency_indices = frequency_indices)
-        
+       
+#        print 'frequency2fpga_bf: len(fpgas) = %i, len(bfs) = %i' %(len(fpgas),len(bfs))
+         
         if len(fpgas) != len(bfs):
             #TODO
             self.syslogger.error("frequency2fpga_bf: fpga and bfs associated with frequencies not the same length")
         else:
-            pfpga = []; pbf = []
+            pfpga = [] 
+            pbf = []
             for index in range(len(fpgas)):
                 fpga = fpgas[index]; bf = bfs[index]
                 if (unique == False) or (pfpga != fpga or pbf != bf):
                     locations.append({'fpga': fpga, 'bf': bf})
-                pbf = bf; pfpga = fpga
+                pbf = bf 
+                pfpga = fpga
 
         return locations
 
@@ -574,8 +578,11 @@ class fbf:
 
         #convert to actual beam names
         beams = self.beams2beams(beams)
+        beam_indices = self.beam2index(beams)
 
-        for beam_index,beam in enumerate(beams):
+        for index,beam in enumerate(beams):
+
+            beam_index = beam_indices[index]
 
             #get frequency_indices associated with disabled parts of beam
             disabled_fft_bins = self.get_disabled_fft_bins(beam)
