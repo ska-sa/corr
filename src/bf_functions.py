@@ -588,11 +588,17 @@ class fbf:
             disabled_fft_bins = self.get_disabled_fft_bins(beam)
            
             if len(disabled_fft_bins) > 0: 
+                if self.config.simulate == True:
+                    print 'disabling excluded bfs'
+
                 #disable bfs not required via the filter block in the beamformer
                 self.bf_write_int(destination='filter', data=[0x0], offset=0x0, beams=beam, frequency_indices=disabled_fft_bins)  
+                
+                if self.config.simulate == True:
+                    print 'configuring excluded bfs'
 
                 #configure disabled beamformers to output HEAP size of 0
-                bf_config = (beam_index << 16) & 0xffff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff  
+                bf_config = ((beam_index+1) << 16) & 0xffff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff  
                 self.write_int('cfg%i'%beam_index, [bf_config], 0, frequency_indices=disabled_fft_bins)
             
             #get frequency_indices associated with enabled parts of beams
@@ -602,10 +608,14 @@ class fbf:
             fpga_bf_e = self.frequency2fpga_bf(frequency_indices=enabled_fft_bins, unique=True)
             bf_config = []
             for offset in range(len(fpga_bf_e)):
-                bf_config.append((beam_index << 16) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
+                bf_config.append(((beam_index+1) << 17) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
             
+            if self.config.simulate == True:
+                print 'configuring included bfs'
             self.write_int('cfg%i'%beam_index, bf_config, 0, frequency_indices=enabled_fft_bins)
 
+            if self.config.simulate == True:
+                print 'enabling included bfs'
             #lastly enable those parts
             self.bf_write_int(destination='filter', data=[0x1], offset=0x0, beams=beam, frequency_indices = enabled_fft_bins)  
 
