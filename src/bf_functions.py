@@ -470,8 +470,8 @@ class fbf:
         """Initialises the system and checks for errors."""
         
 	#disable all beams
-        print 'initialise: disabling all beams'
-        self.beam_disable(all)
+        print 'initialise: stopping transmission from all beams'
+        self.tx_stop(all)
 	
 	#TODO need small sleep here as heaps flush
 	       
@@ -492,43 +492,89 @@ class fbf:
 
         self.syslogger.info("Beamformer initialisation complete.")
     
-    def tx_start(self):
+    def tx_start(self, beams=all):
         """Start outputting SPEAD products. Only works for systems with 10GbE output atm.""" 
         if self.config['out_type'] == '10gbe':
 
-            if self.config.simulate == True:
-                print 'tx_start: dummy enabling 10Ge output for beamformer'
-            else:
-                self.c.xeng_ctrl_set_all(beng_out_enable = True)
+            #NOTE that the order of the following operations is significant
+            #output from bfs will be enabled if any component frequencies are required
 
-            self.syslogger.info("Beamformer output started.")
+            #convert to actual beam names
+            beams = self.beams2beams(beams)
+            beam_indices = self.beam2index(beams)
+
+            for index,beam in enumerate(beams):
+
+                beam_index = beam_indices[index]
+
+                #get frequency_indices associated with disabled parts of beam
+                disabled_fft_bins = self.get_disabled_fft_bins(beam)
+               
+                if len(disabled_fft_bins) > 0: 
+                    if self.config.simulate == True:
+                        print 'disabling excluded bfs'
+
+                    #disable bfs not required via the filter block in the beamformer
+                    self.bf_write_int(destination='filter', data=[0x0], offset=0x0, beams=beam, frequency_indices=disabled_fft_bins)  
+                    
+                    if self.config.simulate == True:
+                        print 'configuring excluded bfs'
+
+                    #configure disabled beamformers to output HEAP size of 0
+                    bf_config = ((beam_index+1) << 16) & 0xffff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff  
+                    self.write_int('cfg%i'%beam_index, [bf_config], 0, frequency_indices=disabled_fft_bins)
+                
+                #get frequency_indices associated with enabled parts of beams
+                enabled_fft_bins = self.get_enabled_fft_bins(beam)
+        
+                #generate vector of values that will match the number of bfs in the list
+                fpga_bf_e = self.frequency2fpga_bf(frequency_indices=enabled_fft_bins, unique=True)
+                bf_config = []
+                for offset in range(len(fpga_bf_e)):
+                    bf_config.append(((beam_index+1) << 17) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
+                
+                if self.config.simulate == True:
+                    print 'configuring included bfs'
+                self.write_int('cfg%i'%beam_index, bf_config, 0, frequency_indices=enabled_fft_bins)
+
+                if self.config.simulate == True:
+                    print 'enabling included bfs'
+                #lastly enable those parts
+                self.bf_write_int(destination='filter', data=[0x1], offset=0x0, beams=beam, frequency_indices = enabled_fft_bins)  
+                self.syslogger.info('Output for %s started' %(beam))
         else:
             self.syslogger.error('Sorry, your output type is not supported. Could not enable output.')
-            #raise RuntimeError('Sorry, your output type is not supported.')
+    
+    def tx_stop(self, beams=all, spead_stop=True):
+        """Stops outputting SPEAD data over 10GbE links for specified beams. Sends SPEAD packets indicating end of stream if required"""
 
-    def tx_stop(self, spead_stop=True):
-        """Stops outputting SPEAD data over 10GbE links."""
         if self.config['out_type'] == '10gbe':
-            if self.config.simulate == True:
-                print 'tx_stop: dummy disabling 10Ge output for beamformer'
-            else:
-                self.c.xeng_ctrl_set_all(beng_out_enable = False)
+            #convert to actual beam names
+            beams = self.beams2beams(beams)
+            beam_indices = self.beam2index(beams)
 
-            self.syslogger.info("Beamformer output paused.")
-#            if spead_stop:
-#                if self.config.simulate == True:
-#                    print 'tx_stop: dummy ending SPEAD stream'
-#                else:
-#                    tx_temp = spead.Transmitter(spead.TransportUDPtx(self.config['bf_rx_meta_ip_str'], self.config['bf_rx_udp_port']))
-#                    tx_temp.end()
-#                self.syslogger.info("Sent SPEAD end-of-stream notification.")
-#            else:
-#                self.syslogger.info("Did not send SPEAD end-of-stream notification.")
+            for index,beam in enumerate(beams):
+
+                beam_index = beam_indices[index]
+
+                #disable all bf outputs
+                self.bf_write_int(destination='filter', data=[0x0], offset=0x0, beams=beams)  
+
+                self.syslogger.info("Beamformer output paused for beam %s" %beam)
+                if spead_stop:
+                    if self.config.simulate == True:
+                        print 'tx_stop: dummy ending SPEAD stream for beam %s' %beam
+                    else:
+                        tx_temp = spead.Transmitter(spead.TransportUDPtx(self.config['bf_rx_meta_ip_str_beam%d'%beam_index], self.config['bf_rx_udp_port_beam%d'%beam_index]))
+                        tx_temp.end()
+                    self.syslogger.info("Sent SPEAD end-of-stream notification for beam %s" %beam)
+                else:
+                    self.syslogger.info("Did not send SPEAD end-of-stream notification for beam %s" %beam)
         else:
-            #raise RuntimeError('Sorry, your output type is not supported.')
-            self.syslogger.warn("Sorry, your output type is not supported. Cannot disable output.")
+            self.syslogger.warn("Sorry, your output type is not supported. Cannot disable output for beam %s." %(beam))
     
     #untested
+    #TODO
     def tx_status_get(self):
         """Returns boolean true/false if the beamformer is currently outputting data. Currently only works on systems with 10GbE output."""
         if self.config['out_type']!='10gbe': 
@@ -538,8 +584,8 @@ class fbf:
         stat=self.c.xeng_ctrl_get_all()
         
         for xn,xsrv in enumerate(self.c.xsrvs):
-            if stat[xn]['beng_out_enable'] != True or stat[xn]['gbe_out_rst']!=False: rv=False
-        self.syslogger.info('Beamformer output is currently %s'%('enabled' if rv else 'disabled'))
+            if stat[xn]['gbe_out_rst']!=False: rv=False
+        self.syslogger.info('Beamformer output for beam %s is currently %s'%(beam, 'enabled' if rv else 'disabled'))
         return rv
 
     def config_udp_output(self, beams=all, dest_ip_str=None, dest_port=None):
@@ -570,60 +616,38 @@ class fbf:
             #each beam output from each beamformer group can be configured differently
             self.syslogger.info("Beam %s configured to output to %s:%i." %(beam_index, dest_ip_str, dest_port))
 
-    def beam_enable(self, beams=all):
-        """Enables output of data from specified beam"""
+    def set_beam_centre_frequency_bandwidth(self, beams=all, centre_frequency=None, bandwidth=None):
+        """sets the centre frequency and bandwidth for the specified beam"""
 
-        #NOTE that the order of the following operations is significant
-        #beamformers will be enabled if any component frequencies are required
-
-        #convert to actual beam names
-        beams = self.beams2beams(beams)
+        #convert to indices
         beam_indices = self.beam2index(beams)
-
-        for index,beam in enumerate(beams):
-
+       
+        for index,beam in enumerate(beam_indices):
             beam_index = beam_indices[index]
-
-            #get frequency_indices associated with disabled parts of beam
-            disabled_fft_bins = self.get_disabled_fft_bins(beam)
-           
-            if len(disabled_fft_bins) > 0: 
-                if self.config.simulate == True:
-                    print 'disabling excluded bfs'
-
-                #disable bfs not required via the filter block in the beamformer
-                self.bf_write_int(destination='filter', data=[0x0], offset=0x0, beams=beam, frequency_indices=disabled_fft_bins)  
-                
-                if self.config.simulate == True:
-                    print 'configuring excluded bfs'
-
-                #configure disabled beamformers to output HEAP size of 0
-                bf_config = ((beam_index+1) << 16) & 0xffff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff  
-                self.write_int('cfg%i'%beam_index, [bf_config], 0, frequency_indices=disabled_fft_bins)
             
-            #get frequency_indices associated with enabled parts of beams
-            enabled_fft_bins = self.get_enabled_fft_bins(beam)
+            try:
+                if centre_frequency != None:
+                    self.config['bf_centre_frequency_beam%d' %(index)] = centre_frequency
+            except:
+                pass
+            try:
+                if bandwidth != None:
+                    self.config['bf_bandwidth_beam%d' %(index)] = bandwidth
+            except:
+                pass
     
-            #generate vector of values that will match the number of bfs in the list
-            fpga_bf_e = self.frequency2fpga_bf(frequency_indices=enabled_fft_bins, unique=True)
-            bf_config = []
-            for offset in range(len(fpga_bf_e)):
-                bf_config.append(((beam_index+1) << 17) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
-            
-            if self.config.simulate == True:
-                print 'configuring included bfs'
-            self.write_int('cfg%i'%beam_index, bf_config, 0, frequency_indices=enabled_fft_bins)
+#    def get_beam_centre_frequency(self, beam):
+#        """gets the centre frequency and bandwidth for the specified beam"""
+    
+#        fft_bins = get_enabled_fft_bins(beam)
+    
+#    def get_beam_bandwidth(self, beam):
+#        """gets the centre frequency and bandwidth for the specified beam"""
 
-            if self.config.simulate == True:
-                print 'enabling included bfs'
-            #lastly enable those parts
-            self.bf_write_int(destination='filter', data=[0x1], offset=0x0, beams=beam, frequency_indices = enabled_fft_bins)  
+#        fft_bins = get_enabled_fft_bins(beam)
 
-    def beam_disable(self, beams=all):
-        """Disables output of specified beam data"""
-        
-        #disable all bf outputs
-        self.bf_write_int(destination='filter', data=[0x0], offset=0x0, beams=beams)  
+
+
 
 #   CALIBRATION 
 
