@@ -343,14 +343,14 @@ class CorrConf:
                 self.read_int('beamformer', 'bf_location_beam%i'%(beam_n))
 
                 #ip destination for data
-                ip_str=self.get_line('beamformer','bf_rx_udp_ip_str_beam%i'%beam_n)
-                self.config['bf_rx_udp_ip_str_beam%i'%(beam_n)]=[ipstr for ipstr in ip_str.split(LISTDELIMIT)]
-                self.config['bf_rx_udp_ip_beam%i'%(beam_n)]=[struct.unpack('>I',socket.inet_aton(ip_s))[0] for ip_s in self.config['bf_rx_udp_ip_str_beam%i'%(beam_n)]]
+                udp_ip_str=self.get_line('beamformer','bf_rx_udp_ip_str_beam%i'%beam_n)
+                self.config['bf_rx_udp_ip_str_beam%i'%(beam_n)]=udp_ip_str
+                self.config['bf_rx_udp_ip_beam%i'%(beam_n)]=struct.unpack('>I',socket.inet_aton(udp_ip_str))[0]
 
                 #ip destination for spead meta data
-                ip_str=self.get_line('beamformer','bf_rx_meta_ip_str_beam%i'%(beam_n))
-                self.config['bf_rx_meta_ip_str_beam%i'%(beam_n)]=[ipstr for ipstr in ip_str.split(LISTDELIMIT)]
-                self.config['bf_rx_meta_ip_beam%i'%(beam_n)]=[struct.unpack('>I',socket.inet_aton(ip_s))[0] for ip_s in self.config['bf_rx_meta_ip_str_beam%i'%(beam_n)]]
+                meta_ip_str=self.get_line('beamformer','bf_rx_meta_ip_str_beam%i'%(beam_n))
+                self.config['bf_rx_meta_ip_str_beam%i'%(beam_n)]=meta_ip_str
+                self.config['bf_rx_meta_ip_beam%i'%(beam_n)]=struct.unpack('>I',socket.inet_aton(meta_ip_str))[0] 
 
                 #port destination for data
                 self.read_int('beamformer', 'bf_rx_udp_port_beam%i'%(beam_n))

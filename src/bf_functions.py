@@ -93,7 +93,9 @@ class fbf:
         if beams == all:
             new_beams = all_beams
         else:
-            for beam in beams:
+            if type(beams) == str:
+		beams = [beams]
+	    for beam in beams:
                 try:
                     all_beams.index(beam)
                     new_beams.append(beam)
@@ -114,6 +116,8 @@ class fbf:
         if beams == all:
             indices = range(len(all_beams)) 
         else:
+	    if type(beams) == str:
+		beams = [beams]
             for beam in beams:
                 try:
                     indices.append(all_beams.index(beam))
@@ -471,7 +475,7 @@ class fbf:
         
 	#disable all beams
         print 'initialise: stopping transmission from all beams'
-        self.tx_stop(all)
+        self.tx_stop(all, spead_stop=False)
 	
 	#TODO need small sleep here as heaps flush
 	       
