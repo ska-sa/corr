@@ -185,8 +185,11 @@ def non_blocking_request(fpgas, timeout, request, request_args):
     # process the responses - return a dictionary keyed on hostname
     rv = {} 
     for f in fpgas: 
-        frv = {} 
-        request_id = replies[f.host] 
+        frv = {}
+        try: 
+            request_id = replies[f.host]
+        except:
+            raise KeyError('Didn\'t get a reply for FPGA \'%s\' so the request \'%s\' probably didn\'t complete.' % (f.host, request))
         reply, informs = f._nb_get_request_result(request_id) 
         frv['request'] = requests[f.host][0] 
         frv['reply'] = reply.arguments[0] 
@@ -353,11 +356,17 @@ class Correlator:
         pol2=self.config['rev_pol_map'][1]
         return (pol1+pol1, pol2+pol2, pol1+pol2, pol2+pol1) 
 
-    def prog_all(self):
+    def prog_all(self, timeout=10):
         """Progam all the FPGAs asynchronously."""
-        frv,a = non_blocking_request(fpgas = self.ffpgas, timeout = 5, request = 'progdev', request_args = [self.config['bitstream_f']])
-        xrv,a = non_blocking_request(fpgas = self.xfpgas, timeout = 5, request = 'progdev', request_args = [self.config['bitstream_x']])
-        if (not (frv and xrv)) or (not self.check_fpga_comms()): 
+        f_nottimedout, rv = non_blocking_request(fpgas = self.ffpgas, timeout = timeout, request = 'progdev', request_args = [self.config['bitstream_f']])
+        f_okay = True
+        for k, v in rv.items():
+            if v['reply'] != 'ok': f_okay = False
+        x_nottimedout, rv = non_blocking_request(fpgas = self.xfpgas, timeout = timeout, request = 'progdev', request_args = [self.config['bitstream_x']])
+        x_okay = True
+        for k, v in rv.items():
+            if v['reply'] != 'ok': x_okay = False
+        if not(f_nottimedout and x_nottimedout and x_okay and f_okay and self.check_fpga_comms()):
             raise RuntimeError("Failed to successfully program FPGAs.")
         else:
             self.syslogger.info("All FPGAs programmed ok.")
