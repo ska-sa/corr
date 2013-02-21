@@ -525,7 +525,7 @@ class fbf:
                         print 'configuring excluded bfs'
 
                     #configure disabled beamformers to output HEAP size of 0
-                    bf_config = ((beam_index+1) << 16) & 0xffff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff  
+                    bf_config = ((beam_index << 16) & 0xffff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff) 
                     self.write_int('cfg%i'%beam_index, [bf_config], 0, frequency_indices=disabled_fft_bins)
                 
                 #get frequency_indices associated with enabled parts of beams
@@ -535,7 +535,7 @@ class fbf:
                 fpga_bf_e = self.frequency2fpga_bf(frequency_indices=enabled_fft_bins, unique=True)
                 bf_config = []
                 for offset in range(len(fpga_bf_e)):
-                    bf_config.append(((beam_index+1) << 17) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
+                    bf_config.append((beam_index << 16) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
                 
                 if self.config.simulate == True:
                     print 'configuring included bfs'
@@ -599,7 +599,7 @@ class fbf:
         for beam_index in beam_indices:
 
             if dest_ip_str==None:
-                dest_ip_str=self.config['bf_rx_udp_ip_str_beam%i'%(beam_index)][0]
+                dest_ip_str=self.config['bf_rx_udp_ip_str_beam%i'%(beam_index)]
             else:
                 self.config['bf_rx_udp_ip_str_beam%i' %(beam_index)]=dest_ip_str
                 self.config['bf_rx_udp_ip_beam%i' %(beam_index)]=struct.unpack('>L',socket.inet_aton(dest_ip_str))[0]
