@@ -371,7 +371,7 @@ class Correlator:
         elif not(x_okay and f_okay):
             errstr = 'One or more FPGAs didn\'t reply \'ok\' to progdev request:\n', str(frv), '\n', str(xrv) 
             raise RuntimeError(errstr)
-        elif notself.check_fpga_comms():
+        elif not self.check_fpga_comms():
             raise RuntimeError("FPGAs were programmed but we don\'t have comms?")
         else:
             self.syslogger.info("All FPGAs programmed ok.")
