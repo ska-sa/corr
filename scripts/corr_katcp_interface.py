@@ -26,7 +26,8 @@ class DeviceExampleServer(katcp.DeviceServer):
 
     def __init__(self, *args, **kwargs):
         super(DeviceExampleServer, self).__init__(*args, **kwargs)
-        self.c = None
+        self.c = None # correlator object
+        self.b = None # beamformer object
 
     @request(Int(default=-1))
     @return_reply(Int(), Int(), Int())
@@ -74,6 +75,20 @@ class DeviceExampleServer(katcp.DeviceServer):
             return ("ok",)
         except:
             return ("fail","Something broke. Check the log.")
+
+    @request(Int(default=20))
+    @return_reply()
+    def request_beamformer(self, sock, log_level):
+        """Extends the correlator by adding a connection to the beamformer. Update all relevant config data. Initialise beamformer and send relevant beamformer SPEAD metadata"""
+        if self.c is None:
+            return ("fail","... you must connect and initialise the correlator first!")
+        # Initiate beamformer object
+        self.b = corr.bf_functions.fbf(host_correlator=self.c)
+        try:
+          self.b.initialise()
+          return ("ok",)
+        except:
+          return("fail","Could not initiate beamformer.")
 
     @request(include_msg=True)
     @return_reply(Int(min=0))
