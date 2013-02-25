@@ -358,16 +358,21 @@ class Correlator:
 
     def prog_all(self, timeout=10):
         """Progam all the FPGAs asynchronously."""
-        f_nottimedout, rv = non_blocking_request(fpgas = self.ffpgas, timeout = timeout, request = 'progdev', request_args = [self.config['bitstream_f']])
+        f_nottimedout, frv = non_blocking_request(fpgas = self.ffpgas, timeout = timeout, request = 'progdev', request_args = [self.config['bitstream_f']])
         f_okay = True
-        for k, v in rv.items():
+        for k, v in frv.items():
             if v['reply'] != 'ok': f_okay = False
-        x_nottimedout, rv = non_blocking_request(fpgas = self.xfpgas, timeout = timeout, request = 'progdev', request_args = [self.config['bitstream_x']])
+        x_nottimedout, xrv = non_blocking_request(fpgas = self.xfpgas, timeout = timeout, request = 'progdev', request_args = [self.config['bitstream_x']])
         x_okay = True
-        for k, v in rv.items():
+        for k, v in xrv.items():
             if v['reply'] != 'ok': x_okay = False
-        if not(f_nottimedout and x_nottimedout and x_okay and f_okay and self.check_fpga_comms()):
-            raise RuntimeError("Failed to successfully program FPGAs.")
+        if not(f_nottimedout and x_nottimedout):
+            raise RuntimeError('Programming the FPGAs timed out: F(%i) X(%i)' % (not f_nottimedout, not x_nottimedout))
+        elif not(x_okay and f_okay):
+            errstr = 'One or more FPGAs didn\'t reply \'ok\' to progdev request:\n', str(frv), '\n', str(xrv) 
+            raise RuntimeError(errstr)
+        elif not self.check_fpga_comms():
+            raise RuntimeError("FPGAs were programmed but we don\'t have comms?")
         else:
             self.syslogger.info("All FPGAs programmed ok.")
             time.sleep(1)
