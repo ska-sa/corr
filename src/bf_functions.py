@@ -9,6 +9,7 @@ Revisions:
 2012-10-02 JRM Initial
 2013-02-10 AM basic boresight
 2013-02-11 AM basic SPEAD
+2013-02-21 AM flexible bandwidth
 \n"""
 
 import corr, time, sys, numpy, os, logging, katcp, struct, construct, socket, spead
@@ -44,7 +45,7 @@ class fbf:
 	#  helper functions
 	#-----------------------
 
-    def get_param(self, param, beam):
+    def get_beam_param(self, param, beam):
 
         beam_index = self.beam2index(beam)        
         beam_index = beam_index[0]
@@ -52,7 +53,19 @@ class fbf:
         try:
             value = self.config['bf_%s_beam%d' %(param, beam_index)] 
         except:
-            self.syslogger.error('bf_%s_beam%d not found' %(param, beam_index))
+            self.syslogger.error('get_beam_param: bf_%s_beam%d not found' %(param, beam_index))
+        
+        return value
+
+    def set_beam_param(self, param, beam):
+
+        beam_index = self.beam2index(beam)        
+        beam_index = beam_index[0]
+    
+        try:
+            self.config['bf_%s_beam%d' %(param, beam_index)] = value 
+        except:
+            self.syslogger.error('set_beam_param: error setting bf_%s_beam%d' %(param, beam_index))
         
         return value
 
@@ -148,24 +161,41 @@ class fbf:
 
         return fpgas
 
-    def frequency2bf_index(self, frequencies=all, frequency_indices=[]):
+    def frequency2bf_label(self, frequencies=all, frequency_indices=[], unique=False): 
+        """returns bf labels associated with the frequencies specified"""
+ 
+	bf_labels = []
+        bf_be_per_fpga = len(self.get_bfs()) 
+	bf_indices = self.frequency2bf_index(frequencies, frequency_indices, unique=unique)
+
+	for bf_index in bf_indices:
+	    bf_labels.append(numpy.mod(bf_index, bf_be_per_fpga))
+
+	return bf_labels
+
+    def frequency2bf_index(self, frequencies=all, frequency_indices=[], unique=False):
         """returns bf indices associated with the frequencies specified"""
 
-        bfs = []
+        bf_indices = []
 
         if len(frequency_indices) == 0:
             frequency_indices = self.frequency2fft_bin(frequencies)
 
-        bf_be_per_fpga = len(self.get_bfs()) 
         n_fpgas = len(self.c.xsrvs)
+        bf_be_per_fpga = len(self.get_bfs()) 
         n_bfs = n_fpgas*bf_be_per_fpga
         n_chans = self.config['n_chans']
         n_chans_per_bf = n_chans/n_bfs
 
+	if max(frequency_indices)>n_chans-1 or min(frequency_indices) < 0:
+            self.syslogger.error('frequency2bf_index: frequency index out of range')
+
         for freq_index in frequency_indices:
-            bfs.append(numpy.int(numpy.mod(freq_index/n_chans_per_bf, bf_be_per_fpga)))
+            bf_index = freq_index/n_chans_per_bf
+	    if unique == False or bf_indices.count(bf_index) == 0:
+	        bf_indices.append(freq_index/n_chans_per_bf)
         
-        return bfs 
+        return bf_indices
  
     def frequency2frequency_reg_index(self, frequencies=all, frequency_indices=[]):
         """Returns list of values to write into frequency register corresponding to frequency specified"""
@@ -205,6 +235,55 @@ class fbf:
         
         return fft_bins
     
+    def get_bf_bandwidth(self):
+	"""Returns the bandwidth for one bf engine"""
+        
+	bandwidth = (self.config['adc_clk']/2)
+        bf_be_per_fpga = len(self.get_bfs()) 
+        n_fpgas = len(self.c.xsrvs)
+   
+	bf_bandwidth = float(bandwidth)/(bf_be_per_fpga*n_fpgas)
+	return bf_bandwidth 
+
+    def get_bf_fft_bins(self):
+	"""Returns the number of fft bins for one bf engine"""
+        
+	n_chans = self.config['n_chans']
+        bf_be_per_fpga = len(self.get_bfs()) 
+        n_fpgas = len(self.c.xsrvs)
+
+	bf_fft_bins = n_chans/(bf_be_per_fpga*n_fpgas)
+	return bf_fft_bins	
+
+    def get_fft_bin_bandwidth(self):
+	"""get bandwidth of single fft bin"""
+	n_chans = self.config['n_chans']
+        bandwidth = (self.config['adc_clk']/2)
+
+	fft_bin_bandwidth = bandwidth/n_chans
+	return fft_bin_bandwidth
+
+    def fft_bin2frequency(self, fft_bins=all):
+        """returns a list of centre frequencies associated with the fft bins supplied"""
+	frequencies = []
+	n_chans = self.config['n_chans']
+
+	if fft_bins == all:
+	    fft_bins = range(n_chans)
+
+	if type(fft_bins) == int:
+	    fft_bins = [fft_bins]
+
+	if max(fft_bins) > n_chans or min(fft_bins) < 0:
+            self.syslogger.error("fft_bin2frequency: fft_bins out of range 0 -> %d"%(n_chans-1))
+	    return frequencies
+        bandwidth = self.config['adc_clk']/2
+	
+	for fft_bin in fft_bins:
+	    frequencies.append((float(fft_bin)/n_chans)*bandwidth)
+
+	return frequencies
+
     def frequency2fpga_bf(self, frequencies=all, frequency_indices=[], unique=False):
         """returns a list of dictionaries {fpga, beamformer_index} based on frequency. unique gives only unique values"""
         locations = []
@@ -217,7 +296,7 @@ class fbf:
             frequency_indices = self.frequency2fft_bin(frequencies)
         
         fpgas = self.frequency2fpgas(frequency_indices = frequency_indices)
-        bfs = self.frequency2bf_index(frequency_indices = frequency_indices)
+        bfs = self.frequency2bf_label(frequency_indices = frequency_indices)
        
 #        print 'frequency2fpga_bf: len(fpgas) = %i, len(bfs) = %i' %(len(fpgas),len(bfs))
          
@@ -451,8 +530,8 @@ class fbf:
         """Returns fft bins representing band that is enabled for beam"""
         bins = []        
 
-        cf = self.get_param('centre_frequency', beam)  
-        bw = self.get_param('bandwidth', beam)  
+        cf = self.get_beam_param('centre_frequency', beam)  
+        bw = self.get_beam_param('bandwidth', beam)  
     
         bins = self.cf_bw2fft_bins(cf, bw)
         return bins
@@ -620,7 +699,7 @@ class fbf:
             #each beam output from each beamformer group can be configured differently
             self.syslogger.info("Beam %s configured to output to %s:%i." %(beam_index, dest_ip_str, dest_port))
 
-    def set_beam_centre_frequency_bandwidth(self, beams=all, centre_frequency=None, bandwidth=None):
+    def set_centre_frequency_bandwidth(self, beams=all, centre_frequency=None, bandwidth=None):
         """sets the centre frequency and bandwidth for the specified beam"""
 
         #convert to indices
@@ -632,6 +711,7 @@ class fbf:
             try:
                 if centre_frequency != None:
                     self.config['bf_centre_frequency_beam%d' %(index)] = centre_frequency
+		    self.syslogger.info('xBeamformer output for beam %s is currently %s'%(beam, 'enabled' if rv else 'disabled'))
             except:
                 pass
             try:
@@ -640,18 +720,28 @@ class fbf:
             except:
                 pass
     
-#    def get_beam_centre_frequency(self, beam):
-#        """gets the centre frequency and bandwidth for the specified beam"""
+    def get_centre_frequency(self, beam):
+        """gets the centre frequency and bandwidth for the specified beam"""
     
-#        fft_bins = get_enabled_fft_bins(beam)
+        fft_bins = self.get_enabled_fft_bins(beam)
+        bfs = self.frequency2bf_index(frequency_indices=fft_bins, unique=True)
+	bf_bandwidth = self.get_bf_bandwidth()
+	fft_bin_bandwidth = self.get_fft_bin_bandwidth()
+
+	#calculate start frequency accounting for frequency specified in centre of bin
+	start_frequency = min(bfs)*bf_bandwidth-fft_bin_bandwidth/2
+	centre_frequency = start_frequency+bf_bandwidth*(float(len(bfs))/2)
+
+	return centre_frequency
     
-#    def get_beam_bandwidth(self, beam):
-#        """gets the centre frequency and bandwidth for the specified beam"""
+    def get_bandwidth(self, beam):
+        """gets the bandwidth for the specified beam"""
 
-#        fft_bins = get_enabled_fft_bins(beam)
-
-
-
+        fft_bins = self.get_enabled_fft_bins(beam)
+	bfs = self.frequency2bf_index(frequency_indices=fft_bins, unique=True)
+	bf_bandwidth = self.get_bf_bandwidth()
+	beam_bandwidth = len(bfs) * bf_bandwidth
+	return beam_bandwidth
 
 #   CALIBRATION 
 
@@ -660,19 +750,16 @@ class fbf:
 
     #untested
     #TODO many beams and antennas
-    def cal_default_get(self, beam, antenna, beam_index=[]):
+    def cal_default_get(self, beam, antenna):
         "Fetches the default calibration configuration from the config file and returns a list of the coefficients for a given beam and antenna." 
-
-        if len(beam_index) == 0:
-            beam_index = self.beam2index(beam)
 
         n_coeffs = self.config['n_chans']
 
         if self.config['bf_cal_default'] == 'coeffs':
-            calibration = self.config['bf_cal_coeffs_beam%i_input%i'%(beam_index, input_n)]
+            calibration = self.config['bf_cal_coeffs_input%i_beam%i'%(input_n, beam_index)]
 
         elif self.config['bf_cal_default'] == 'poly':
-            poly = self.config['bf_cal_poly_beam%i_input%i' %(beam_index, input_n)]
+            poly = get_beam_param(beam, 'bf_cal_poly_beam%i_input%i' %(beam_index, input_n)]
             calibration = numpy.polyval(poly, range(self.config['n_chans']))
             if self.config['bf_cal_type'] == 'complex':
                 calibration = [cal+0*1j for cal in calibration]
@@ -695,10 +782,10 @@ class fbf:
             datum_real = numpy.real(datum)
             datum_imag = numpy.imag(datum)        
 
-            if numpy.max(datum_real) > ((2**15)-1) or numpy.min(datum_real)<-((2**15)-1):
-                print 'beamformer calibration values out of real range'
-            if numpy.max(datum_imag) > ((2**15)-1) or numpy.min(datum_imag)<-((2**15)-1):
-                print 'beamformer calibration values out of imaginary range'
+            if max(datum_real) > ((2**15)-1) or min(datum_real)<-((2**15)-1):
+                print 'beamformer real calibration values out of range'
+            if max(datum_imag) > ((2**15)-1) or min(datum_imag)<-((2**15)-1):
+                print 'beamformer imaginary calibration values out of range'
             #pack real and imaginary values
             values[index] = (numpy.uint32(datum_real) << 16) | (numpy.uint32(datum_imag) | 0x0000FFFF)
      
