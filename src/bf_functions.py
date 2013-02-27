@@ -172,9 +172,11 @@ class fbf:
 
         #expand all etc, check for valid names etc
         beams = self.beams2beams(beams)       
+
+	all_beams = self.get_beams()
  
         for beam in beams:
-            indices.append(beams.index(beam))
+            indices.append(all_beams.index(beam))
         
         return indices 
 
@@ -438,9 +440,11 @@ class fbf:
                 print 'dummy read from %s:%s offset %i'%(target['fpga'], name, offset)
             else:
                 try:
-                    values.append(target['fpga'].read_int(device_name=name, offset=offset))
+                    values.append(target['fpga'].read_int(device_name=name))
                 except:
                     self.syslogger.error('read_int: error reading from %s:%s offset %i' %(target['fpga'], name, offset))
+
+	return values
     
     def bf_control_lookup(self, destination, write='on', read='on'):
         control = 0
@@ -533,7 +537,9 @@ class fbf:
         if len(antenna_indices) == 0:
             #read
             print 'bf_read_int: reading for no antennas' 
-            self.read_int('value_out', offset=0, fft_bins=fft_bins)      
+            values = self.read_int('value_out', offset=0, fft_bins=fft_bins)     
+	
+	return values 
 
     #TODO ensure this function call is monotonic due to potential race conditions
     def bf_write_int(self, destination, data, offset=0, beams=all, antennas=None, frequencies=None, fft_bins=[]):
@@ -777,22 +783,28 @@ class fbf:
     
     #untested
     #TODO
-    def tx_status_get(self, beams):
+    def tx_status_get(self, beam):
         """Returns boolean true/false if the beamformer is currently outputting data. Currently only works on systems with 10GbE output."""
-        if self.get_param('out_type')!='10gbe': 
+        
+	if self.get_param('out_type')!='10gbe': 
             self.syslogger.warn("This function only works for systems with 10GbE output!")
             return False
-        rv=True
+        
+	rv=True
 
         #check 10Ge cores are not in reset
         stat=self.c.xeng_ctrl_get_all()
-        
-        for xn in range(len(stat[xn])):
-            if stat[xn]['gbe_out_rst']!=False: rv=False
+        for xn in stat:
+            if xn['gbe_out_rst']!=False: rv=False
         
         self.syslogger.info('10Ge output is currently %s'%('enabled' if rv else 'disabled'))
 
         #read output status of beams
+	mask = self.bf_read_int(beam=beam, destination='filter')
+	
+	#look to see if any portion in enabled
+ 	if mask.count(1) != 0: rv = rv
+	else: rv = False
 
         return rv
 
@@ -826,21 +838,39 @@ class fbf:
 
     def set_passband(self, beams=all, centre_frequency=None, bandwidth=None):
         """sets the centre frequency and/or bandwidth for the specified beams"""
-
+        
         beams = self.beams2beams(beams)
-       
+        
+	max_bandwidth = self.get_param('adc_clk')/2
+
         for beam in beams:
-            
+
+	    #parameter checking
+	    if centre_frequency == None:
+	        cf = get_beam_param(beam, 'centre_frequency')
+	    else:
+		cf = centre_frequency
+
+	    if bandwidth == None:
+		b = get_beam_param(beam, 'bandwidth')
+	    else:
+		b = bandwidth
+
+	    if ((cf-b/2) < 0) or ((cf+b/2) > max_bandwidth):
+            	self.syslogger.error('set_passband: Passband settings specified for beam %s out of range 0->%iMHz'%(beam, max_bandwidth/1000000))
+	    
             if centre_frequency != None:
-                set_beam_param(beam, 'centre_frequency', centre_frequency)
+                self.set_beam_param(beam, 'centre_frequency', centre_frequency)
 
             if bandwidth != None:
-                set_beam_param(beam, 'bandwidth', bandwidth)
+                self.set_beam_param(beam, 'bandwidth', bandwidth)
         
             if centre_frequency != None or bandwidth != None:
-                self.tx_stop(beam)
-                self.tx_start(beam)
-                self.syslogger.info('Restarted beam %s with new passband parameters'%beam)
+                #restart if currently transmitting
+		if self.tx_status_get(beam) == True:
+		    self.tx_stop(beam)
+		    self.tx_start(beam)
+		    self.syslogger.info('Restarted beam %s with new passband parameters'%beam)
             
             if centre_frequency != None:
                 self.syslogger.info('Centre frequency for beam %s set to %i Hz'%(beam, centre_frequency))
@@ -950,8 +980,8 @@ class fbf:
         # if this is a narrowband implementation, swap the EQ values, because the Xilinx FFT output is in swapped halves
 #        if self.is_narrowband():
 #            coeff_str = ''.join([coeff_str[len(coeff_str)/2:], coeff_str[0:len(coeff_str)/2]])
-        n_chans = self.config('n_chans')
-        bandwidth = self.config('adc_clck')/2
+        n_chans = self.get_param('n_chans')
+        bandwidth = self.get_param('adc_clk')/2
         freqs = range(0, bandwidth, bandwidth/n_chans)
 
         cal_data_set(beam_name_str, ant_str, freqs, coeffs)
