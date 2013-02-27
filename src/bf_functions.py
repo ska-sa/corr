@@ -45,57 +45,103 @@ class fbf:
 	#  helper functions
 	#-----------------------
 
-    def get_beam_param(self, param, beam):
-
-        beam_index = self.beam2index(beam)        
-        beam_index = beam_index[0]
+    def get_param(self, param):
     
         try:
-            value = self.config['bf_%s_beam%d' %(param, beam_index)] 
+            value = self.config[param]
         except:
-            self.syslogger.error('get_beam_param: bf_%s_beam%d not found' %(param, beam_index))
-        
-        return value
+            self.syslogger.error('get_param: error getting value of self.config[%s]'%param)
+            raise RuntimeError('get_param: error getting value of self.config[%s]'%param)
+        return value    
 
-    def set_beam_param(self, param, beam):
-
-        beam_index = self.beam2index(beam)        
-        beam_index = beam_index[0]
-    
+    def set_param(self, param, value):
         try:
-            self.config['bf_%s_beam%d' %(param, beam_index)] = value 
+            self.config[param] = value
         except:
-            self.syslogger.error('set_beam_param: error setting bf_%s_beam%d' %(param, beam_index))
+            self.syslogger.error('get_param: error setting value of self.config[%s]'%param)
+            raise RuntimeError('get_param: error setting value of self.config[%s]'%param)
+
+    def get_beam_param(self, beams, param):
+
+        values = []
+
+        beams = self.beams2beams(beams)
+
+        beam_indices = self.beam2index(beams)        
+        if len(beam_indices) == 0:
+            self.syslogger.error('get_beam_param: error locating beams')
+            raise RuntimeError('get_beam_param: error locating beams')
         
-        return value
+        for beam_index in beam_indices:
+            values.append(self.get_param('bf_%s_beam%d' %(param, beam_index)))
+
+        #for single item 
+        if len(values) == 1:
+            values = values[0]
+
+        return values
+
+    def set_beam_param(self, beams, param, values):
+
+        beams = self.beams2beams(beams)
+        #passing a list of length 1 same as passing a value
+        if type(values) == list and len(values) == 1:
+            values = values[0]
+
+        #check vector lengths match up
+        if type(values) == list and len(values) != len(beams):
+            self.syslogger.error('set_beam_param: beam vector must be same length as value vector if passing many values')
+            return        
+        
+        beam_indices = self.beam2index(beams)        
+        if len(beam_indices) == 0:
+            self.syslogger.error('set_beam_param: error locating beams')
+            raise RuntimeError('set_beam_param: error locating beams')
+
+        for index, beam_index in enumerate(beam_indices):
+            if type(values) == list:
+                value = values[index]
+            else:
+                value = values
+    
+            self.set_param('bf_%s_beam%d' %(param, beam_index), value) 
 
     def get_fpgas(self):
-        all_fpgas = self.c.xsrvs
-        try:
-            #if doing dummy load (no correlator), use roach names as have not got fpgas yet
-            if self.config.simulate == False:
+
+        #if doing dummy load (no correlator), use roach names as have not got fpgas yet
+        if self.config.simulate == False:
+            try: 
                 all_fpgas = self.c.xfpgas
-        except:
-            pass
+            except:
+                self.syslogger.error('get_fpgas: error accessing self.c.xfpgas')
+                raise RuntimeError('get_fpgas: error accessing self.c.xfpgas')
+        else:
+            try: 
+                all_fpgas = self.c.xsrvs
+            except:    
+                self.syslogger.error('get_fpgas: error accessing self.c.xsrvs')
+                raise RuntimeError('get_fpgas: error accessing self.c.xsrvs')
        
         return all_fpgas 
 
     def get_bfs(self):
-        all_bfs = range(self.config['bf_be_per_fpga'])
+        """get bf blocks per fpga"""
+        all_bfs = range(self.get_param('bf_be_per_fpga'))
         return all_bfs
 
     def get_beams(self):
+        """get a list of beam names in system"""
         all_beams = []
 
-        n_beams = self.config['bf_n_beams']
+        n_beams = self.get_param('bf_n_beams')
 
         for beam_index in range(n_beams):
-            all_beams.append(self.config['bf_name_beam%i'%(beam_index)])
-        
+            all_beams.append(self.get_param('bf_name_beam%i'%beam_index))
+ 
         return all_beams    
 
     def beams2beams(self,beams=all):
-        """translates all, None etc into valid beam names"""
+        """expands all, None etc into valid beam names. Checks for valid beam names"""
         new_beams = []
         
         if beams == None:
@@ -108,44 +154,36 @@ class fbf:
         else:
             if type(beams) == str:
 		beams = [beams]
-	    for beam in beams:
+
+            #weed out beam names that do not occur
+            for beam in beams:
                 try:
                     all_beams.index(beam)
                     new_beams.append(beam)
                 except:
-                    #TODO
-                    pass
+                    self.syslogger.error('beams2beams: %s not found in our system'%beam)
+                    raise RuntimeError('beams2beams: %s not found in our system'%beam)
 
         return new_beams
 
     def beam2index(self, beams=all):
         """returns index of beam with specified name"""
-        
-        all_beams = self.get_beams()       
- 
         indices = []
-        if beams == None:   
-            indices = []
-        if beams == all:
-            indices = range(len(all_beams)) 
-        else:
-	    if type(beams) == str:
-		beams = [beams]
-            for beam in beams:
-                try:
-                    indices.append(all_beams.index(beam))
-                except:
-                    #TODO
-                    pass
+
+        #expand all etc, check for valid names etc
+        beams = self.beams2beams(beams)       
+ 
+        for beam in beams:
+            indices.append(beams.index(beam))
         
         return indices 
 
-    def frequency2fpgas(self, frequencies=all, frequency_indices=[], unique=False):
+    def frequency2fpgas(self, frequencies=all, fft_bins=[], unique=False):
         """returns fpgas associated with frequencies specified. unique only returns unique fpgas"""
         fpgas = []
        
-        if len(frequency_indices) == 0:
-            frequency_indices = self.frequency2fft_bin(frequencies)
+        if len(fft_bins) == 0:
+            fft_bins = self.frequency2fft_bin(frequencies)
 
         all_fpgas = self.get_fpgas()
         
@@ -153,64 +191,69 @@ class fbf:
         n_chans_per_fpga = n_chans/len(all_fpgas)
 
         prev_index = -1
-        for freq_index in frequency_indices:
-            index = numpy.int(freq_index/n_chans_per_fpga) #floor built in
+        for fft_bin in fft_bins:
+            index = numpy.int(fft_bin/n_chans_per_fpga) #floor built in
             if (unique == False) or index != prev_index:
                 fpgas.append(all_fpgas[index])
             prev_index = index        
 
         return fpgas
 
-    def frequency2bf_label(self, frequencies=all, frequency_indices=[], unique=False): 
+    def frequency2bf_label(self, frequencies=all, fft_bins=[], unique=False): 
         """returns bf labels associated with the frequencies specified"""
  
 	bf_labels = []
         bf_be_per_fpga = len(self.get_bfs()) 
-	bf_indices = self.frequency2bf_index(frequencies, frequency_indices, unique=unique)
+	bf_indices = self.frequency2bf_index(frequencies, fft_bins, unique=unique)
 
 	for bf_index in bf_indices:
 	    bf_labels.append(numpy.mod(bf_index, bf_be_per_fpga))
 
 	return bf_labels
 
-    def frequency2bf_index(self, frequencies=all, frequency_indices=[], unique=False):
+    def frequency2bf_index(self, frequencies=all, fft_bins=[], unique=False):
         """returns bf indices associated with the frequencies specified"""
 
         bf_indices = []
 
-        if len(frequency_indices) == 0:
-            frequency_indices = self.frequency2fft_bin(frequencies)
+        if len(fft_bins) == 0:
+            fft_bins = self.frequency2fft_bin(frequencies)
 
-        n_fpgas = len(self.c.xsrvs)
+        n_fpgas = len(self.get_fpgas())
         bf_be_per_fpga = len(self.get_bfs()) 
         n_bfs = n_fpgas*bf_be_per_fpga
-        n_chans = self.config['n_chans']
+        n_chans = self.get_param('n_chans')
         n_chans_per_bf = n_chans/n_bfs
 
-	if max(frequency_indices)>n_chans-1 or min(frequency_indices) < 0:
-            self.syslogger.error('frequency2bf_index: frequency index out of range')
+	if max(fft_bins)>n_chans-1 or min(fft_bins) < 0:
+            self.syslogger.error('frequency2bf_index: fft bin/s out of range')
+            raise RuntimeError('frequency2bf_index: fft bin/s out of range')
 
-        for freq_index in frequency_indices:
-            bf_index = freq_index/n_chans_per_bf
+        for fft_bin in fft_bins:
+            bf_index = fft_bin/n_chans_per_bf
 	    if unique == False or bf_indices.count(bf_index) == 0:
-	        bf_indices.append(freq_index/n_chans_per_bf)
+	        bf_indices.append(fft_bin/n_chans_per_bf)
         
         return bf_indices
  
-    def frequency2frequency_reg_index(self, frequencies=all, frequency_indices=[]):
+    def frequency2frequency_reg_index(self, frequencies=all, fft_bins=[]):
         """Returns list of values to write into frequency register corresponding to frequency specified"""
         indices = []
 
-        if len(frequency_indices) == 0:
-            frequency_indices = self.frequency2fft_bin(frequencies)
+        if len(fft_bins) == 0:
+            fft_bins = self.frequency2fft_bin(frequencies)
 
-        n_chans = self.config['n_chans']
+        n_chans = self.get_param('n_chans')
         bf_be_per_fpga = len(self.get_bfs()) 
-        n_fpgas = len(self.c.xsrvs)
+        n_fpgas = len(self.get_fpgas())
         divisions = n_fpgas * bf_be_per_fpga
+	
+        if max(fft_bins)>n_chans-1 or min(fft_bins) < 0:
+            self.syslogger.error('frequency2frequency_reg_index: fft bin/s out of range')
+            raise RuntimeError('frequency2frequency_reg_index: fft bin/s out of range')
 
-        for freq in frequency_indices:
-            indices.append(numpy.mod(freq, n_chans/divisions))
+        for fft_bin in fft_bins:
+            indices.append(numpy.mod(fft_bin, n_chans/divisions))
 
         return indices
 
@@ -218,15 +261,14 @@ class fbf:
         """returns fft bin associated with specified frequencies""" 
         fft_bins = []
     
-        n_chans = self.config['n_chans']
+        n_chans = self.get_param('n_chans')
  
         if frequencies == None: 
             fft_bins = []
         elif frequencies == all:
             fft_bins = range(n_chans)
         else:
-            n_chans = self.config['n_chans']
-            bandwidth = (self.config['adc_clk']/2)
+            bandwidth = (self.get_param('adc_clk')/2)
             start_freq = 0
             channel_width = bandwidth/n_chans
             for frequency in frequencies:
@@ -238,9 +280,9 @@ class fbf:
     def get_bf_bandwidth(self):
 	"""Returns the bandwidth for one bf engine"""
         
-	bandwidth = (self.config['adc_clk']/2)
+	bandwidth = (self.get_param('adc_clk')/2)
         bf_be_per_fpga = len(self.get_bfs()) 
-        n_fpgas = len(self.c.xsrvs)
+        n_fpgas = len(self.get_fpgas())
    
 	bf_bandwidth = float(bandwidth)/(bf_be_per_fpga*n_fpgas)
 	return bf_bandwidth 
@@ -250,15 +292,15 @@ class fbf:
         
 	n_chans = self.config['n_chans']
         bf_be_per_fpga = len(self.get_bfs()) 
-        n_fpgas = len(self.c.xsrvs)
+        n_fpgas = len(self.get_fpgas())
 
 	bf_fft_bins = n_chans/(bf_be_per_fpga*n_fpgas)
 	return bf_fft_bins	
 
     def get_fft_bin_bandwidth(self):
 	"""get bandwidth of single fft bin"""
-	n_chans = self.config['n_chans']
-        bandwidth = (self.config['adc_clk']/2)
+	n_chans = self.get_param('n_chans')
+        bandwidth = self.get_param('adc_clk')/2
 
 	fft_bin_bandwidth = bandwidth/n_chans
 	return fft_bin_bandwidth
@@ -266,7 +308,7 @@ class fbf:
     def fft_bin2frequency(self, fft_bins=all):
         """returns a list of centre frequencies associated with the fft bins supplied"""
 	frequencies = []
-	n_chans = self.config['n_chans']
+	n_chans = self.get_param('n_chans')
 
 	if fft_bins == all:
 	    fft_bins = range(n_chans)
@@ -276,33 +318,32 @@ class fbf:
 
 	if max(fft_bins) > n_chans or min(fft_bins) < 0:
             self.syslogger.error("fft_bin2frequency: fft_bins out of range 0 -> %d"%(n_chans-1))
-	    return frequencies
-        bandwidth = self.config['adc_clk']/2
+            raise RuntimeError("fft_bin2frequency: fft_bins out of range 0 -> %d"%(n_chans-1))
+	    
+        bandwidth = self.get_param('adc_clk')/2
 	
 	for fft_bin in fft_bins:
 	    frequencies.append((float(fft_bin)/n_chans)*bandwidth)
 
 	return frequencies
 
-    def frequency2fpga_bf(self, frequencies=all, frequency_indices=[], unique=False):
+    def frequency2fpga_bf(self, frequencies=all, fft_bins=[], unique=False):
         """returns a list of dictionaries {fpga, beamformer_index} based on frequency. unique gives only unique values"""
         locations = []
     
         if unique != True and unique != False:
             self.syslogger.error("frequency2fpga_bf: unique must be True or False")
-            return
+            raise RuntimeError("frequency2fpga_bf: unique must be True or False")
 
-        if len(frequency_indices) == 0:
-            frequency_indices = self.frequency2fft_bin(frequencies)
+        if len(fft_bins) == 0:
+            fft_bins = self.frequency2fft_bin(frequencies)
         
-        fpgas = self.frequency2fpgas(frequency_indices = frequency_indices)
-        bfs = self.frequency2bf_label(frequency_indices = frequency_indices)
+        fpgas = self.frequency2fpgas(fft_bins=fft_bins)
+        bfs = self.frequency2bf_label(fft_bins=fft_bins)
        
-#        print 'frequency2fpga_bf: len(fpgas) = %i, len(bfs) = %i' %(len(fpgas),len(bfs))
-         
         if len(fpgas) != len(bfs):
-            #TODO
             self.syslogger.error("frequency2fpga_bf: fpga and bfs associated with frequencies not the same length")
+            raise RuntimeError("frequency2fpga_bf: fpga and bfs associated with frequencies not the same length")
         else:
             pfpga = [] 
             pbf = []
@@ -315,16 +356,16 @@ class fbf:
 
         return locations
 
-    def beam_frequency2location_fpga_bf(self, beams=all, frequencies=all, beam_indices=[], frequency_indices=[], unique=False):
+    def beam_frequency2location_fpga_bf(self, beams=all, frequencies=all, fft_bins=[], unique=False):
         """returns list of dictionaries {location, fpga, beamformer index} based on beam name, and frequency"""
        
         indices = [] 
 
         #get beam locations 
-        locations = self.beam2location(beams, beam_indices)
+        locations = self.beam2location(beams)
 
         #get fpgas and bfs
-        fpgas_bfs = self.frequency2fpga_bf(frequencies, frequency_indices, unique)
+        fpgas_bfs = self.frequency2fpga_bf(frequencies, fft_bins, unique)
 
         for location in locations:            
             for fpga_bf in fpgas_bfs:
@@ -334,18 +375,17 @@ class fbf:
 
         return indices         
    
-    def beam2location(self, beams=all, beam_indices=[]):
+    def beam2location(self, beams=all):
         """returns location of beam with associated name or index"""
 
         locations = []
 
-        if len(beam_indices) == 0:
-            beam_indices = self.beam2index(beams)
+        beams = self.beams2beams(beams)
 
-        for beam_index in beam_indices:
-            beam_location = self.config['bf_location_beam%i'%(beam_index)]
+        for beam in beams:
+            beam_location = self.get_beam_param(beam, 'location')
             locations.append(beam_location)
-        
+       
         return locations 
  
     def antenna2antenna_indices(self, antennas=all, antenna_indices=[]):
@@ -359,10 +399,10 @@ class fbf:
             
         return antenna_indices
 
-    def write_int(self, device_name, data, offset=0, frequencies=all, frequency_indices=[]):
+    def write_int(self, device_name, data, offset=0, frequencies=all, fft_bins=[]):
         """Writes data to all devices on all bfs in all fpgas associated with the frequencies specified"""
         #get all unique fpgas, bfs associated with this beam 
-        targets = self.frequency2fpga_bf(frequencies, frequency_indices, unique=True)
+        targets = self.frequency2fpga_bf(frequencies, fft_bins, unique=True)
         
         if len(data) > 1 and len(targets) != len(data): 
             self.syslogger.error('write_int: many data but size (%d) does not match length of targets (%d)'%(len(data), len(targets)))
@@ -378,12 +418,29 @@ class fbf:
             #pretend to write if no FPGA
             if self.config.simulate == True:
                 print 'dummy write of 0x%.8x to %s:%s offset %i'%(datum, target['fpga'], name, offset)
-                pass
             else:
                 try:
                     target['fpga'].write_int(device_name=name, integer=datum, offset=offset)
                 except:
-                    self.syslogger.error('write_int: error writing to %s in FPGA' %device_name)
+                    self.syslogger.error('write_int: error writing of 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset))
+    
+    def read_int(self, device_name, offset=0, frequencies=all, fft_bins=[]):
+        """Reads data from all devices on all bfs in all fpgas associated with the frequencies specified"""
+        #get all unique fpgas, bfs associated with the specified frequencies 
+        values = []
+        targets = self.frequency2fpga_bf(frequencies, fft_bins, unique=True)
+        
+        for target_index,target in enumerate(targets):
+            name = '%s%s_%s' %(self.config['bf_register_prefix'], target['bf'], device_name)
+ 
+            #pretend to read if no FPGA
+            if self.config.simulate == True:
+                print 'dummy read from %s:%s offset %i'%(target['fpga'], name, offset)
+            else:
+                try:
+                    values.append(target['fpga'].read_int(device_name=name, offset=offset))
+                except:
+                    self.syslogger.error('read_int: error reading from %s:%s offset %i' %(target['fpga'], name, offset))
     
     def bf_control_lookup(self, destination, write='on', read='on'):
         control = 0
@@ -412,34 +469,95 @@ class fbf:
             control = control | (id << 16) 
         return control
 
-    #untested
+    def bf_read_int(self, beam, destination, offset=0, antennas=None, frequencies=None, fft_bins=[]):
+        """read from destination in the bf block for a particular beam"""
+        
+        values = []
+        if destination == 'calibrate':
+            if antennas == None:
+                self.syslogger.error('bf_read_int: need to specify an antenna when reading from calibrate block')
+                return
+            if frequencies==None and len(fft_bins)==0:
+                self.syslogger.error('bf_read_int: need to specify a frequency or fft bin when reading from calibrate block')
+                return
+        elif destination == 'filter':
+            if antennas != None:
+                self.syslogger.error('bf_read_int: can''t specify antenna when reading from filter block')
+                return
+        else:
+            self.syslogger.error('bf_read_int: invalid destination: %s' %destination)
+            return
+         
+        if len(fft_bins) == 0:
+            fft_bins = self.frequency2fft_bin(frequencies)
+
+        location = self.beam2location(beams=beam)
+        
+        if len(location) == 0:
+            print 'bf_read_int: you must specify a valid beam to write to'
+            return
+
+        #look up control value required to read 
+        control = self.bf_control_lookup(destination, write='off', read='on')
+        print 'bf_read_int: disabling writes, setting up reads' 
+        self.write_int('control', [control], 0, fft_bins=fft_bins)
+        
+        antenna_indices = self.antenna2antenna_indices(antennas=antennas)
+
+        print 'bf_read_int: setting up location' 
+        #set up target stream (location of beam in set )
+        self.write_int('stream', [location[0]], 0, fft_bins=fft_bins)
+
+        #go through antennas (normally just one but may be all or none)
+        for antenna_index in antenna_indices:
+            
+            print 'bf_read_int: setting up antenna' 
+            #set up antenna register
+            self.write_int('antenna', [antenna_index], 0, fft_bins=fft_bins)
+           
+            #cycle through frequencies (cannot have frequencies without antenna component) 
+            for index, fft_bin in enumerate(fft_bins):
+                
+                frequency = frequencies[index]
+
+                print 'bf_read_int: setting up frequency' 
+                #set up frequency register
+                self.write_int('frequency', [self.frequency2frequency_reg_indices(fft_bins=[fft_bin])], 0, fft_bins=[fft_bin])
+              
+            #if no frequency component, read 
+            if len(fft_bins) == 0:
+                #read
+                print 'bf_read_int: reading for no frequencies' 
+                values = self.read_int('value_out', offset=0, fft_bins=fft_bins)      
+
+        if len(antenna_indices) == 0:
+            #read
+            print 'bf_read_int: reading for no antennas' 
+            self.read_int('value_out', offset=0, fft_bins=fft_bins)      
+
     #TODO ensure this function call is monotonic due to potential race conditions
-    def bf_write_int(self, destination, data, offset=0, beams=all, beam_indices=[], antennas=None, frequencies=None, frequency_indices=[]):
+    def bf_write_int(self, destination, data, offset=0, beams=all, antennas=None, frequencies=None, fft_bins=[]):
         """write to various destinations in the bf block for a particular beam"""
 
         if destination == 'calibrate':
             if antennas == None:
                 self.syslogger.error('bf_write_int: need to specify an antenna when writing to calibrate block')
                 return
-            if frequencies == None:
-                self.syslogger.error('bf_write_int: need to specify a frequency when writing to calibrate block')
+            if frequencies == None and len(fft_bins) == 0:
+                self.syslogger.error('bf_write_int: need to specify a frequency or fft bin when writing to calibrate block')
                 return
         elif destination == 'filter':
             if antennas != None:
                 self.syslogger.error('bf_write_int: can''t specify antenna for filter block')
                 return
         else:
-            self.syslogger.error('bf_write_int: invalid destination: ' %destination)
+            self.syslogger.error('bf_write_int: invalid destination: %s' %destination)
             return
 
-#        if antennas==None and frequencies!=None:
-#            self.syslogger.error('bf_write_int: cannot write to frequencies without antennas being specified')
-#            return
+        if len(fft_bins) == 0:
+            fft_bins = self.frequency2fft_bin(frequencies)
 
-        if len(frequency_indices) == 0:
-            frequency_indices = self.frequency2fft_bin(frequencies)
-
-        locations = self.beam2location(beams=beams, beam_indices=beam_indices)
+        locations = self.beam2location(beams=beams)
         
         if len(locations) == 0:
             print 'bf_write_int: you must specify a valid beam to write to'
@@ -447,13 +565,13 @@ class fbf:
 
         #disable writes
         print 'bf_write_int: disabling everything' 
-        self.write_int('control', [0x0], 0, frequency_indices=frequency_indices)
+        self.write_int('control', [0x0], 0, fft_bins=fft_bins)
         
         if len(data) == 1:
 
             print 'bf_write_int: setting up data for single data item' 
             #set up the value to be written
-            self.write_int('value_in', data, offset, frequency_indices=frequency_indices)
+            self.write_int('value_in', data, offset, fft_bins=fft_bins)
 
         #look up control value required to write when triggering write
         control = self.bf_control_lookup(destination, write='on', read='on')
@@ -465,43 +583,44 @@ class fbf:
            
             print 'bf_write_int: setting up location' 
             #set up target stream (location of beam in set )
-            self.write_int('stream', [location], 0, frequency_indices=frequency_indices)
+            self.write_int('stream', [location], 0, fft_bins=fft_bins)
 
             #go through antennas (normally just one but may be all or none)
             for antenna_index in antenna_indices:
                 
                 print 'bf_write_int: setting up antenna' 
                 #set up antenna register
-                self.write_int('antenna', [antenna_index], 0, frequency_indices=frequency_indices)
+                self.write_int('antenna', [antenna_index], 0, fft_bins=fft_bins)
                
                 #cycle through frequencies (cannot have frequencies without antenna component) 
-                for frequency_index in frequency_indices:
+                for index, fft_bin in enumerate(fft_bins):
                     
-                    frequency = frequencies[frequency_index]
+                    frequency = frequencies[index]
 
                     print 'bf_write_int: setting up frequency' 
                     #set up frequency register
-                    self.write_int('frequency', [self.frequency2frequency_reg_indices(frequency_indices=[frequency_index])], 0, frequency_indices=frequency_indices)
+                    self.write_int('frequency', [self.frequency2frequency_reg_indices(fft_bins=[fft_bin])], 0, fft_bins=[fft_bin])
                   
                     #we have a vector of data (one for every frequency)
                     if len(data) > 1:
                         #set up the value to be written
-                        self.write_int('value_in', [data[frequency_index]], 0, frequency_indices=frequency_indices)
+                        self.write_int('value_in', [data[index]], 0, fft_bins=fft_bins)
  
                     #trigger the write
-                    self.write_int('control', [control], 0, frequency_indices=frequency_indices)      
+                    print 'bf_write_int: triggering for vector of frequencies' 
+                    self.write_int('control', [control], 0, fft_bins=fft_bins)      
 
                 #if no frequency component, trigger
-                if len(frequency_indices) == 0:
+                if len(fft_bins) == 0:
                     #trigger the write
                     print 'bf_write_int: triggering for no frequencies' 
-                    self.write_int('control', [control], 0, frequency_indices=frequency_indices)      
+                    self.write_int('control', [control], 0, fft_bins=fft_bins)      
             
             #if no antenna component, trigger write
             if len(antenna_indices) == 0:
                 #trigger the write
                 print 'bf_write_int: triggering for no antennas' 
-                self.write_int('control', [control], 0, frequency_indices=frequency_indices)      
+                self.write_int('control', [control], 0, fft_bins=fft_bins)      
 
     def cf_bw2fft_bins(self, centre_frequency, bandwidth):
         """returns fft bins associated with provided centre_frequency and bandwidth"""
@@ -530,8 +649,8 @@ class fbf:
         """Returns fft bins representing band that is enabled for beam"""
         bins = []        
 
-        cf = self.get_beam_param('centre_frequency', beam)  
-        bw = self.get_beam_param('bandwidth', beam)  
+        cf = self.get_beam_param(beam, 'centre_frequency')  
+        bw = self.get_beam_param(beam, 'bandwidth')  
     
         bins = self.cf_bw2fft_bins(cf, bw)
         return bins
@@ -598,32 +717,32 @@ class fbf:
                         print 'disabling excluded bfs'
 
                     #disable bfs not required via the filter block in the beamformer
-                    self.bf_write_int(destination='filter', data=[0x0], offset=0x0, beams=beam, frequency_indices=disabled_fft_bins)  
+                    self.bf_write_int(destination='filter', data=[0x0], offset=0x0, beams=beam, fft_bins=disabled_fft_bins)  
                     
                     if self.config.simulate == True:
                         print 'configuring excluded bfs'
 
                     #configure disabled beamformers to output HEAP size of 0
                     bf_config = ((beam_index << 16) & 0xffff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff) 
-                    self.write_int('cfg%i'%beam_index, [bf_config], 0, frequency_indices=disabled_fft_bins)
+                    self.write_int('cfg%i'%beam_index, [bf_config], 0, fft_bins=disabled_fft_bins)
                 
                 #get frequency_indices associated with enabled parts of beams
                 enabled_fft_bins = self.get_enabled_fft_bins(beam)
         
                 #generate vector of values that will match the number of bfs in the list
-                fpga_bf_e = self.frequency2fpga_bf(frequency_indices=enabled_fft_bins, unique=True)
+                fpga_bf_e = self.frequency2fpga_bf(fft_bins=enabled_fft_bins, unique=True)
                 bf_config = []
                 for offset in range(len(fpga_bf_e)):
                     bf_config.append((beam_index << 16) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
                 
                 if self.config.simulate == True:
                     print 'configuring included bfs'
-                self.write_int('cfg%i'%beam_index, bf_config, 0, frequency_indices=enabled_fft_bins)
+                self.write_int('cfg%i'%beam_index, bf_config, 0, fft_bins=enabled_fft_bins)
 
                 if self.config.simulate == True:
                     print 'enabling included bfs'
                 #lastly enable those parts
-                self.bf_write_int(destination='filter', data=[0x1], offset=0x0, beams=beam, frequency_indices = enabled_fft_bins)  
+                self.bf_write_int(destination='filter', data=[0x1], offset=0x0, beams=beam, fft_bins = enabled_fft_bins)  
                 self.syslogger.info('Output for %s started' %(beam))
         else:
             self.syslogger.error('Sorry, your output type is not supported. Could not enable output.')
@@ -658,69 +777,77 @@ class fbf:
     
     #untested
     #TODO
-    def tx_status_get(self):
+    def tx_status_get(self, beams):
         """Returns boolean true/false if the beamformer is currently outputting data. Currently only works on systems with 10GbE output."""
-        if self.config['out_type']!='10gbe': 
+        if self.get_param('out_type')!='10gbe': 
             self.syslogger.warn("This function only works for systems with 10GbE output!")
             return False
         rv=True
+
+        #check 10Ge cores are not in reset
         stat=self.c.xeng_ctrl_get_all()
         
-        for xn,xsrv in enumerate(self.c.xsrvs):
+        for xn in range(len(stat[xn])):
             if stat[xn]['gbe_out_rst']!=False: rv=False
-        self.syslogger.info('Beamformer output for beam %s is currently %s'%(beam, 'enabled' if rv else 'disabled'))
+        
+        self.syslogger.info('10Ge output is currently %s'%('enabled' if rv else 'disabled'))
+
+        #read output status of beams
+
         return rv
 
     def config_udp_output(self, beams=all, dest_ip_str=None, dest_port=None):
         """Configures the destination IP and port for B engine outputs. dest_port and dest_ip are optional parameters to override the config file defaults."""
-        beam_indices = self.beam2index(beams)            
+        beams = self.beams2beams(beams)
 
-        for beam_index in beam_indices:
+        for beam in beams:
 
             if dest_ip_str==None:
-                dest_ip_str=self.config['bf_rx_udp_ip_str_beam%i'%(beam_index)]
+                dest_ip_str=self.get_beam_param(beam, 'rx_udp_ip_str')
             else:
-                self.config['bf_rx_udp_ip_str_beam%i' %(beam_index)]=dest_ip_str
-                self.config['bf_rx_udp_ip_beam%i' %(beam_index)]=struct.unpack('>L',socket.inet_aton(dest_ip_str))[0]
-                self.config['bf_rx_meta_ip_str_beam%i' %(beam_index)]=dest_ip_str
-                self.config['bf_rx_meta_ip_beam%i' %(beam_index)]=struct.unpack('>L',socket.inet_aton(dest_ip_str))[0]
+                self.set_beam_param(beam, 'rx_udp_ip_str', dest_ip_str)
+                self.set_beam_param(beam, 'rx_udp_ip', struct.unpack('>L',socket.inet_aton(dest_ip_str))[0])
+                self.set_beam_param(beam, 'rx_meta_ip_str', dest_ip_str)
+                self.set_beam_param(beam, 'rx_meta_ip', struct.unpack('>L',socket.inet_aton(dest_ip_str))[0])
 
             if dest_port==None:
-                dest_port=self.config['bf_rx_udp_port_beam%i' %(beam_index)]
+                dest_port=self.get_beam_param(beam, 'rx_udp_port')
             else:
-                self.config['bf_rx_udp_port_beam%i' %(beam_index)]=dest_port
+                self.set_beam_param(beam, 'rx_udp_port', dest_port)
 
-            beam_offset = self.config['bf_location_beam%i'%(beam_index)]
+            beam_offset = self.get_beam_param(beam, 'location')
 
             dest_ip = struct.unpack('>L',socket.inet_aton(dest_ip_str))[0]
 
             self.write_int('dest', data=[dest_ip], offset=(beam_offset*2))                     
             self.write_int('dest', data=[dest_port], offset=(beam_offset*2+1))                     
             #each beam output from each beamformer group can be configured differently
-            self.syslogger.info("Beam %s configured to output to %s:%i." %(beam_index, dest_ip_str, dest_port))
+            self.syslogger.info("Beam %s configured to output to %s:%i." %(beam, dest_ip_str, dest_port))
 
-    def set_centre_frequency_bandwidth(self, beams=all, centre_frequency=None, bandwidth=None):
-        """sets the centre frequency and bandwidth for the specified beam"""
+    def set_passband(self, beams=all, centre_frequency=None, bandwidth=None):
+        """sets the centre frequency and/or bandwidth for the specified beams"""
 
-        #convert to indices
-        beam_indices = self.beam2index(beams)
+        beams = self.beams2beams(beams)
        
-        for index,beam in enumerate(beam_indices):
-            beam_index = beam_indices[index]
+        for beam in beams:
             
-            try:
-                if centre_frequency != None:
-                    self.config['bf_centre_frequency_beam%d' %(index)] = centre_frequency
-		    self.syslogger.info('xBeamformer output for beam %s is currently %s'%(beam, 'enabled' if rv else 'disabled'))
-            except:
-                pass
-            try:
-                if bandwidth != None:
-                    self.config['bf_bandwidth_beam%d' %(index)] = bandwidth
-            except:
-                pass
+            if centre_frequency != None:
+                set_beam_param(beam, 'centre_frequency', centre_frequency)
+
+            if bandwidth != None:
+                set_beam_param(beam, 'bandwidth', bandwidth)
+        
+            if centre_frequency != None or bandwidth != None:
+                self.tx_stop(beam)
+                self.tx_start(beam)
+                self.syslogger.info('Restarted beam %s with new passband parameters'%beam)
+            
+            if centre_frequency != None:
+                self.syslogger.info('Centre frequency for beam %s set to %i Hz'%(beam, centre_frequency))
+            if bandwidth != None:
+                self.syslogger.info('Bandwidth for beam %s set to %i Hz'%(beam, bandwidth))
     
-    def get_centre_frequency(self, beam):
+    def get_passband(self, beam):
         """gets the centre frequency and bandwidth for the specified beam"""
     
         fft_bins = self.get_enabled_fft_bins(beam)
@@ -732,49 +859,48 @@ class fbf:
 	start_frequency = min(bfs)*bf_bandwidth-fft_bin_bandwidth/2
 	centre_frequency = start_frequency+bf_bandwidth*(float(len(bfs))/2)
 
-	return centre_frequency
-    
-    def get_bandwidth(self, beam):
-        """gets the bandwidth for the specified beam"""
-
-        fft_bins = self.get_enabled_fft_bins(beam)
-	bfs = self.frequency2bf_index(frequency_indices=fft_bins, unique=True)
-	bf_bandwidth = self.get_bf_bandwidth()
 	beam_bandwidth = len(bfs) * bf_bandwidth
-	return beam_bandwidth
+	
+        return centre_frequency, beam_bandwidth
 
 #   CALIBRATION 
 
-    def cal_set_all(self, init_poly = [], init_coeffs = []):
+    #TODO
+    def cal_set_all(self, beam, init_poly = [], init_coeffs = []):
         """Initialise all antennas for all beams' calibration factors to given polynomial. If no polynomial or coefficients are given, use defaults from config file."""
 
+        for in_n, ant_str in enumerate(self.config._get_ant_mapping_list()):
+            self.cal_spectrum_set(beam = beam, ant_str = ant_str, init_coeffs = init_coeffs, init_poly = init_poly)
+        self.syslogger.info('Set all calibration values for beam %s.'%beam)
+    
     #untested
-    #TODO many beams and antennas
-    def cal_default_get(self, beam, antenna):
+    def cal_default_get(self, beam, ant_str):
         "Fetches the default calibration configuration from the config file and returns a list of the coefficients for a given beam and antenna." 
 
-        n_coeffs = self.config['n_chans']
+        n_coeffs = self.get_param('n_chans')
+        input_n  = self.c.map_ant_to_input(ant_str)
 
-        if self.config['bf_cal_default'] == 'coeffs':
-            calibration = self.config['bf_cal_coeffs_input%i_beam%i'%(input_n, beam_index)]
+        bf_cal_default = self.get_param('bf_cal_default')
+        if bf_cal_default == 'coeffs':
+            calibration = self.get_beam_param(beam, 'cal_coeffs_input%i'%input_n)
 
-        elif self.config['bf_cal_default'] == 'poly':
-            poly = get_beam_param(beam, 'bf_cal_poly_beam%i_input%i' %(beam_index, input_n)]
-            calibration = numpy.polyval(poly, range(self.config['n_chans']))
-            if self.config['bf_cal_type'] == 'complex':
+        elif bf_cal_default == 'poly':
+            poly = self.get_beam_param(beam, 'cal_poly_input%i' %input_n)
+            calibration = numpy.polyval(poly, range(n_coeffs))
+            if self.get_param('bf_cal_type') == 'complex':
                 calibration = [cal+0*1j for cal in calibration]
         else: 
-            raise RuntimeError("Your cal type, %s, is not understood." % self.config['bf_cal_type'])
+            raise RuntimeError("cal_default_get: Your default beamformer calibration type, %s, is not understood." %bf_cal_default)
                 
         if len(calibration) != n_coeffs:
-            raise RuntimeError("Something's wrong. I have %i calibration coefficients when I should have %i." % (len(calibration), n_coeffs))
+            raise RuntimeError("cal_default_get: Something's wrong. I have %i calibration coefficients when I should have %i." % (len(calibration), n_coeffs))
         return calibration
 
     def cal_spectrum_get(self, beams, beam_indices, input_n):
         """Retrieves the calibration settings currently programmed in all bengines for the given beam and antenna. Returns an array of length n_chans."""
 
     #untested
-    def cal_data_set(self, beams, beam_indices, ants, ant_indices, frequencies, data):
+    def cal_data_set(self, beam, ant_str, frequencies, data):
         """Set a given beam and antenna calibration setting to given value"""
 
         for index, datum in enumerate(data):
@@ -783,23 +909,23 @@ class fbf:
             datum_imag = numpy.imag(datum)        
 
             if max(datum_real) > ((2**15)-1) or min(datum_real)<-((2**15)-1):
-                print 'beamformer real calibration values out of range'
+                self.syslogger.error('cal_data_set:beamformer real calibration values out of range')
             if max(datum_imag) > ((2**15)-1) or min(datum_imag)<-((2**15)-1):
-                print 'beamformer imaginary calibration values out of range'
+                self.syslogger.error('beamformer imaginary calibration values out of range')
             #pack real and imaginary values
             values[index] = (numpy.uint32(datum_real) << 16) | (numpy.uint32(datum_imag) | 0x0000FFFF)
      
         bf_write_int('calibrate', values, 0, beams=beams, beam_indices=beam_indices, antennas=ants, frequencies=frequencies)
     
     #untested
-    def cal_spectrum_set(self, beams, beam_indices, ants, init_coeffs = [], init_poly = []):
+    def cal_spectrum_set(self, beam, ants, init_coeffs = [], init_poly = []):
         """Set given beam and antenna calibration settings to given co-efficients."""
 
         n_coeffs = self.config['n_chans'] 
-        beam  = self.beam2index(beam_name_str)
+        beam  = self.beam2index(beam)
         
         if init_coeffs == [] and init_poly == []: 
-            coeffs = self.bf_cal_default_get(beam=beams, beam_indices=beam_indices, antenna=ants)
+            coeffs = self.bf_cal_default_get(beam=beam, beam_indices=beam_indices, antenna=ants)
         elif len(init_coeffs) == n_coeffs:
             coeffs = init_coeffs
         elif len(init_coeffs)>0: 
@@ -807,9 +933,10 @@ class fbf:
         else:
             coeffs = numpy.polyval(init_poly, range(self.config['n_chans']))
         
-        if self.config['bf_cal_type'] == 'scalar':
+        bf_cal_type = self.get_param('bf_cal_type')
+        if bf_cal_type == 'scalar':
             coeffs = numpy.real(coeffs) 
-        elif self.config['eq_type'] == 'complex':
+        elif self.config('bf_cal_type') == 'complex':
             coeffs = numpy.array(coeffs, dtype = numpy.complex128)
         else:
             log_runtimeerror(self.floggers[ffpga_n], "Sorry, your beamformer calibration type is not supported. Expecting scalar or complex.")
@@ -848,23 +975,21 @@ class fbf:
     def spead_config_output(self, beams=all):
         '''Sets up configuration registers controlling SPEAD output for beams specified'''
         
+        beams = self.beams2beams(beams)
         beam_indices = self.beam2index(beams) 
-        bf_prefix = self.config['bf_register_prefix']
-        n_ants = self.config['n_ants']
-        bf_be_per_fpga = self.config['bf_be_per_fpga']        
+        bf_prefix = self.get_param('bf_register_prefix')
+        n_ants = self.get_param('n_ants')
+        bf_be_per_fpga = self.get_param('bf_be_per_fpga')        
 
         #go through all beams
-        for beam in beam_indices:
-            location = self.config['bf_location_beam%i'%(beam)]        
-            beam_id = beam
+        for index, beam in enumerate(beams):
+            location = self.get_beam_param(beam, 'location')        
+            beam_id = beam_indices[index]
 
             #TODO cater for not whole range 
             bf_indices = range(n_ants * bf_be_per_fpga)
  
-            if self.config.simulate == False:
-                beam_fpgas = self.c.xfpgas
-            else:
-                beam_fpgas = self.c.xsrvs
+            beam_fpgas = self.get_fpgas()
 
             for index in range(len(bf_indices)):
                 bf_index = bf_indices[index]
