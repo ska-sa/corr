@@ -41,12 +41,21 @@ class DeviceExampleServer(katcp.DeviceServer):
         except:
             return ("fail", "Something broke spectacularly. Check the log.")
 
-    @request(Str(default='/etc/corr/default'), Int(default=100))
+    @request(Str(default='/etc/corr/default'), Str(default='corr'), Int(default=100))
     @return_reply()
-    def request_connect(self, sock, config_file, log_len):
-        """Connect to all the ROACH boards. Please specify the config file and the log length. Clears any existing log. Call this again if you make external changes to the config file to reload it."""
+    def request_connect(self, sock, config_file, obs_mode, log_len):
+        """Connect to all the ROACH boards. Please specify the config file, operational mode and the log length. Clears any existing log. Call this again if you make external changes to the config file to reload it. Operational mode can be 'corr' for correlator or 'tied' for beamformer."""
         self.lh = corr.log_handlers.DebugLogHandler(log_len)
-        self.c = corr.corr_functions.Correlator(config_file=config_file,log_handler=self.lh,log_level=logging.INFO)
+        try:
+            self.c = corr.corr_functions.Correlator(config_file=config_file,log_handler=self.lh,log_level=logging.INFO)
+        except Exception as e:
+            return ("fail", "Something broke spectacularly: %s."%e)
+        if obs_mode == 'tied':
+            try:
+                # Initiate beamformer object
+                self.b = corr.bf_functions.fbf(host_correlator=self.c)
+            except:
+                return ("fail", "Something broke spectacularly. Check the log.")
         return ("ok",)
 
     @request(include_msg=True)
@@ -67,28 +76,24 @@ class DeviceExampleServer(katcp.DeviceServer):
     @request(Int(default=100))
     @return_reply()
     def request_initialise(self, sock, n_retries):
-        """Initialise the correlator. This programs the FPGAs, configures network interfaces etc. Includes error checks. Consult the log in event of errors."""
+        """Initialise the correlator. This programs the FPGAs, configures network interfaces etc. Includes error checks. Beamformer mode will update and add relevant functionality and SPEAD metadata. Consult the log in event of errors."""
+        # First initiate the correlator
         if self.c is None:
             return ("fail","... you haven't connected yet!")
         try: 
             self.c.initialise(n_retries)
-            return ("ok",)
         except:
             return ("fail","Something broke. Check the log.")
 
-    @request(Int(default=20))
-    @return_reply()
-    def request_beamformer(self, sock, log_level):
-        """Extends the correlator by adding a connection to the beamformer. Update all relevant config data. Initialise beamformer and send relevant beamformer SPEAD metadata"""
-        if self.c is None:
-            return ("fail","... you must connect and initialise the correlator first!")
-        # Initiate beamformer object
-        self.b = corr.bf_functions.fbf(host_correlator=self.c)
-        try:
-          self.b.initialise()
-          return ("ok",)
-        except:
-          return("fail","Could not initiate beamformer.")
+        # Next, if beamformer object is instantiated, initiate the beamformer
+        if self.b is not None:
+            try:
+              self.b.initialise()
+            except:
+              return("fail","Could not initiate beamformer.")
+
+        return ("ok",)
+
 
     @request(include_msg=True)
     @return_reply(Int(min=0))
