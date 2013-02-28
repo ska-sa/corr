@@ -123,7 +123,7 @@ class DeviceExampleServer(katcp.DeviceServer):
             return ("fail","... you haven't connected yet!")
         self.c.log_handler.clear()
         return ("ok",)
-    
+
     @request(Int(),Str())
     @return_reply(Str())
     def request_label_input(self, sock, input_n, ant_str):
@@ -136,7 +136,7 @@ class DeviceExampleServer(katcp.DeviceServer):
         else:
             #return("fail","it broke.")
             return("fail","Sorry, your input number is invalid. Valid range: 0 to %i."%(self.c.config['n_inputs']-1))
-           
+
 
     @return_reply(Str(),Str())
     def request_tx_start(self, sock, orgmsg):
@@ -215,7 +215,7 @@ class DeviceExampleServer(katcp.DeviceServer):
             return katcp.Message.reply(orgmsg.name,"ok",len(stat))
         except:
             return katcp.Message.reply(orgmsg.name,"fail","Something broke spectacularly and the check didn't complete. Scrutinise the log.")
-            
+
     @request()
     @return_reply(Int(min=0))
     def request_resync(self, sock):
@@ -254,7 +254,7 @@ class DeviceExampleServer(katcp.DeviceServer):
             return katcp.Message.reply(orgmsg.name,'ok',str(len(snap_data)))
         except:
             return katcp.Message.reply(orgmsg.name,"fail","something broke. sorry.")
-             
+
     @request(Str(),include_msg=True)
     def request_get_adc_snapshot(self, sock, orgmsg, ant_str):
         """Grabs a snapshot of data from the antenna specified."""
@@ -268,7 +268,7 @@ class DeviceExampleServer(katcp.DeviceServer):
             #return katcp.Message.reply(orgmsg.name,'ok','Awaiting rewrite!')
         except:
             return katcp.Message.reply(orgmsg.name,'fail',"something broke. oops.")
-           
+
     @request(Str(),Int(default=1),include_msg=True)
     def request_get_quant_snapshot(self, sock, orgmsg, ant_str, n_spectra):
         """Grabs a snapshot of data from the quantiser for antenna specified. Optional: number of spectra to grab (default 1)."""
@@ -311,7 +311,7 @@ class DeviceExampleServer(katcp.DeviceServer):
             return ("ok",act_period)
         except:
             return ("fail","Something broke spectacularly and the request didn't complete. Scrutinise the log.")
-            
+
     @request(include_msg=True)
     @return_reply(Int())
     def request_get_input_levs(self, sock, orgmsg):
@@ -331,7 +331,7 @@ class DeviceExampleServer(katcp.DeviceServer):
                 stat = 'ok'
             self.reply_inform(sock, katcp.Message.inform(orgmsg.name,ant_str,"%2.2f"%ampl['input_rms_dbm'],stat),orgmsg)
         return ("ok", len(amps))
-        
+
     @request(include_msg=True)
     @return_reply(Int())
     def request_get_ant_status(self, sock, orgmsg):
@@ -347,7 +347,7 @@ class DeviceExampleServer(katcp.DeviceServer):
                 out_str.append(str(fstat[i][ent]))
             self.reply_inform(sock, katcp.Message.inform(orgmsg.name,i,*out_str),orgmsg)
         return ("ok", len(fstat))
-        
+
     @request(Str(),include_msg=True)
     def request_eq_get(self, sock, orgmsg, ant_str):
         """Get the current EQ configuration."""
@@ -357,7 +357,7 @@ class DeviceExampleServer(katcp.DeviceServer):
             return katcp.Message.reply(orgmsg.name,"fail","Antenna not found. Valid entries are %s."%str(self.c.config._get_ant_mapping_list()))
         eq=self.c.eq_spectrum_get(ant_str)
         return katcp.Message.reply(orgmsg.name,'ok',*eq)
-        
+
     def request_eq_set(self, sock, orgmsg):
         """Set the current EQ configuration for a given antenna. ?eq-set 0x 1123+456j 555+666j 987+765j..."""
         if self.c is None:
@@ -406,7 +406,24 @@ class DeviceExampleServer(katcp.DeviceServer):
             out_str.append("%12.10e"%(stat[ent]))
 
         return katcp.Message.reply(orgmsg.name,'ok',*out_str)
-        
+
+
+    @request(Str(), Float(default=-1), Float(default=-1))
+    @return_reply(Float(), Float())
+    def request_beam_passband(self, sock, beam, bw, cf):
+        """Setup of beamformer output passband. Please specify a beam name to return the current bandwidth and centre frequency in Hz. Alternatively, specify a beam name, bandwidth and centre frequency in Hz to set the beamformer output passband. The closest actual bandwidth and centre frequency achievable will be returned."""
+        if self.b is None:
+            return ("fail","... beamformer functionality only!")
+        if bw >= 0 or cf >= 0:
+            try:
+                self.b.set_passband(beams=beam, bandwidth=bw, centre_frequency=cf)
+            except:
+                return ("fail", "Could not set requested beamformer passband. Check the log.")
+        try:
+            cf, bw = self.b.get_passband(beam=beam)
+            return ("ok", bw, cf)
+        except:
+            return ("fail", "... unknown beam name")
 
 if __name__ == "__main__":
 
