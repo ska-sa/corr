@@ -881,7 +881,7 @@ class fbf:
         """gets the centre frequency and bandwidth for the specified beam"""
     
         fft_bins = self.get_enabled_fft_bins(beam)
-        bfs = self.frequency2bf_index(frequency_indices=fft_bins, unique=True)
+        bfs = self.frequency2bf_index(fft_bins=fft_bins, unique=True)
 	bf_bandwidth = self.get_bf_bandwidth()
 	fft_bin_bandwidth = self.get_fft_bin_bandwidth()
 
