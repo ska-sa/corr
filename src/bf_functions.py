@@ -988,8 +988,17 @@ class fbf:
     def cal_spectrum_get(self, beam, ant_str):
         """Retrieves the calibration settings currently programmed in all bengines for the given beam and antenna. Returns an array of length n_chans."""
 
-        values = self.bf_read_int(beam=beam, destination='calibrate', offset=0, antennas=[ant_str], frequencies=all) 
-        return values
+	values = []
+        data = self.bf_read_int(beam=beam, destination='calibrate', offset=0, antennas=[ant_str], frequencies=all) 
+        for datum in data:
+
+            datum_real = (numpy.int32(datum & 0xFFFF0000)) >> 16
+            datum_imag = (numpy.int32(datum & 0x0000FFFF))       
+
+            #pack real and imaginary values into 32 bit value
+            values.append(complex(datum_real, datum_imag))
+        
+	return values
 
     def cal_data_set(self, beam, ant_strs, frequencies, data):
         """Set a given beam and antenna calibration setting to given value"""
