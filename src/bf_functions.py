@@ -10,6 +10,7 @@ Revisions:
 2013-02-10 AM basic boresight
 2013-02-11 AM basic SPEAD
 2013-02-21 AM flexible bandwidth
+2013-03-01 AM calibration 
 \n"""
 
 import corr, time, sys, numpy, os, logging, katcp, struct, construct, socket, spead
@@ -140,6 +141,27 @@ class fbf:
  
         return all_beams    
 
+    def ants2ants(self, ant_strs = all):
+        """expands all, None etc into valid antenna strings. Checks for valid antenna strings"""
+        
+        ants = []
+        if ant_strs == None:
+            return ants
+        all_ants = self.config._get_ant_mapping_list()
+        
+        if ant_strs == all:
+            ants = all_ants
+            return ants
+
+        for ant_str in ant_strs:
+            if(all_ants.count(ant_str) == 0):
+                self.syslogger.error('ants2ants: %s not found in antenna mapping'%ant_str)
+                raise RuntimeError('ants2ants: %s not found in antenna mapping'%ant_str)
+            else:
+                ants.append(ant_str)
+
+        return ants
+
     def beams2beams(self,beams=all):
         """expands all, None etc into valid beam names. Checks for valid beam names"""
         new_beams = []
@@ -183,7 +205,7 @@ class fbf:
     def frequency2fpgas(self, frequencies=all, fft_bins=[], unique=False):
         """returns fpgas associated with frequencies specified. unique only returns unique fpgas"""
         fpgas = []
-       
+ 
         if len(fft_bins) == 0:
             fft_bins = self.frequency2fft_bin(frequencies)
 
@@ -195,6 +217,11 @@ class fbf:
         prev_index = -1
         for fft_bin in fft_bins:
             index = numpy.int(fft_bin/n_chans_per_fpga) #floor built in
+
+            if index < 0 or index > len(all_fpgas)-1:
+                self.syslogger.error('frequency2fpgas: fpga index calculated out of range')
+                raise RuntimeError('frequency2fpgas: fpga index calculated out of range')
+                
             if (unique == False) or index != prev_index:
                 fpgas.append(all_fpgas[index])
             prev_index = index        
@@ -392,23 +419,28 @@ class fbf:
  
     def antenna2antenna_indices(self, antennas=all, antenna_indices=[]):
 
-        #TODO include lookup of name to input
+        antenna_indices = []
         n_ants = self.config['n_ants']
 
         if len(antenna_indices) == 0:
             if antennas==all:
-                antenna_indices = range(n_ants)
-            
+                antenna_indices.extend(range(n_ants))
+            #map antenna strings to inputs
+            else:
+                for ant in antennas:
+                    antenna_indices.append(self.c.map_ant_to_input(ant))    
+    
         return antenna_indices
 
     def write_int(self, device_name, data, offset=0, frequencies=all, fft_bins=[]):
         """Writes data to all devices on all bfs in all fpgas associated with the frequencies specified"""
-        #get all unique fpgas, bfs associated with this beam 
+        
+        #get all fpgas, bfs associated with frequencies specified 
         targets = self.frequency2fpga_bf(frequencies, fft_bins, unique=True)
         
         if len(data) > 1 and len(targets) != len(data): 
             self.syslogger.error('write_int: many data but size (%d) does not match length of targets (%d)'%(len(data), len(targets)))
-            return #TODO raise exception?
+            raise RuntimeError('write_int: many data but size (%d) does not match length of targets (%d)'%(len(data), len(targets)))
 
         for target_index,target in enumerate(targets):
             name = '%s%s_%s' %(self.config['bf_register_prefix'], target['bf'], device_name)
@@ -428,8 +460,9 @@ class fbf:
     
     def read_int(self, device_name, offset=0, frequencies=all, fft_bins=[]):
         """Reads data from all devices on all bfs in all fpgas associated with the frequencies specified"""
-        #get all unique fpgas, bfs associated with the specified frequencies 
         values = []
+        
+        #get all unique fpgas, bfs associated with the specified frequencies 
         targets = self.frequency2fpga_bf(frequencies, fft_bins, unique=True)
         
         for target_index,target in enumerate(targets):
@@ -466,6 +499,7 @@ class fbf:
             id = 7
         else:
             self.syslogger.error('bf_control_lookup: invalid destination: %s' %destination)
+            raise RuntimeError('bf_control_lookup: invalid destination: %s' %destination)
            
         if write == 'on':
             control = control | (0x00000001 << id)
@@ -480,17 +514,17 @@ class fbf:
         if destination == 'calibrate':
             if antennas == None:
                 self.syslogger.error('bf_read_int: need to specify an antenna when reading from calibrate block')
-                return
+                raise RuntimeError('bf_read_int: need to specify an antenna when reading from calibrate block')
             if frequencies==None and len(fft_bins)==0:
                 self.syslogger.error('bf_read_int: need to specify a frequency or fft bin when reading from calibrate block')
-                return
+                raise RuntimeError('bf_read_int: need to specify a frequency or fft bin when reading from calibrate block')
         elif destination == 'filter':
             if antennas != None:
                 self.syslogger.error('bf_read_int: can''t specify antenna when reading from filter block')
-                return
+                raise RuntimeError('bf_read_int: can''t specify antenna when reading from filter block')
         else:
             self.syslogger.error('bf_read_int: invalid destination: %s' %destination)
-            return
+            raise RuntimeError('bf_read_int: invalid destination: %s' %destination)
          
         if len(fft_bins) == 0:
             fft_bins = self.frequency2fft_bin(frequencies)
@@ -498,19 +532,25 @@ class fbf:
         location = self.beam2location(beams=beam)
         
         if len(location) == 0:
-            print 'bf_read_int: you must specify a valid beam to write to'
-            return
+            self.syslogger.error('bf_read_int: you must specify a valid beam to write to')
+            raise RuntimeError('bf_read_int: you must specify a valid beam to write to')
+
+        if len(location) > 1:
+            self.syslogger.error('bf_read_int: you can only read from one beam at a time')
+            raise RuntimeError('bf_read_int: you can only read from one beam at a time')
 
         #look up control value required to read 
         control = self.bf_control_lookup(destination, write='off', read='on')
         print 'bf_read_int: disabling writes, setting up reads' 
-        self.write_int('control', [control], 0, fft_bins=fft_bins)
-        
+        self.write_int('control', [control], offset=0, fft_bins=fft_bins)
+       
+        #expand, check and convert to input indices
+        antennas = self.ants2ants(antennas)
         antenna_indices = self.antenna2antenna_indices(antennas=antennas)
 
         print 'bf_read_int: setting up location' 
         #set up target stream (location of beam in set )
-        self.write_int('stream', [location[0]], 0, fft_bins=fft_bins)
+        self.write_int('stream', [location[0]], offset=0, fft_bins=fft_bins)
 
         #go through antennas (normally just one but may be all or none)
         for antenna_index in antenna_indices:
@@ -522,12 +562,12 @@ class fbf:
             #cycle through frequencies (cannot have frequencies without antenna component) 
             for index, fft_bin in enumerate(fft_bins):
                 
-                frequency = frequencies[index]
-
                 print 'bf_read_int: setting up frequency' 
                 #set up frequency register
-                self.write_int('frequency', [self.frequency2frequency_reg_indices(fft_bins=[fft_bin])], 0, fft_bins=[fft_bin])
-              
+                self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin])
+                
+                values.extend(self.read_int('value_out', offset=0, fft_bins=[fft_bin]))
+ 
             #if no frequency component, read 
             if len(fft_bins) == 0:
                 #read
@@ -541,33 +581,38 @@ class fbf:
 	
 	return values 
 
-    #TODO ensure this function call is monotonic due to potential race conditions
     def bf_write_int(self, destination, data, offset=0, beams=all, antennas=None, frequencies=None, fft_bins=[]):
         """write to various destinations in the bf block for a particular beam"""
 
         if destination == 'calibrate':
             if antennas == None:
                 self.syslogger.error('bf_write_int: need to specify an antenna when writing to calibrate block')
-                return
+                raise RuntimeError('bf_write_int: need to specify an antenna when writing to calibrate block')
             if frequencies == None and len(fft_bins) == 0:
                 self.syslogger.error('bf_write_int: need to specify a frequency or fft bin when writing to calibrate block')
-                return
+                raise RuntimeError('bf_write_int: need to specify a frequency or fft bin when writing to calibrate block')
         elif destination == 'filter':
             if antennas != None:
                 self.syslogger.error('bf_write_int: can''t specify antenna for filter block')
-                return
+                raise RuntimeError('bf_write_int: can''t specify antenna for filter block')
         else:
             self.syslogger.error('bf_write_int: invalid destination: %s' %destination)
-            return
+            raise RuntimeError('bf_write_int: invalid destination: %s' %destination)
 
+        #convert frequencies to list of fft_bins
         if len(fft_bins) == 0:
             fft_bins = self.frequency2fft_bin(frequencies)
+    
+        #trying to write multiple data but don't have enough frequencies
+        if len(data) > 1 and len(fft_bins) != len(data):
+            self.syslogger.error('bf_write_int: data and frequency vector lengths incompatible')
+            raise RuntimeError('bf_write_int: data and frequency vector lengths incompatible')
 
         locations = self.beam2location(beams=beams)
         
         if len(locations) == 0:
-            print 'bf_write_int: you must specify a valid beam to write to'
-            return
+            self.syslogger.error('bf_write_int: you must specify a valid beam to write to')
+            raise RuntimeError('bf_write_int: you must specify a valid beam to write to')
 
         #disable writes
         print 'bf_write_int: disabling everything' 
@@ -581,7 +626,9 @@ class fbf:
 
         #look up control value required to write when triggering write
         control = self.bf_control_lookup(destination, write='on', read='on')
-        
+      
+        #expand, check and convert to input indices 
+        antennas = self.ants2ants(antennas) 
         antenna_indices = self.antenna2antenna_indices(antennas=antennas)
 
         #cycle through beams to be written to
@@ -591,9 +638,10 @@ class fbf:
             #set up target stream (location of beam in set )
             self.write_int('stream', [location], 0, fft_bins=fft_bins)
 
-            #go through antennas (normally just one but may be all or none)
+            #go through antennas (normally just one but may be all or None)
             for antenna_index in antenna_indices:
                 
+                #if no frequency component (i.e all frequencies for this antenna)
                 print 'bf_write_int: setting up antenna' 
                 #set up antenna register
                 self.write_int('antenna', [antenna_index], 0, fft_bins=fft_bins)
@@ -601,31 +649,30 @@ class fbf:
                 #cycle through frequencies (cannot have frequencies without antenna component) 
                 for index, fft_bin in enumerate(fft_bins):
                     
-                    frequency = frequencies[index]
-
                     print 'bf_write_int: setting up frequency' 
-                    #set up frequency register
-                    self.write_int('frequency', [self.frequency2frequency_reg_indices(fft_bins=[fft_bin])], 0, fft_bins=[fft_bin])
+                    #set up frequency register on bf associated with fft_bin being processed
+                    self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin])
                   
                     #we have a vector of data (one for every frequency)
                     if len(data) > 1:
                         #set up the value to be written
-                        self.write_int('value_in', [data[index]], 0, fft_bins=fft_bins)
+                        print 'bf_write_int: setting up one of multiple data values' 
+                        self.write_int('value_in', [data[index]], 0, fft_bins=[fft_bin])
  
                     #trigger the write
-                    print 'bf_write_int: triggering for vector of frequencies' 
-                    self.write_int('control', [control], 0, fft_bins=fft_bins)      
+                    print 'bf_write_int: triggering antenna, frequencies' 
+                    self.write_int('control', [control], 0, fft_bins=[fft_bin])      
 
                 #if no frequency component, trigger
                 if len(fft_bins) == 0:
                     #trigger the write
-                    print 'bf_write_int: triggering for no frequencies' 
+                    print 'bf_write_int: triggering for no antenna but no frequencies' 
                     self.write_int('control', [control], 0, fft_bins=fft_bins)      
             
             #if no antenna component, trigger write
             if len(antenna_indices) == 0:
                 #trigger the write
-                print 'bf_write_int: triggering for no antennas' 
+                print 'bf_write_int: triggering for no antennas (and no frequencies)' 
                 self.write_int('control', [control], 0, fft_bins=fft_bins)      
 
     def cf_bw2fft_bins(self, centre_frequency, bandwidth):
@@ -638,7 +685,7 @@ class fbf:
         #TODO spectral line mode systems??
         if (centre_frequency-bandwidth/2) < 0 or (centre_frequency+bandwidth/2) > adc_clk/2:
             self.sys_logger.error('cf_bw2fft_bins: band specified out of range of our system')
-            print 'band specified out of range'
+            raise RuntimeError('cf_bw2fft_bins: band specified out of range of our system')
             return
        
         #full band required
@@ -710,7 +757,7 @@ class fbf:
             #convert to actual beam names
             beams = self.beams2beams(beams)
             beam_indices = self.beam2index(beams)
-
+            
             for index,beam in enumerate(beams):
 
                 beam_index = beam_indices[index]
@@ -751,7 +798,8 @@ class fbf:
                 self.bf_write_int(destination='filter', data=[0x1], offset=0x0, beams=beam, fft_bins = enabled_fft_bins)  
                 self.syslogger.info('Output for %s started' %(beam))
         else:
-            self.syslogger.error('Sorry, your output type is not supported. Could not enable output.')
+            self.syslogger.error('tx_start: Sorry, your output type is not supported. Could not enable output.')
+            raise RuntimeError('tx_start: Sorry, your output type is not supported. Could not enable output.')
     
     def tx_stop(self, beams=all, spead_stop=True):
         """Stops outputting SPEAD data over 10GbE links for specified beams. Sends SPEAD packets indicating end of stream if required"""
@@ -779,15 +827,15 @@ class fbf:
                 else:
                     self.syslogger.info("Did not send SPEAD end-of-stream notification for beam %s" %beam)
         else:
-            self.syslogger.warn("Sorry, your output type is not supported. Cannot disable output for beam %s." %(beam))
+            self.syslogger.error("Sorry, your output type is not supported. Cannot disable output for beam %s." %(beam))
+            raise RuntimeError("Sorry, your output type is not supported. Cannot disable output for beam %s." %(beam))
     
-    #untested
-    #TODO
     def tx_status_get(self, beam):
         """Returns boolean true/false if the beamformer is currently outputting data. Currently only works on systems with 10GbE output."""
         
 	if self.get_param('out_type')!='10gbe': 
-            self.syslogger.warn("This function only works for systems with 10GbE output!")
+            self.syslogger.error("This function only works for systems with 10GbE output!")
+            raise RuntimeError("This function only works for systems with 10GbE output!")
             return False
         
 	rv=True
@@ -847,17 +895,18 @@ class fbf:
 
 	    #parameter checking
 	    if centre_frequency == None:
-	        cf = get_beam_param(beam, 'centre_frequency')
+	        cf = self.get_beam_param(beam, 'centre_frequency')
 	    else:
 		cf = centre_frequency
 
 	    if bandwidth == None:
-		b = get_beam_param(beam, 'bandwidth')
+		b = self.get_beam_param(beam, 'bandwidth')
 	    else:
 		b = bandwidth
 
 	    if ((cf-b/2) < 0) or ((cf+b/2) > max_bandwidth):
             	self.syslogger.error('set_passband: Passband settings specified for beam %s out of range 0->%iMHz'%(beam, max_bandwidth/1000000))
+            	raise RuntimeError('set_passband: Passband settings specified for beam %s out of range 0->%iMHz'%(beam, max_bandwidth/1000000))
 	    
             if centre_frequency != None:
                 self.set_beam_param(beam, 'centre_frequency', centre_frequency)
@@ -895,14 +944,22 @@ class fbf:
 
 #   CALIBRATION 
 
-    #TODO
-    def cal_set_all(self, beam, init_poly = [], init_coeffs = []):
-        """Initialise all antennas for all beams' calibration factors to given polynomial. If no polynomial or coefficients are given, use defaults from config file."""
+    #untested
+    def cal_set_all(self, beams, init_poly = [], init_coeffs = []):
+        """Initialise all antennas for all specified beams' calibration factors to given polynomial. If no polynomial or coefficients are given, use defaults from config file."""
 
-        for in_n, ant_str in enumerate(self.config._get_ant_mapping_list()):
-            self.cal_spectrum_set(beam = beam, ant_str = ant_str, init_coeffs = init_coeffs, init_poly = init_poly)
-        self.syslogger.info('Set all calibration values for beam %s.'%beam)
-    
+        beams = self.beams2beams(beams)
+
+        #get all antenna input strings
+        ant_strs = self.ants2ants(all)
+
+        #go through all beams specified
+        for beam in beams:
+
+            #go through all antennas for beams
+            for ant_str in ant_strs:
+                self.cal_spectrum_set(beam=beam, ant_str=ant_str, init_coeffs=init_coeffs, init_poly=init_poly)
+                
     #untested
     def cal_default_get(self, beam, ant_str):
         "Fetches the default calibration configuration from the config file and returns a list of the coefficients for a given beam and antenna." 
@@ -920,71 +977,78 @@ class fbf:
             if self.get_param('bf_cal_type') == 'complex':
                 calibration = [cal+0*1j for cal in calibration]
         else: 
+            self.syslogger.error("cal_default_get: Your default beamformer calibration type, %s, is not understood." %bf_cal_default)
             raise RuntimeError("cal_default_get: Your default beamformer calibration type, %s, is not understood." %bf_cal_default)
                 
         if len(calibration) != n_coeffs:
+            self.syslogger.error("cal_default_get: Something's wrong. I have %i calibration coefficients when I should have %i." % (len(calibration), n_coeffs))
             raise RuntimeError("cal_default_get: Something's wrong. I have %i calibration coefficients when I should have %i." % (len(calibration), n_coeffs))
         return calibration
 
-    def cal_spectrum_get(self, beams, beam_indices, input_n):
+    def cal_spectrum_get(self, beam, ant_str):
         """Retrieves the calibration settings currently programmed in all bengines for the given beam and antenna. Returns an array of length n_chans."""
 
-    #untested
-    def cal_data_set(self, beam, ant_str, frequencies, data):
-        """Set a given beam and antenna calibration setting to given value"""
+        values = self.bf_read_int(beam=beam, destination='calibrate', offset=0, antennas=[ant_str], frequencies=all) 
+        return values
 
-        for index, datum in enumerate(data):
+    def cal_data_set(self, beam, ant_strs, frequencies, data):
+        """Set a given beam and antenna calibration setting to given value"""
+        values = []
+
+        #convert frequencies to fft indices
+        fft_bins = self.frequency2fft_bin(frequencies=frequencies)
+
+        #data length must be 1 or data vector must be same length as frequency vector
+        if len(data) != 1 and (len(fft_bins) != len(data)):
+            self.syslogger.error('cal_data_set: data vector length (%i) and frequency vector length (%i) incompatible' %(len(fft_bins), len(data)))
+            raise RuntimeError('cal_data_set: data vector length (%i) and frequency vector length (%i) incompatible' %(len(fft_bins), len(data)))
+            
+        if max(numpy.real(data)) > ((2**15)-1) or min(numpy.real(data))<-((2**15)-1):
+            self.syslogger.error('cal_data_set: real calibration values out of range')
+            raise RuntimeError('cal_data_set: real calibration values out of range')
+        if max(numpy.imag(data)) > ((2**15)-1) or min(numpy.imag(data))<-((2**15)-1):
+            self.syslogger.error('cal_data_set: imaginary calibration values out of range')
+            raise RuntimeError('cal_data_set: imaginary calibration values out of range')
+
+        #convert data
+        for datum in data:
 
             datum_real = numpy.real(datum)
             datum_imag = numpy.imag(datum)        
 
-            if max(datum_real) > ((2**15)-1) or min(datum_real)<-((2**15)-1):
-                self.syslogger.error('cal_data_set:beamformer real calibration values out of range')
-            if max(datum_imag) > ((2**15)-1) or min(datum_imag)<-((2**15)-1):
-                self.syslogger.error('beamformer imaginary calibration values out of range')
-            #pack real and imaginary values
-            values[index] = (numpy.uint32(datum_real) << 16) | (numpy.uint32(datum_imag) | 0x0000FFFF)
-     
-        bf_write_int('calibrate', values, 0, beams=beams, beam_indices=beam_indices, antennas=ants, frequencies=frequencies)
+            #pack real and imaginary values into 32 bit value
+            values.append((numpy.int32(datum_real) << 16) | (numpy.int32(datum_imag) & 0x0000FFFF))
+
+        #write final vector to calibrate block
+        self.bf_write_int('calibrate', values, offset=0, beams=[beam], antennas=ant_strs, fft_bins=fft_bins)
     
     #untested
-    def cal_spectrum_set(self, beam, ants, init_coeffs = [], init_poly = []):
+    def cal_spectrum_set(self, beam, ant_str, init_coeffs = [], init_poly = []):
         """Set given beam and antenna calibration settings to given co-efficients."""
 
-        n_coeffs = self.config['n_chans'] 
-        beam  = self.beam2index(beam)
+        #TODO error checking
+
+        n_coeffs = self.get_param('n_chans') 
         
         if init_coeffs == [] and init_poly == []: 
-            coeffs = self.bf_cal_default_get(beam=beam, beam_indices=beam_indices, antenna=ants)
+            coeffs = self.cal_default_get(beam=beam, ant_str=ant_str)
         elif len(init_coeffs) == n_coeffs:
             coeffs = init_coeffs
-        elif len(init_coeffs)>0: 
-            raise RuntimeError ('You specified %i coefficients, but there are %i cal coefficients in this design.'%(len(init_coeffs),n_coeffs))
+        elif len(init_coeffs) > 0: 
+            raise RuntimeError ('You specified %i coefficients, but there are %i cal coefficients required for this design.'%(len(init_coeffs),n_coeffs))
         else:
-            coeffs = numpy.polyval(init_poly, range(self.config['n_chans']))
+            coeffs = numpy.polyval(init_poly, range(n_coeffs))
         
         bf_cal_type = self.get_param('bf_cal_type')
         if bf_cal_type == 'scalar':
             coeffs = numpy.real(coeffs) 
-        elif self.config('bf_cal_type') == 'complex':
+        elif self.get_param('bf_cal_type') == 'complex':
             coeffs = numpy.array(coeffs, dtype = numpy.complex128)
         else:
-            log_runtimeerror(self.floggers[ffpga_n], "Sorry, your beamformer calibration type is not supported. Expecting scalar or complex.")
+            self.syslogger.error("Sorry, your beamformer calibration type is not supported. Expecting scalar or complex.")
+            raise RuntimeError("Sorry, your beamformer calibration type is not supported. Expecting scalar or complex.")
 
-        #self.floggers[ffpga_n].info('Writing new EQ coefficient values to config file...')
-        #self.config.write('equalisation','eq_coeffs_%i%c'%(ant,pol),str(coeffs.tolist()))
-        
-#        for term, coeff in enumerate(coeffs):
-#            self.floggers[ffpga_n].debug('''Initialising beamformer calibration for beam %i antenna %s, to %s.''' % (beam_n, ant_str, ffpga_n], register_name, term, str(coeff)))
-
-        # if this is a narrowband implementation, swap the EQ values, because the Xilinx FFT output is in swapped halves
-#        if self.is_narrowband():
-#            coeff_str = ''.join([coeff_str[len(coeff_str)/2:], coeff_str[0:len(coeff_str)/2]])
-        n_chans = self.get_param('n_chans')
-        bandwidth = self.get_param('adc_clk')/2
-        freqs = range(0, bandwidth, bandwidth/n_chans)
-
-        cal_data_set(beam_name_str, ant_str, freqs, coeffs)
+        self.cal_data_set(beam=beam, ant_strs=[ant_str], frequencies=all, data=coeffs)
 
 	#-----------
 	#   SPEAD
