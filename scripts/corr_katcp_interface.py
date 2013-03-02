@@ -41,21 +41,20 @@ class DeviceExampleServer(katcp.DeviceServer):
         except:
             return ("fail", "Something broke spectacularly. Check the log.")
 
-    @request(Str(default='/etc/corr/default'), Str(default='corr'), Int(default=100))
+    @request(Str(default='/etc/corr/default'), Int(default=100), include_msg=True)
     @return_reply()
-    def request_connect(self, sock, config_file, obs_mode, log_len):
-        """Connect to all the ROACH boards. Please specify the config file, operational mode and the log length. Clears any existing log. Call this again if you make external changes to the config file to reload it. Operational mode can be 'corr' for correlator or 'tied' for beamformer."""
+    def request_connect(self, sock, orgmsg, config_file, log_len):
+        """Connect to all the ROACH boards. Please specify the config file and the log length. Clears any existing log. Call this again if you make external changes to the config file to reload it."""
         self.lh = corr.log_handlers.DebugLogHandler(log_len)
         try:
             self.c = corr.corr_functions.Correlator(config_file=config_file,log_handler=self.lh,log_level=logging.INFO)
-        except Exception as e:
-            return ("fail", "Something broke spectacularly: %s."%e)
-        if obs_mode == 'tied':
-            try:
-                # Initiate beamformer object
-                self.b = corr.bf_functions.fbf(host_correlator=self.c)
-            except:
-                return ("fail", "Something broke spectacularly. Check the log.")
+        except Exception as err_msg:
+            return ("fail", err_msg)
+        try:
+            self.b = corr.bf_functions.fbf(host_correlator=self.c)
+        except:
+            self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Beamformer not available"),orgmsg)
+            pass
         return ("ok",)
 
     @request(include_msg=True)
@@ -83,14 +82,14 @@ class DeviceExampleServer(katcp.DeviceServer):
         try: 
             self.c.initialise(n_retries)
         except:
-            return ("fail","Something broke. Check the log.")
+            return ("fail","Correlator could not initialise. Check the log.")
 
         # Next, if beamformer object is instantiated, initiate the beamformer
         if self.b is not None:
             try:
               self.b.initialise()
             except:
-              return("fail","Could not initiate beamformer.")
+              return("fail","Beamformer could not initialise. Check the log.")
 
         return ("ok",)
 
@@ -363,7 +362,7 @@ class DeviceExampleServer(katcp.DeviceServer):
         if self.c is None:
             return katcp.Message.reply(orgmsg.name,"fail","... you haven't connected yet!")
         ant_str=orgmsg.arguments[0]
-        if not ant_str in self.c.config._get_ant_mapping_list(): 
+        if not ant_str in self.c.config._get_ant_mapping_list():
             return katcp.Message.reply(orgmsg.name,"fail","Antenna not found. Valid entries are %s."%str(self.c.config._get_ant_mapping_list()))
 
         eq_coeffs=[]
@@ -408,22 +407,64 @@ class DeviceExampleServer(katcp.DeviceServer):
         return katcp.Message.reply(orgmsg.name,'ok',*out_str)
 
 
-    @request(Str(), Float(default=-1), Float(default=-1))
+    @request(Str(), Float(default=-1), Float(default=-1), include_msg=True)
     @return_reply(Float(), Float())
-    def request_beam_passband(self, sock, beam, bw, cf):
+    def request_beam_passband(self, sock, orgmsg, beam, bw, cf):
         """Setup of beamformer output passband. Please specify a beam name to return the current bandwidth and centre frequency in Hz. Alternatively, specify a beam name, bandwidth and centre frequency in Hz to set the beamformer output passband. The closest actual bandwidth and centre frequency achievable will be returned."""
         if self.b is None:
             return ("fail","... beamformer functionality only!")
-        if bw >= 0 or cf >= 0:
+
+        if bw >= 0 and cf >= 0:
             try:
                 self.b.set_passband(beams=beam, bandwidth=bw, centre_frequency=cf)
-            except:
-                return ("fail", "Could not set requested beamformer passband. Check the log.")
+            except Exception as e:
+                return ("fail", "... %s" % e.message)
+        elif (bw*cf < 0): return ("fail", "... require both bandwidth and center frequency to be specified")
+
         try:
             cf, bw = self.b.get_passband(beam=beam)
             return ("ok", bw, cf)
         except:
-            return ("fail", "... unknown beam name")
+            return ("fail", "... unknown beam name %s" % orgmsg.arguments[0])
+
+    @request(Str(), Str(), include_msg=True)
+    def request_weights_get(self, sock, orgmsg, beam, ant_str):
+        """Get the current beamformer weights. Params: beam, ant_str"""
+        if self.c is None or self.b is None:
+            return katcp.Message.reply(orgmsg.name,"fail","... you haven't connected yet!")
+        if not ant_str in self.c.config._get_ant_mapping_list():
+            return katcp.Message.reply(orgmsg.name,"fail","Antenna not found. Valid entries are %s."%str(self.c.config._get_ant_mapping_list()))
+        if not beam in self.b.get_beams():
+            return katcp.Message.reply(orgmsg.name,"fail","Unknown beam name. Valid entries are %s."%str(self.b.get_beams()))
+        try:
+          weights = self.b.cal_spectrum_get(beam=beam, ant_str=ant_str)
+          return katcp.Message.reply(orgmsg.name,'ok',*weights)
+        except Exception as e:
+            return ("fail", "... %s" % e.message)
+
+    def request_weights_set(self, sock, orgmsg):
+        """Set the weights for an input to a selected beam. ?weights-set bf0 0x 1123+456j 555+666j 987+765j..."""
+        if self.c is None or self.b is None:
+            return katcp.Message.reply(orgmsg.name,"fail","... you haven't connected yet!")
+        beam=orgmsg.arguments[0]
+        if not beam in self.b.get_beams():
+            return katcp.Message.reply(orgmsg.name,"fail","Unknown beam name. Valid entries are %s."%str(self.b.get_beams()))
+        ant_str=orgmsg.arguments[1]
+        if not ant_str in self.c.config._get_ant_mapping_list():
+            return katcp.Message.reply(orgmsg.name,"fail","Antenna not found. Valid entries are %s."%str(self.c.config._get_ant_mapping_list()))
+
+        bw_coeffs=[]
+        if len(orgmsg.arguments) == 3: #+1 to account for antenna label, assume single number across entire band
+            self.b.cal_spectrum_set(beam=beam, ant_str=ant_str,init_poly=[eval(orgmsg.arguments[2])])
+            return katcp.Message.reply(orgmsg.name,'ok',"Set all coefficients to", eval(orgmsg.arguments[2]))
+        elif len(orgmsg.arguments) != (self.c.config['n_chans']+2): #+2 to account for beam name and antenna label
+            return katcp.Message.reply(orgmsg.name,"fail","Sorry, you didn't specify the right number of coefficients (expecting %i, got %i)."%(self.c.config['n_chans'],len(orgmsg.arguments)-2))
+        else:
+            for arg in orgmsg.arguments[2:]:
+                bw_coeffs.append(eval(arg))
+            self.b.cal_spectrum_set(beam=beam, ant_str=ant_str,init_coeffs=bw_coeffs)
+            return katcp.Message.reply(orgmsg.name,'ok')
+
 
 if __name__ == "__main__":
 
