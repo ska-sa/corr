@@ -186,7 +186,7 @@ class DeviceExampleServer(katcp.DeviceServer):
             return ("ok",)
         except:
             return ("fail","Something broke. Check the log.")
-            
+
     @request()
     @return_reply(Str())
     def request_tx_status(self, sock):
@@ -198,7 +198,7 @@ class DeviceExampleServer(katcp.DeviceServer):
             else: return("ok","disabled")
         except:
             return ("fail","Couldn't complete the request. Something broke. Check the log.")
-            
+
     @request(include_msg=True)
     def request_check_sys(self, sock, orgmsg):
         """Checks system health. Returns health tree informs for each engine in the system."""
@@ -417,8 +417,10 @@ class DeviceExampleServer(katcp.DeviceServer):
         if bw >= 0 and cf >= 0:
             try:
                 self.b.set_passband(beams=beam, bandwidth=bw, centre_frequency=cf)
+            except corr.bf_functions.fbfException as be:
+                return ("fail", "... %s" % be.errmsg)
             except Exception as e:
-                return ("fail", "... %s" % e.message)
+                return ("fail", "... %s" % e)
         elif (bw*cf < 0): return ("fail", "... require both bandwidth and center frequency to be specified")
 
         try:
@@ -439,8 +441,10 @@ class DeviceExampleServer(katcp.DeviceServer):
         try:
           weights = self.b.cal_spectrum_get(beam=beam, ant_str=ant_str)
           return katcp.Message.reply(orgmsg.name,'ok',*weights)
+        except corr.bf_functions.fbfException as be:
+            return ("fail", "... %s" % be.errmsg)
         except Exception as e:
-            return ("fail", "... %s" % e.message)
+            return ("fail", "... %s" % e)
 
     def request_weights_set(self, sock, orgmsg):
         """Set the weights for an input to a selected beam. ?weights-set bf0 0x 1123+456j 555+666j 987+765j..."""
@@ -452,18 +456,38 @@ class DeviceExampleServer(katcp.DeviceServer):
         ant_str=orgmsg.arguments[1]
         if not ant_str in self.c.config._get_ant_mapping_list():
             return katcp.Message.reply(orgmsg.name,"fail","Antenna not found. Valid entries are %s."%str(self.c.config._get_ant_mapping_list()))
+        try:
+            bw_coeffs=[]
+            if len(orgmsg.arguments) == 3: #+2 to account for beam name and antenna label, assume single number across entire band
+                self.b.cal_spectrum_set(beam=beam, ant_str=ant_str,init_poly=[eval(orgmsg.arguments[2])])
+                return katcp.Message.reply(orgmsg.name,'ok',"Set all coefficients to", eval(orgmsg.arguments[2]))
+            elif len(orgmsg.arguments) != (self.c.config['n_chans']+2): #+2 to account for beam name and antenna label
+                return katcp.Message.reply(orgmsg.name,"fail","Sorry, you didn't specify the right number of coefficients (expecting %i, got %i)."%(self.c.config['n_chans'],len(orgmsg.arguments)-2))
+            else:
+                for arg in orgmsg.arguments[2:]:
+                    bw_coeffs.append(eval(arg))
+                self.b.cal_spectrum_set(beam=beam, ant_str=ant_str,init_coeffs=bw_coeffs)
+                return katcp.Message.reply(orgmsg.name,'ok')
+        except corr.bf_functions.fbfException as be:
+            return ("fail", "... %s" % be.errmsg)
+        except Exception as e:
+            return ("fail", "... %s" % e)
 
-        bw_coeffs=[]
-        if len(orgmsg.arguments) == 3: #+1 to account for antenna label, assume single number across entire band
-            self.b.cal_spectrum_set(beam=beam, ant_str=ant_str,init_poly=[eval(orgmsg.arguments[2])])
-            return katcp.Message.reply(orgmsg.name,'ok',"Set all coefficients to", eval(orgmsg.arguments[2]))
-        elif len(orgmsg.arguments) != (self.c.config['n_chans']+2): #+2 to account for beam name and antenna label
-            return katcp.Message.reply(orgmsg.name,"fail","Sorry, you didn't specify the right number of coefficients (expecting %i, got %i)."%(self.c.config['n_chans'],len(orgmsg.arguments)-2))
-        else:
-            for arg in orgmsg.arguments[2:]:
-                bw_coeffs.append(eval(arg))
-            self.b.cal_spectrum_set(beam=beam, ant_str=ant_str,init_coeffs=bw_coeffs)
-            return katcp.Message.reply(orgmsg.name,'ok')
+    @request(Str())
+    @return_reply(Str())
+    def request_bf_status(self, sock, beam):
+        """Check the TX status for a specified beam. Returns enabled or disabled."""
+        if self.c is None:
+            return ("fail","... you haven't connected yet!")
+        if self.b is None:
+            return ("fail","... no beams available!")
+        try:
+            if self.b.tx_status_get(beam): return("ok","enabled")
+            else: return("ok","disabled")
+        except corr.bf_functions.fbfException as be:
+            return ("fail", "... %s" % be.errmsg)
+        except Exception as e:
+            return ("fail","Couldn't complete the request. Something broke. Check the log.")
 
 
 if __name__ == "__main__":
