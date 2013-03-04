@@ -14,16 +14,25 @@ Revisions:
 \n"""
 
 import corr, time, sys, numpy, os, logging, katcp, struct, construct, socket, spead
+import inspect
+
+class fbfException(Exception):
+    def __init__(self, errno, msg, trace=None, logger=None):
+        self.args = (errno, msg)
+        self.errno = errno
+        self.errmsg = msg
+        self.__trace__ = trace
+        if logger: logger.error('BFError: %s\n%s' % (msg,trace))
 
 class fbf:
     """Class for frequency-domain beamformers"""
     def __init__(self, host_correlator, log_level=logging.INFO, simulate = False):
         self.c = host_correlator
-        
+
         self.config = self.c.config 
 
         self.config.simulate = simulate 
-       
+
         self.log_handler = host_correlator.log_handler
         self.syslogger = logging.getLogger('fbfsys')
         self.syslogger.addHandler(self.log_handler)
@@ -33,7 +42,7 @@ class fbf:
         self.spead_tx = []
         for beam_index in self.beam2index(all):
             self.spead_tx.append(spead.Transmitter(spead.TransportUDPtx(self.config['bf_rx_meta_ip_str_beam%i'%beam_index], self.config['bf_rx_udp_port_beam%i'%beam_index])))
-        
+
         self.syslogger.info('Beamformer created')
 
 #    def get_crosspol_order(self):
@@ -46,21 +55,29 @@ class fbf:
 	#  helper functions
 	#-----------------------
 
-    def get_param(self, param):
-    
+    def get_param(self, param):	
+	"""Read beamformer parameter from config dictionary"""
         try:
             value = self.config[param]
-        except:
-            self.syslogger.error('get_param: error getting value of self.config[%s]'%param)
-            raise RuntimeError('get_param: error getting value of self.config[%s]'%param)
-        return value    
+        except KeyError as ke:
+            self.syslogger.error('get_param: error getting value of self.config[%s]'%ke)
+            raise # simply raise to the calling function
+        except Exception as err:
+            # Issues a message at the ERROR level and addes exception information to the log message
+            self.syslogger.exception(err.__class__)
+            raise
+        return value
 
     def set_param(self, param, value):
         try:
             self.config[param] = value
-        except:
-            self.syslogger.error('get_param: error setting value of self.config[%s]'%param)
-            raise RuntimeError('get_param: error setting value of self.config[%s]'%param)
+        except KeyError as ke:
+            self.syslogger.error('set_param: error setting value of self.config[%s]'%ke)
+            raise
+        except Exception as err:
+            # Issues a message at the ERROR level and addes exception information to the log message
+            self.syslogger.exception(err.__class__)
+            raise
 
     def get_beam_param(self, beams, param):
 
@@ -68,11 +85,12 @@ class fbf:
 
         beams = self.beams2beams(beams)
 
-        beam_indices = self.beam2index(beams)        
+        beam_indices = self.beam2index(beams)
         if len(beam_indices) == 0:
-            self.syslogger.error('get_beam_param: error locating beams')
-            raise RuntimeError('get_beam_param: error locating beams')
-        
+            raise fbfException(1, 'Error locating beams', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
         for beam_index in beam_indices:
             values.append(self.get_param('bf_%s_beam%d' %(param, beam_index)))
 
@@ -91,20 +109,22 @@ class fbf:
 
         #check vector lengths match up
         if type(values) == list and len(values) != len(beams):
-            self.syslogger.error('set_beam_param: beam vector must be same length as value vector if passing many values')
-            return        
-        
-        beam_indices = self.beam2index(beams)        
+            raise fbfException(1, 'Beam vector must be same length as value vector if passing many values', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
+        beam_indices = self.beam2index(beams)
         if len(beam_indices) == 0:
-            self.syslogger.error('set_beam_param: error locating beams')
-            raise RuntimeError('set_beam_param: error locating beams')
+            raise fbfException(1, 'Error locating beams', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         for index, beam_index in enumerate(beam_indices):
             if type(values) == list:
                 value = values[index]
             else:
                 value = values
-    
+
             self.set_param('bf_%s_beam%d' %(param, beam_index), value) 
 
     def get_fpgas(self):
@@ -114,15 +134,17 @@ class fbf:
             try: 
                 all_fpgas = self.c.xfpgas
             except:
-                self.syslogger.error('get_fpgas: error accessing self.c.xfpgas')
-                raise RuntimeError('get_fpgas: error accessing self.c.xfpgas')
+                raise fbfException(1, 'Error accessing self.c.xfpgas', \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
         else:
             try: 
                 all_fpgas = self.c.xsrvs
-            except:    
-                self.syslogger.error('get_fpgas: error accessing self.c.xsrvs')
-                raise RuntimeError('get_fpgas: error accessing self.c.xsrvs')
-       
+            except:
+                raise fbfException(1, 'Error accessing self.c.xsrvs', \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
+
         return all_fpgas 
 
     def get_bfs(self):
@@ -139,24 +161,25 @@ class fbf:
         for beam_index in range(n_beams):
             all_beams.append(self.get_param('bf_name_beam%i'%beam_index))
  
-        return all_beams    
+        return all_beams
 
     def ants2ants(self, ant_strs = all):
         """expands all, None etc into valid antenna strings. Checks for valid antenna strings"""
-        
+
         ants = []
         if ant_strs == None:
             return ants
         all_ants = self.config._get_ant_mapping_list()
-        
+
         if ant_strs == all:
             ants = all_ants
             return ants
 
         for ant_str in ant_strs:
             if(all_ants.count(ant_str) == 0):
-                self.syslogger.error('ants2ants: %s not found in antenna mapping'%ant_str)
-                raise RuntimeError('ants2ants: %s not found in antenna mapping'%ant_str)
+                raise fbfException(1, '%s not found in antenna mapping'%(ant_str) , \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
             else:
                 ants.append(ant_str)
 
@@ -165,12 +188,12 @@ class fbf:
     def beams2beams(self,beams=all):
         """expands all, None etc into valid beam names. Checks for valid beam names"""
         new_beams = []
-        
+
         if beams == None:
             return
 
         all_beams = self.get_beams()
-        
+
         if beams == all:
             new_beams = all_beams
         else:
@@ -183,8 +206,9 @@ class fbf:
                     all_beams.index(beam)
                     new_beams.append(beam)
                 except:
-                    self.syslogger.error('beams2beams: %s not found in our system'%beam)
-                    raise RuntimeError('beams2beams: %s not found in our system'%beam)
+                    raise fbfException(1, '%s not found in our system'%beam, \
+                                       'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                       self.syslogger)
 
         return new_beams
 
@@ -219,9 +243,10 @@ class fbf:
             index = numpy.int(fft_bin/n_chans_per_fpga) #floor built in
 
             if index < 0 or index > len(all_fpgas)-1:
-                self.syslogger.error('frequency2fpgas: fpga index calculated out of range')
-                raise RuntimeError('frequency2fpgas: fpga index calculated out of range')
-                
+                raise fbfException(1, 'FPGA index calculated out of range', \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
+
             if (unique == False) or index != prev_index:
                 fpgas.append(all_fpgas[index])
             prev_index = index        
@@ -255,8 +280,9 @@ class fbf:
         n_chans_per_bf = n_chans/n_bfs
 
 	if max(fft_bins)>n_chans-1 or min(fft_bins) < 0:
-            self.syslogger.error('frequency2bf_index: fft bin/s out of range')
-            raise RuntimeError('frequency2bf_index: fft bin/s out of range')
+            raise fbfException(1, 'FFT bin/s out of range', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         for fft_bin in fft_bins:
             bf_index = fft_bin/n_chans_per_bf
@@ -278,8 +304,9 @@ class fbf:
         divisions = n_fpgas * bf_be_per_fpga
 	
         if max(fft_bins)>n_chans-1 or min(fft_bins) < 0:
-            self.syslogger.error('frequency2frequency_reg_index: fft bin/s out of range')
-            raise RuntimeError('frequency2frequency_reg_index: fft bin/s out of range')
+            raise fbfException(1, 'FFT bin/s out of range', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         for fft_bin in fft_bins:
             indices.append(numpy.mod(fft_bin, n_chans/divisions))
@@ -346,11 +373,12 @@ class fbf:
 	    fft_bins = [fft_bins]
 
 	if max(fft_bins) > n_chans or min(fft_bins) < 0:
-            self.syslogger.error("fft_bin2frequency: fft_bins out of range 0 -> %d"%(n_chans-1))
-            raise RuntimeError("fft_bin2frequency: fft_bins out of range 0 -> %d"%(n_chans-1))
-	    
+            raise fbfException(1, 'fft_bins out of range 0 -> %d' %(n_chans-1), \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
         bandwidth = self.get_param('adc_clk')/2
-	
+
 	for fft_bin in fft_bins:
 	    frequencies.append((float(fft_bin)/n_chans)*bandwidth)
 
@@ -361,18 +389,20 @@ class fbf:
         locations = []
     
         if unique != True and unique != False:
-            self.syslogger.error("frequency2fpga_bf: unique must be True or False")
-            raise RuntimeError("frequency2fpga_bf: unique must be True or False")
+            raise fbfException(1, 'unique must be True or False', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         if len(fft_bins) == 0:
             fft_bins = self.frequency2fft_bin(frequencies)
-        
+
         fpgas = self.frequency2fpgas(fft_bins=fft_bins)
         bfs = self.frequency2bf_label(fft_bins=fft_bins)
-       
+
         if len(fpgas) != len(bfs):
-            self.syslogger.error("frequency2fpga_bf: fpga and bfs associated with frequencies not the same length")
-            raise RuntimeError("frequency2fpga_bf: fpga and bfs associated with frequencies not the same length")
+            raise fbfException(1, 'fpga and bfs associated with frequencies not the same length', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
         else:
             pfpga = [] 
             pbf = []
@@ -439,8 +469,9 @@ class fbf:
         targets = self.frequency2fpga_bf(frequencies, fft_bins, unique=True)
         
         if len(data) > 1 and len(targets) != len(data): 
-            self.syslogger.error('write_int: many data but size (%d) does not match length of targets (%d)'%(len(data), len(targets)))
-            raise RuntimeError('write_int: many data but size (%d) does not match length of targets (%d)'%(len(data), len(targets)))
+            raise fbfException(1, 'Many data but size (%d) does not match length of targets (%d)'%(len(data), len(targets)), \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         for target_index,target in enumerate(targets):
             name = '%s%s_%s' %(self.config['bf_register_prefix'], target['bf'], device_name)
@@ -475,10 +506,12 @@ class fbf:
                 try:
                     values.append(target['fpga'].read_int(device_name=name))
                 except:
-                    self.syslogger.error('read_int: error reading from %s:%s offset %i' %(target['fpga'], name, offset))
+                    raise fbfException(1, 'Error reading from %s:%s offset %i'%(target['fpga'], name, offset), \
+                                       'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                       self.syslogger)
 
 	return values
-    
+
     def bf_control_lookup(self, destination, write='on', read='on'):
         control = 0
         if destination == 'duplicate':
@@ -498,9 +531,10 @@ class fbf:
         elif destination == 'filter':
             id = 7
         else:
-            self.syslogger.error('bf_control_lookup: invalid destination: %s' %destination)
-            raise RuntimeError('bf_control_lookup: invalid destination: %s' %destination)
-           
+            raise fbfException(1, 'Invalid destination: %s'%destination, \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
         if write == 'on':
             control = control | (0x00000001 << id)
         if read == 'on':
@@ -509,35 +543,41 @@ class fbf:
 
     def bf_read_int(self, beam, destination, offset=0, antennas=None, frequencies=None, fft_bins=[]):
         """read from destination in the bf block for a particular beam"""
-        
+
         values = []
         if destination == 'calibrate':
             if antennas == None:
-                self.syslogger.error('bf_read_int: need to specify an antenna when reading from calibrate block')
-                raise RuntimeError('bf_read_int: need to specify an antenna when reading from calibrate block')
+                raise fbfException(1, 'Need to specify an antenna when reading from calibrate block', \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
             if frequencies==None and len(fft_bins)==0:
-                self.syslogger.error('bf_read_int: need to specify a frequency or fft bin when reading from calibrate block')
-                raise RuntimeError('bf_read_int: need to specify a frequency or fft bin when reading from calibrate block')
+                raise fbfException(1, 'Need to specify a frequency or fft bin when reading from calibrate block', \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
         elif destination == 'filter':
             if antennas != None:
-                self.syslogger.error('bf_read_int: can''t specify antenna when reading from filter block')
-                raise RuntimeError('bf_read_int: can''t specify antenna when reading from filter block')
+                raise fbfException(1, 'Can''t specify antenna when reading from filter block', \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
         else:
-            self.syslogger.error('bf_read_int: invalid destination: %s' %destination)
-            raise RuntimeError('bf_read_int: invalid destination: %s' %destination)
-         
+            raise fbfException(1, 'Invalid destination: %s'%destination, \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
         if len(fft_bins) == 0:
             fft_bins = self.frequency2fft_bin(frequencies)
 
         location = self.beam2location(beams=beam)
         
         if len(location) == 0:
-            self.syslogger.error('bf_read_int: you must specify a valid beam to write to')
-            raise RuntimeError('bf_read_int: you must specify a valid beam to write to')
+            raise fbfException(1, 'You must specify a valid beam to write to', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         if len(location) > 1:
-            self.syslogger.error('bf_read_int: you can only read from one beam at a time')
-            raise RuntimeError('bf_read_int: you can only read from one beam at a time')
+            raise fbfException(1, 'You can only read from one beam at a time', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         #look up control value required to read 
         control = self.bf_control_lookup(destination, write='off', read='on')
@@ -554,18 +594,18 @@ class fbf:
 
         #go through antennas (normally just one but may be all or none)
         for antenna_index in antenna_indices:
-            
+
             print 'bf_read_int: setting up antenna' 
             #set up antenna register
             self.write_int('antenna', [antenna_index], 0, fft_bins=fft_bins)
-           
+
             #cycle through frequencies (cannot have frequencies without antenna component) 
             for index, fft_bin in enumerate(fft_bins):
-                
+
                 print 'bf_read_int: setting up frequency' 
                 #set up frequency register
                 self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin])
-                
+
                 values.extend(self.read_int('value_out', offset=0, fft_bins=[fft_bin]))
  
             #if no frequency component, read 
@@ -578,7 +618,7 @@ class fbf:
             #read
             print 'bf_read_int: reading for no antennas' 
             values = self.read_int('value_out', offset=0, fft_bins=fft_bins)     
-	
+
 	return values 
 
     def bf_write_int(self, destination, data, offset=0, beams=all, antennas=None, frequencies=None, fft_bins=[]):
@@ -586,18 +626,22 @@ class fbf:
 
         if destination == 'calibrate':
             if antennas == None:
-                self.syslogger.error('bf_write_int: need to specify an antenna when writing to calibrate block')
-                raise RuntimeError('bf_write_int: need to specify an antenna when writing to calibrate block')
+                raise fbfException(1, 'Need to specify an antenna when writing to calibrate block', \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
             if frequencies == None and len(fft_bins) == 0:
-                self.syslogger.error('bf_write_int: need to specify a frequency or fft bin when writing to calibrate block')
-                raise RuntimeError('bf_write_int: need to specify a frequency or fft bin when writing to calibrate block')
+                raise fbfException(1, 'Need to specify a frequency or fft bin when writing to calibrate block', \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
         elif destination == 'filter':
             if antennas != None:
-                self.syslogger.error('bf_write_int: can''t specify antenna for filter block')
-                raise RuntimeError('bf_write_int: can''t specify antenna for filter block')
+                raise fbfException(1, 'Can''t specify antenna for filter block', \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
         else:
-            self.syslogger.error('bf_write_int: invalid destination: %s' %destination)
-            raise RuntimeError('bf_write_int: invalid destination: %s' %destination)
+            raise fbfException(1, 'Invalid destination: %s'%destination, \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         #convert frequencies to list of fft_bins
         if len(fft_bins) == 0:
@@ -605,14 +649,16 @@ class fbf:
     
         #trying to write multiple data but don't have enough frequencies
         if len(data) > 1 and len(fft_bins) != len(data):
-            self.syslogger.error('bf_write_int: data and frequency vector lengths incompatible')
-            raise RuntimeError('bf_write_int: data and frequency vector lengths incompatible')
+            raise fbfException(1, 'data and frequency vector lengths incompatible', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         locations = self.beam2location(beams=beams)
-        
+
         if len(locations) == 0:
-            self.syslogger.error('bf_write_int: you must specify a valid beam to write to')
-            raise RuntimeError('bf_write_int: you must specify a valid beam to write to')
+            raise fbfException(1, 'You must specify a valid beam to write to', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         #disable writes
         print 'bf_write_int: disabling everything' 
@@ -677,17 +723,17 @@ class fbf:
 
     def cf_bw2fft_bins(self, centre_frequency, bandwidth):
         """returns fft bins associated with provided centre_frequency and bandwidth"""
-        bins = []    
-    
+        bins = []
+
         adc_clk = self.config['adc_clk']
         n_chans = self.config['n_chans']
-        
+
         #TODO spectral line mode systems??
         if (centre_frequency-bandwidth/2) < 0 or (centre_frequency+bandwidth/2) > adc_clk/2:
-            self.sys_logger.error('cf_bw2fft_bins: band specified out of range of our system')
-            raise RuntimeError('cf_bw2fft_bins: band specified out of range of our system')
-            return
-       
+            raise fbfException(1, 'Band specified out of range of our system', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
         #full band required
         if bandwidth == adc_clk/2:
             bins = range(n_chans) 
@@ -798,9 +844,10 @@ class fbf:
                 self.bf_write_int(destination='filter', data=[0x1], offset=0x0, beams=beam, fft_bins = enabled_fft_bins)  
                 self.syslogger.info('Output for %s started' %(beam))
         else:
-            self.syslogger.error('tx_start: Sorry, your output type is not supported. Could not enable output.')
-            raise RuntimeError('tx_start: Sorry, your output type is not supported. Could not enable output.')
-    
+            raise fbfException(1, 'Sorry, your output type is not supported. Could not enable output.', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
     def tx_stop(self, beams=all, spead_stop=True):
         """Stops outputting SPEAD data over 10GbE links for specified beams. Sends SPEAD packets indicating end of stream if required"""
 
@@ -827,17 +874,18 @@ class fbf:
                 else:
                     self.syslogger.info("Did not send SPEAD end-of-stream notification for beam %s" %beam)
         else:
-            self.syslogger.error("Sorry, your output type is not supported. Cannot disable output for beam %s." %(beam))
-            raise RuntimeError("Sorry, your output type is not supported. Cannot disable output for beam %s." %(beam))
-    
+            raise fbfException(1, 'Sorry, your output type is not supported. Cannot disable output for beam %s.'%beam, \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
     def tx_status_get(self, beam):
         """Returns boolean true/false if the beamformer is currently outputting data. Currently only works on systems with 10GbE output."""
-        
+
 	if self.get_param('out_type')!='10gbe': 
-            self.syslogger.error("This function only works for systems with 10GbE output!")
-            raise RuntimeError("This function only works for systems with 10GbE output!")
-            return False
-        
+            raise fbfException(1, 'This function only works for systems with 10GbE output!', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
 	rv=True
 
         #check 10Ge cores are not in reset
@@ -905,9 +953,10 @@ class fbf:
 		b = bandwidth
 
 	    if ((cf-b/2) < 0) or ((cf+b/2) > max_bandwidth):
-            	self.syslogger.error('set_passband: Passband settings specified for beam %s out of range 0->%iMHz'%(beam, max_bandwidth/1000000))
-            	raise RuntimeError('set_passband: Passband settings specified for beam %s out of range 0->%iMHz'%(beam, max_bandwidth/1000000))
-	    
+                raise fbfException(1, 'Passband settings specified for beam %s out of range 0->%iMHz'%(beam, max_bandwidth/1000000), \
+                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                   self.syslogger)
+
             if centre_frequency != None:
                 self.set_beam_param(beam, 'centre_frequency', centre_frequency)
 
@@ -977,12 +1026,14 @@ class fbf:
             if self.get_param('bf_cal_type') == 'complex':
                 calibration = [cal+0*1j for cal in calibration]
         else: 
-            self.syslogger.error("cal_default_get: Your default beamformer calibration type, %s, is not understood." %bf_cal_default)
-            raise RuntimeError("cal_default_get: Your default beamformer calibration type, %s, is not understood." %bf_cal_default)
-                
+            raise fbfException(1, 'Your default beamformer calibration type, %s, is not understood.'%bf_cal_default, \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
         if len(calibration) != n_coeffs:
-            self.syslogger.error("cal_default_get: Something's wrong. I have %i calibration coefficients when I should have %i." % (len(calibration), n_coeffs))
-            raise RuntimeError("cal_default_get: Something's wrong. I have %i calibration coefficients when I should have %i." % (len(calibration), n_coeffs))
+            raise fbfException(1, 'Something\'s wrong. I have %i calibration coefficients when I should have %i.'%(len(calibration), n_coeffs), \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
         return calibration
 
     def cal_spectrum_get(self, beam, ant_str):
@@ -1009,15 +1060,18 @@ class fbf:
 
         #data length must be 1 or data vector must be same length as frequency vector
         if len(data) != 1 and (len(fft_bins) != len(data)):
-            self.syslogger.error('cal_data_set: data vector length (%i) and frequency vector length (%i) incompatible' %(len(fft_bins), len(data)))
-            raise RuntimeError('cal_data_set: data vector length (%i) and frequency vector length (%i) incompatible' %(len(fft_bins), len(data)))
-            
+            raise fbfException(1, 'Data vector length (%i) and frequency vector length (%i) incompatible'%(len(fft_bins), len(data)), \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
+
         if max(numpy.real(data)) > ((2**15)-1) or min(numpy.real(data))<-((2**15)-1):
-            self.syslogger.error('cal_data_set: real calibration values out of range')
-            raise RuntimeError('cal_data_set: real calibration values out of range')
+            raise fbfException(1, 'real calibration values out of range', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
         if max(numpy.imag(data)) > ((2**15)-1) or min(numpy.imag(data))<-((2**15)-1):
-            self.syslogger.error('cal_data_set: imaginary calibration values out of range')
-            raise RuntimeError('cal_data_set: imaginary calibration values out of range')
+            raise fbfException(1, 'imaginary calibration values out of range', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         #convert data
         for datum in data:
@@ -1044,7 +1098,9 @@ class fbf:
         elif len(init_coeffs) == n_coeffs:
             coeffs = init_coeffs
         elif len(init_coeffs) > 0: 
-            raise RuntimeError ('You specified %i coefficients, but there are %i cal coefficients required for this design.'%(len(init_coeffs),n_coeffs))
+            raise fbfException(1, 'You specified %i coefficients, but there are %i cal coefficients required for this design.'%(len(init_coeffs),n_coeffs), \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
         else:
             coeffs = numpy.polyval(init_poly, range(n_coeffs))
         
@@ -1054,8 +1110,9 @@ class fbf:
         elif self.get_param('bf_cal_type') == 'complex':
             coeffs = numpy.array(coeffs, dtype = numpy.complex128)
         else:
-            self.syslogger.error("Sorry, your beamformer calibration type is not supported. Expecting scalar or complex.")
-            raise RuntimeError("Sorry, your beamformer calibration type is not supported. Expecting scalar or complex.")
+            raise fbfException(1, 'Sorry, your beamformer calibration type is not supported. Expecting scalar or complex.', \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
 
         self.cal_data_set(beam=beam, ant_strs=[ant_str], frequencies=all, data=coeffs)
 
