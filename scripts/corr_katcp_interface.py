@@ -187,17 +187,42 @@ class DeviceExampleServer(katcp.DeviceServer):
         except:
             return ("fail","Something broke. Check the log.")
 
-    @request()
     @return_reply(Str())
-    def request_tx_status(self, sock):
+    def request_tx_status(self, sock, orgmsg):
         """Check the TX status. Returns enabled or disabled."""
         if self.c is None:
             return ("fail","... you haven't connected yet!")
-        try:
-            if self.c.tx_status_get(): return("ok","enabled")
-            else: return("ok","disabled")
-        except:
-            return ("fail","Couldn't complete the request. Something broke. Check the log.")
+        # beamformer tx-status
+        if len(orgmsg.arguments)>0:
+            beam = orgmsg.arguments[0]
+            if self.b is None:
+                return ("fail","... no beams available!")
+            try:
+                if self.b.tx_status_get(beam): return("ok","enabled")
+                else: return("ok","disabled")
+            except corr.bf_functions.fbfException as be:
+                return ("fail", "... %s" % be.errmsg)
+            except Exception as e:
+                return ("fail","Couldn't complete the request. Something broke. Check the log.")
+        # correlator tx-status
+        else:
+            try:
+                if self.c.tx_status_get(): return("ok","enabled")
+                else: return("ok","disabled")
+            except:
+                return ("fail","Couldn't complete the request. Something broke. Check the log.")
+
+#     @request()
+#     @return_reply(Str())
+#     def request_tx_status(self, sock):
+#         """Check the TX status. Returns enabled or disabled."""
+#         if self.c is None:
+#             return ("fail","... you haven't connected yet!")
+#         try:
+#             if self.c.tx_status_get(): return("ok","enabled")
+#             else: return("ok","disabled")
+#         except:
+#             return ("fail","Couldn't complete the request. Something broke. Check the log.")
 
     @request(include_msg=True)
     def request_check_sys(self, sock, orgmsg):
@@ -472,23 +497,6 @@ class DeviceExampleServer(katcp.DeviceServer):
             return ("fail", "... %s" % be.errmsg)
         except Exception as e:
             return ("fail", "... %s" % e)
-
-    @request(Str())
-    @return_reply(Str())
-    def request_bf_status(self, sock, beam):
-        """Check the TX status for a specified beam. Returns enabled or disabled."""
-        if self.c is None:
-            return ("fail","... you haven't connected yet!")
-        if self.b is None:
-            return ("fail","... no beams available!")
-        try:
-            if self.b.tx_status_get(beam): return("ok","enabled")
-            else: return("ok","disabled")
-        except corr.bf_functions.fbfException as be:
-            return ("fail", "... %s" % be.errmsg)
-        except Exception as e:
-            return ("fail","Couldn't complete the request. Something broke. Check the log.")
-
 
 if __name__ == "__main__":
 
