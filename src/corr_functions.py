@@ -672,12 +672,12 @@ class Correlator:
         if not self.check_vacc(): 
             for x in range(self.config['x_per_fpga']):
                 for nx,xsrv in enumerate(self.xsrvs):
-                    while (c.xfpgas[nx].qdr_status(x)['calfail']==True) and (loop_retry_cnt< n_retries):
+                    while (self.xfpgas[nx].qdr_status(x)['calfail']==True) and (loop_retry_cnt< n_retries):
                         time.sleep(0.2)
                         loop_retry_cnt+=1
                         self.xloggers[nx].warn("SRAM calibration failed. Forcing software reset/recalibration... retry %i"%loop_retry_cnt)
-                        c.xfpgas[nx].qdr_rst(x)
-                    if c.xfpgas[nx].qdr_status(x)['calfail']==True:
+                        self.xfpgas[nx].qdr_rst(x)
+                    if self.xfpgas[nx].qdr_status(x)['calfail']==True:
                         raise RuntimeError("Could not calibrate QDR%i."%x)
             
             raise RuntimeError("Vector accumulators are broken.")
