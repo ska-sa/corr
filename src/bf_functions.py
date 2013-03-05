@@ -30,9 +30,7 @@ class fbf:
         self.syslogger.setLevel(log_level)
         self.c.b = self
 
-        self.spead_tx = []
-        for beam_index in self.beam2index(all):
-            self.spead_tx.append(spead.Transmitter(spead.TransportUDPtx(self.config['bf_rx_meta_ip_str_beam%i'%beam_index], self.config['bf_rx_udp_port_beam%i'%beam_index])))
+        self.spead_initialise()
         
         self.syslogger.info('Beamformer created')
 
@@ -775,8 +773,8 @@ class fbf:
                     if self.config.simulate == True:
                         print 'configuring excluded bfs'
 
-                    #configure disabled beamformers to output HEAP size of 0
-                    bf_config = ((beam_index << 16) & 0xffff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff) 
+                    #configure disabled beamformers to output to HEAP 0 HEAP size of 0, offset 0
+                    bf_config = ((0 << 16) & 0xffff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff) 
                     self.write_int('cfg%i'%beam_index, [bf_config], 0, fft_bins=disabled_fft_bins)
                 
                 #get frequency_indices associated with enabled parts of beams
@@ -786,7 +784,7 @@ class fbf:
                 fpga_bf_e = self.frequency2fpga_bf(fft_bins=enabled_fft_bins, unique=True)
                 bf_config = []
                 for offset in range(len(fpga_bf_e)):
-                    bf_config.append((beam_index << 16) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
+                    bf_config.append(((beam_index+1) << 16) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
                 
                 if self.config.simulate == True:
                     print 'configuring included bfs'
@@ -941,6 +939,17 @@ class fbf:
 	beam_bandwidth = len(bfs) * bf_bandwidth
 	
         return centre_frequency, beam_bandwidth
+    
+    def get_n_chans(self, beam):
+        """gets the number of active channels for the specified beam"""       
+ 
+	fft_bin_bandwidth = self.get_fft_bin_bandwidth()
+        cf,bw = get_passband(beam)
+
+        n_chans = bw/fft_bin_bandwidth
+
+        return n_chans
+        
 
 #   CALIBRATION 
 
@@ -1064,7 +1073,7 @@ class fbf:
 	#-----------
 
     def spead_config_basics(self):
-        '''Sets up spead item and data values'''
+        '''Sets up spead item and data values in gateware'''
         
         #set up data and timestamp ids
         if self.config.simulate == True:
@@ -1089,7 +1098,6 @@ class fbf:
             location = self.get_beam_param(beam, 'location')        
             beam_id = beam_indices[index]
 
-            #TODO cater for not whole range 
             bf_indices = range(n_ants * bf_be_per_fpga)
  
             beam_fpgas = self.get_fpgas()
@@ -1104,26 +1112,58 @@ class fbf:
                 bf_config = (beam_id << 16) & 0xffff0000 | (len(bf_indices) << 8) & 0x0000ff00 | offset & 0x000000ff  
                 if self.simulate == False:
                     fpga.write_int(bf_config_reg, bf_config, 0)
+    
+    def spead_initialise():
+        """creates spead transmitters that will be used by the beams in our system"""
+            
+        #create a spead transmitter for every beam and store in config
+        for beam in self.beams2beams(all):
+            ip_str = self.get_beam_param(beam, 'rx_meta_ip_str')
+            port = self.get_beam_param(beam, 'rx_udp_port')
+            self.spead_tx['bf_spead_tx_beam%i'%self.beam2index(beam)] = spead.Transmitter(spead.TransportUDPtx(ip_str, port))
+            self.syslogger.info("Created spead transmitter for beam %s. Destination IP = %s, port = " %(beam, ip_str, port))
+
+#TODO
+#    def configure_spead_output(self, beam, )
+#        """configure destination ip and port for spead metadata"""
+
+    def get_spead_tx(self, beam):
+        beam = self.beams2beams(beam)
+
+        beam_index = self.beam2index(beam)
+        try:
+            spead_tx = self.spead_tx['bf_spead_tx_beam%i'%beam_index]
+        except:
+            print 'error locating spead_tx for beam %s' %beam
+            return
+            #TODO proper exception
+        return spead_tx
+
+    def send_spead_heap(self, beam, ig):
+        """Sends spead item group via transmitter for beam specified"""
+
+        beam = beams2beams(beam)
+        spead_tx = self.get_spead_tx(beam)
+        send_heap(ig.get_heap())
 
     def spead_labelling_issue(self, beams=all):
         """Issues the SPEAD metadata packets describing the labelling/location/connections of the system's analogue inputs."""
+        beams = self.beams2beams(beams)
 
         spead_ig=spead.ItemGroup()
 
         spead_ig.add_item(name="input_labelling",id=0x100E,
             description="The physical location of each antenna connection.",
-            init_val=numpy.array([(ant_str,input_n,lru,feng_input) for (ant_str,input_n,lru,feng_input) in self.adc_lru_mapping_get()]))
+            init_val=numpy.array([(ant_str,input_n,lru,feng_input) for (ant_str,input_n,lru,feng_input) in self.c.adc_lru_mapping_get()]))
         
-        beam_indices = self.beam2index(beams)
-        
-        for idx in beam_indices:
-            ig = spead_ig
-            self.spead_tx[idx].send_heap(ig.get_heap())
-        
-            self.syslogger.info("Issued SPEAD metadata describing baseline labelling and input mapping for beam %s to %s:%i." %(self.config['bf_name_beam%i'%idx], self.config['bf_rx_meta_ip_str_beam%i'%idx], self.config['bf_rx_udp_port_beam%i'%idx]))
+        for beam in beams:
+            self.send_spead_heap(beam, spead_ig)
+            self.syslogger.info("Issued SPEAD metadata describing baseline labelling and input mapping for beam %s" %(beam))
 
     def spead_static_meta_issue(self, beams=all):
         """ Issues the SPEAD metadata packets containing the payload and options descriptors and unpack sequences."""
+
+        beams = beams2beams(beams)
 
 #        spead stuff that does not care about beam
         spead_ig=spead.ItemGroup()
@@ -1131,147 +1171,187 @@ class fbf:
         spead_ig.add_item(name="adc_clk",id=0x1007,
             description="Clock rate of ADC (samples per second).",
             shape=[],fmt=spead.mkfmt(('u',64)),
-            init_val=self.config['adc_clk'])
-
-        #TODO
-#        spead_ig.add_item(name="n_beams",id=0x,
-#            description="The total number of baselines in the data product.",
-#            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-#            init_val=self.config['n_bls'])
-#
-        spead_ig.add_item(name="n_chans",id=0x1009,
-            description="The total number of frequency channels present in any integration.",
-            shape=[], fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-            init_val=self.config['n_chans'])
+            init_val=self.get_param('adc_clk'))
 
         spead_ig.add_item(name="n_ants",id=0x100A,
             description="The total number of dual-pol antennas in the system.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-            init_val=self.config['n_ants'])
+            init_val=self.get_param('n_ants'))
 
-        #TODO
-#       spead_ig.add_item(name="n_bengs",id=0x,
-#            description="The total number of B engines for this beam-group.",
-#            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-#            init_val=self.config['n_xeng'])
+        spead_ig.add_item(name="n_bengs",id=0x100F,
+            description="The total number of B engines in the system.",
+            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+            init_val=self.get_param('bf_be_per_fpga')*len(self.get_fpgas()))
         
         #1015/1016 are taken (see time_metadata_issue below)
+        
+        self.spead_ig.add_item(name="xeng_acc_len",id=0x101F,
+            description="Number of spectra accumulated inside X engine. Determines minimum integration time and user-configurable integration time stepsize. X-engine correlator internals.",
+            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+            init_val=self.get_param('xeng_acc_len'))
 
         spead_ig.add_item(name="requant_bits",id=0x1020,
             description="Number of bits after requantisation in the F engines (post FFT and any phasing stages).",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-            init_val=self.config['feng_bits'])
+            init_val=self.get_param('feng_bits'))
 
         spead_ig.add_item(name="feng_pkt_len",id=0x1021,
             description="Payload size of 10GbE packet exchange between F and X engines in 64 bit words. Usually equal to the number of spectra accumulated inside X engine. F-engine correlator internals.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-            init_val=self.config['10gbe_pkt_len'])
+            init_val=self.get_param('10gbe_pkt_len'))
+
+        self.spead_ig.add_item(name="feng_udp_port",id=0x1023,
+            description="Destination UDP port for B engine data exchange.",
+            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+            init_val=self.get_param('10gbe_port'))
+
+        self.spead_ig.add_item(name="feng_start_ip",id=0x1025,
+            description="F engine starting IP address.",
+            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+            init_val=self.get_param('10gbe_ip'))
 
 #TODO ADD VERSION INFO!
 
-        #TODO
-#        spead_ig.add_item(name="b_per_fpga",id=0x,
-#            description="Number of B engines per FPGA.",
-#            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-#            init_val=self.config['x_per_fpga'])
+        spead_ig.add_item(name="b_per_fpga",id=0x1047,
+            description="The total number of baselines in the data product.",
+            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+            init_val=self.get_param('bf_be_per_fpga'))
 
-        #TODO
         spead_ig.add_item(name="ddc_mix_freq",id=0x1043,
             description="Digital downconverter mixing freqency as a fraction of the ADC sampling frequency. eg: 0.25. Set to zero if no DDC is present.",
             shape=[],fmt=spead.mkfmt(('f',64)),
-            init_val=self.config['ddc_mix_freq'])
-
-#       spead_ig.add_item(name="ddc_bandwidth",id=0x1044,
-#            description="Digitally processed bandwidth, post DDC, in Hz.",
-#            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-#            init_val=self.confsig['bandwidth']) #/self.config['ddc_decimation']) config's bandwidth is already divided by ddc decimation
-
-#0x1044 should be ddc_bandwidth, not ddc_decimation.
-#       spead_ig.add_item(name="ddc_decimation",id=0x1044,
-#            description="Frequency decimation of the digital downconverter (determines how much bandwidth is processed) eg: 4",
-#            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-#            init_val=self.config['ddc_decimation'])
+            init_val=self.get_param('ddc_mix_freq'))
 
         spead_ig.add_item(name="adc_bits",id=0x1045,
             description="ADC quantisation (bits).",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-            init_val=self.config['adc_bits'])
+            init_val=self.get_param('adc_bits'))
+        
+        spead_ig.add_item(name="beng_out_bits_per_sample",id=0x1050,
+            description="The number of bits per value in the beng output. Note that this is for a single value, not the combined complex value size.",
+            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+            init_val=self.get_param('bf_bits_out'))
 
-        beam_indices = self.beam2index(beams)
-        for idx in beam_indices:
-            ig = spead_ig      
+        for beam in beams:
+            
+            self.send_spead_heap(beam, spead_ig)
+            self.syslogger.info("Issued static SPEAD metadata for beam %s" %beam)
+    
+    def spead_destination_meta_issue(self, beams=all):
+        """Issues a SPEAD packet to notify the receiver of changes to destination"""
+        
+        for beam in beams:
+            spead_ig=spead.ItemGroup()
+           
+            self.spead_ig.add_item(name="rx_udp_port",id=0x1022,
+                description="Destination UDP port for B engine output.",
+                shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+                init_val=self.get_beam_param(beam, 'rx_udp_port'))
+
+            self.spead_ig.add_item(name="rx_udp_ip_str",id=0x1024,
+                description="Destination IP address for B engine output UDP packets.",
+                shape=[-1],fmt=spead.STR_FMT,
+                init_val=self.get_beam_param(beam, 'rx_udp_ip_str'))
+
+            self.send_spead_heap(beam, spead_ig)
+            self.syslogger.info("Issued destination SPEAD metadata for beam %s" %beam)
+
+    def spead_passband_meta_issue(self, beams=all):
+        """Issues a SPEAD packet to notify the receiver of changes to passband parameters"""
+        
+        for beam in beams:
+            spead_ig=spead.ItemGroup()
+            cf,bw = self.get_passband(beam)
  
-            #TODO get these properly
-            ig.add_item(name="center_freq",id=0x1011,
+            spead_ig.add_item(name="center_freq",id=0x1011,
                 description="The center frequency of the DBE in Hz, 64-bit IEEE floating-point number.",
                 shape=[],fmt=spead.mkfmt(('f',64)),
-                init_val=self.config['center_freq'])
+                init_val=cf)
 
-            ig.add_item(name="bandwidth",id=0x1013,
+            spead_ig.add_item(name="bandwidth",id=0x1013,
                 description="The analogue bandwidth of the digitally processed signal in Hz.",
                 shape=[],fmt=spead.mkfmt(('f',64)),
-                init_val=self.config['bandwidth'])
-        
-            self.spead_tx[idx].send_heap(ig.get_heap())
-            self.syslogger.info("Issued misc SPEAD metadata for beam %s to %s:%i." %(self.config['bf_name_beam%d'], self.config['bf_rx_meta_ip_str_beam'%idx], self.config['rx_udp_port_beam%i'%idx]))
+                init_val=bw)
+            
+            spead_ig.add_item(name="n_chans",id=0x1009,
+                description="The total number of frequency channels present in any integration.",
+                shape=[], fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+                init_val=self.get_n_chans(beam))
+            
+            self.send_spead_heap(beam, spead_ig)
+            self.syslogger.info("Issued passband SPEAD metadata for beam %s" %beam)
 
     def spead_time_meta_issue(self, beams=all):
         """Issues a SPEAD packet to notify the receiver that we've resync'd the system, acc len has changed etc."""
-        
-        spead_ig = spead.ItemGroup()
 
+        beams = beams2beams(beams)       
+ 
+        spead_ig = spead.ItemGroup()
+        
+        #TODO check if we need this 
+        self.spead_ig.add_item(name="int_time",id=0x1016,
+            description="Approximate (it's a float!) integration time per accumulation in seconds.",
+            shape=[],fmt=spead.mkfmt(('f',64)),
+            init_val=self.c.acc_time_get())
+        
         #sync time
         spead_ig.add_item(name='sync_time',id=0x1027,
             description="Time at which the system was last synchronised (armed and triggered by a 1PPS) in seconds since the Unix Epoch.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-            init_val=self.config['sync_time'])
+            init_val=self.get_param('sync_time'))
 
         #scale factor for timestamp
         spead_ig.add_item(name="scale_factor_timestamp",id=0x1046,
             description="Timestamp scaling factor. Divide the SPEAD data packet timestamp by this number to get back to seconds since last sync.",
             shape=[],fmt=spead.mkfmt(('f',64)),
-            init_val=self.config['spead_timestamp_scale_factor'])
+            init_val=self.get_param('spead_timestamp_scale_factor'))
             
-        beam_indices = self.beam2index(beams)
-        for idx in beam_indices:
+        for beam in beams:
                 ig = spead_ig
 
-                self.spead_tx[idx].send_heap(ig.get_heap())
-                self.syslogger.info("Issued SPEAD timing metadata for beam %s to %s:%i." %(self.config['bf_name_beam%d'], self.config['bf_rx_meta_ip_str_beam'%idx], self.config['rx_udp_port_beam%i'%idx]))
+                self.send_spead_heap(beam, ig)
+                self.syslogger.info("Issued SPEAD timing metadata for beam %s" %beam)
 
-    #TODO
-#    def spead_cal_meta_issue(self):
-#        """Issues a SPEAD heap for the calibration settings."""
-
-    def spead_eq_meta_issue(self):
-        """Issues a SPEAD heap for the RF gain and EQ settings."""
+    def spead_eq_meta_issue(self, beams=all):
+        """Issues a SPEAD heap for the RF gain, EQ settings and calibration settings."""
         
-        beam_indices = self.beam2index(beams)
-        for idx in beam_indices:
-            spead_ig = spead.ItemGroup()
-        
-            #RF
-            if self.config['adc_type'] == 'katadc':
-                for input_n,ant_str in enumerate(self.config._get_ant_mapping_list()):
-                    spead_ig.add_item(name="rf_gain_%i"%(input_n),id=0x1200+input_n,
-                        description="The analogue RF gain applied at the ADC for input %i (ant %s) in dB."%(input_n,ant_str),
-                        shape=[],fmt=spead.mkfmt(('f',64)),
-                        init_val=self.config['rf_gain_%i'%(input_n)])
+        beams = beams2beams(beams)
 
-            #equaliser settings
-            for in_n,ant_str in enumerate(self.config._get_ant_mapping_list()):
-                spead_ig.add_item(name="eq_coef_%s"%(ant_str),id=0x1400+in_n,
-                    description="The unitless per-channel digital scaling factors implemented prior to requantisation, post-FFT, for input %s. Complex number real,imag 32 bit integers."%(ant_str),
-                    shape=[self.config['n_chans'],2],fmt=spead.mkfmt(('u',32)),
-                    init_val=[[numpy.real(coeff),numpy.imag(coeff)] for coeff in self.eq_spectrum_get(ant_str)])
+        spead_ig = spead.ItemGroup()
+    
+        #RF
+        if self.config['adc_type'] == 'katadc':
+            for input_n,ant_str in enumerate(self.c.config._get_ant_mapping_list()):
+                spead_ig.add_item(name="rf_gain_%i"%(input_n),id=0x1200+input_n,
+                    description="The analogue RF gain applied at the ADC for input %i (ant %s) in dB."%(input_n,ant_str),
+                    shape=[],fmt=spead.mkfmt(('f',64)),
+                    init_val=self.get_param('rf_gain_%i'%(input_n)))
 
-            self.spead_tx.send_heap(spead_ig.get_heap())
-            self.syslogger.info("Issued SPEAD EG metadata for beam %s to %s:%i." %(self.config['bf_name_beam%d'], self.config['bf_rx_meta_ip_str_beam'%idx], self.config['rx_udp_port_beam%i'%idx]))
+        #equaliser settings
+        for in_n,ant_str in enumerate(self.c.config._get_ant_mapping_list()):
+            spead_ig.add_item(name="eq_coef_%s"%(ant_str),id=0x1400+in_n,
+                description="The unitless per-channel digital scaling factors implemented prior to requantisation, post-FFT, for input %s. Complex number real,imag 32 bit integers."%(ant_str),
+                shape=[self.get_param('n_chans'),2],fmt=spead.mkfmt(('u',32)),
+                init_val=[[numpy.real(coeff),numpy.imag(coeff)] for coeff in self.eq_spectrum_get(ant_str)])
+
+        for beam in beams:
+            ig = spead_ig
+
+            #calibration settings
+            for in_n,ant_str in enumerate(self.c.config._get_ant_mapping_list()):
+                ig.add_item(name="beamweight_input%s"%(ant_str),id=0x2000+in_n,
+                    description="The unitless per-channel digital scaling factors implemented prior to combining antenna signals during beamforming for input %s. Complex number real,imag 32 bit integers."%(ant_str),
+                    shape=[self.get_param('n_chans'),2],fmt=spead.mkfmt(('u',32)),
+                    init_val=[[numpy.real(coeff),numpy.imag(coeff)] for coeff in self.cal_spectrum_get(beam, ant_str)])
+            
+            self.send_spead_heap(beam, ig)
+            self.syslogger.info("Issued SPEAD EQ metadata for beam %s" %beam)
 
     #untested
     def spead_data_descriptor_issue(self, beams=all):
         """ Issues the SPEAD data descriptors for the HW 10GbE output, to enable receivers to decode the data."""
-        #tested ok corr-0.5.0 2010-08-07
+        beams = self.beams2beams(beams)
+        
         spead_ig = spead.ItemGroup()
 
         #timestamp
@@ -1280,22 +1360,24 @@ class fbf:
             shape=[], fmt=spead.mkfmt(('u',spead.ADDRSIZE)),init_val=0)
 
         beam_indices = self.beam2index(beams)
-        for idx in beam_indices:
+        for beam in beams:
             ig = spead_ig
  
             #data item
-            ig.add_item(name=(self.config['bf_name_beam%i'%idx]), id=0xB000,
+            ig.add_item(name=beam, id=0xB000,
                 description="Raw data for bengines in the system.  Frequencies are assembled from lowest frequency to highest frequency. Frequencies come in blocks of values in time order where the number of samples in a block is given by xeng_acc_len (id 0x101F). Each value is a complex number -- two (real and imaginary) signed integers.",
-                ndarray=(numpy.dtype(numpy.int8),(2,self.config['n_bls'],2)))
+                ndarray=(numpy.dtype(numpy.int8),(2,self.get_param('n_bls'),2)))
                 
-            self.spead_tx.send_heap(ig.get_heap())
-            self.syslogger.info("Issued SPEAD data descriptor for beam %s to %s:%i." %(self.config['bf_name_beam%d'], self.config['bf_rx_meta_ip_str_beam'%idx], self.config['rx_udp_port_beam%i'%idx]))
+            self.send_spead_heap(beam, ig)
+            self.syslogger.info("Issued SPEAD data descriptor for beam %s" %beam)
     
     def spead_issue_all(self, beams=all):
         """Issues all SPEAD metadata."""
 
         self.spead_data_descriptor_issue(beams)
         self.spead_static_meta_issue(beams)
+        self.spead_passband_meta_issue(beams)
+        self.spead_destination_meta_issue(beams)
         self.spead_time_meta_issue(beams)
         self.spead_eq_meta_issue(beams)
         self.spead_labelling_issue(beams)
