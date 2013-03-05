@@ -1049,10 +1049,15 @@ class fbf:
 
 	values = []
         data = self.bf_read_int(beam=beam, destination='calibrate', offset=0, antennas=[ant_str], frequencies=all) 
+	n_bits = 16
+	bin_pt = 9
         for datum in data:
 
-            datum_real = (numpy.int32(datum & 0xFFFF0000)) >> 16
-            datum_imag = (numpy.int32(datum & 0x0000FFFF))       
+            val_real = (numpy.int32(datum & 0xFFFF0000)) >> 16
+            val_imag = (numpy.int32(datum & 0x0000FFFF))
+	   	       
+	    datum_real = numpy.float(val_real)/(2**bin_pt)
+	    datum_imag = numpy.float(val_imag)/(2**bin_pt)
 
             #pack real and imaginary values into 32 bit value
             values.append(complex(datum_real, datum_imag))
@@ -1071,12 +1076,18 @@ class fbf:
             raise fbfException(1, 'Data vector length (%i) and frequency vector length (%i) incompatible'%(len(fft_bins), len(data)), \
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                self.syslogger)
+	
+	n_bits = 16
+	bin_pt = 9
+	whole_bits = n_bits-bin_pt
+	top = 2**(whole_bits-1)-1
+	bottom = -2**(whole_bits-1)
 
-        if max(numpy.real(data)) > ((2**15)-1) or min(numpy.real(data))<-((2**15)-1):
+        if (max(numpy.real(data)) > top or min(numpy.real(data)) < bottom):
             raise fbfException(1, 'real calibration values out of range', \
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                self.syslogger)
-        if max(numpy.imag(data)) > ((2**15)-1) or min(numpy.imag(data))<-((2**15)-1):
+        if (max(numpy.imag(data)) > top or min(numpy.imag(data)) < bottom):
             raise fbfException(1, 'imaginary calibration values out of range', \
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                self.syslogger)
@@ -1087,8 +1098,12 @@ class fbf:
             datum_real = numpy.real(datum)
             datum_imag = numpy.imag(datum)        
 
+	    #shift up for binary point
+	    val_real = numpy.int32(datum_real * (2**bin_pt))
+	    val_imag = numpy.int32(datum_imag * (2**bin_pt))		
+
             #pack real and imaginary values into 32 bit value
-            values.append((numpy.int32(datum_real) << 16) | (numpy.int32(datum_imag) & 0x0000FFFF))
+            values.append((val_real << 16) | (val_imag & 0x0000FFFF))
 
         #write final vector to calibrate block
         self.bf_write_int('calibrate', values, offset=0, beams=[beam], antennas=ant_strs, fft_bins=fft_bins)
