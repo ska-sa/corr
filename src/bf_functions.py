@@ -83,7 +83,7 @@ class fbf:
         beams = self.beams2beams(beams)
 
         beam_indices = self.beam2index(beams)
-        if len(beam_indices) == 0:
+        if beam_indices == []:
             raise fbfException(1, 'Error locating beams', \
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                self.syslogger)
@@ -220,7 +220,7 @@ class fbf:
  
         for beam in beams:
             indices.append(all_beams.index(beam))
-        
+
         return indices 
 
     def frequency2fpgas(self, frequencies=all, fft_bins=[], unique=False):
@@ -1169,15 +1169,16 @@ class fbf:
                 if self.simulate == False:
                     fpga.write_int(bf_config_reg, bf_config, 0)
     
-    def spead_initialise():
+    def spead_initialise(self):
         """creates spead transmitters that will be used by the beams in our system"""
-            
+        
+	self.spead_tx = dict()    
         #create a spead transmitter for every beam and store in config
         for beam in self.beams2beams(all):
             ip_str = self.get_beam_param(beam, 'rx_meta_ip_str')
             port = self.get_beam_param(beam, 'rx_udp_port')
-            self.spead_tx['bf_spead_tx_beam%i'%self.beam2index(beam)] = spead.Transmitter(spead.TransportUDPtx(ip_str, port))
-            self.syslogger.info("Created spead transmitter for beam %s. Destination IP = %s, port = " %(beam, ip_str, port))
+            self.spead_tx['bf_spead_tx_beam%i'%self.beam2index(beam)[0]] = spead.Transmitter(spead.TransportUDPtx(ip_str, port))
+            self.syslogger.info("Created spead transmitter for beam %s. Destination IP = %s, port = %d" %(beam, ip_str, port))
 
 #TODO
 #    def configure_spead_output(self, beam, )
@@ -1186,7 +1187,7 @@ class fbf:
     def get_spead_tx(self, beam):
         beam = self.beams2beams(beam)
 
-        beam_index = self.beam2index(beam)
+        beam_index = self.beam2index(beam)[0]
         try:
             spead_tx = self.spead_tx['bf_spead_tx_beam%i'%beam_index]
         except:
