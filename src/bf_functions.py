@@ -1235,7 +1235,7 @@ class fbf:
         if self.config.simulate:
             print 'dummy sending spead heap'
         else:
-            send_heap(ig.get_heap())
+            spead_tx.send_heap(ig.get_heap())
 
     def spead_labelling_issue(self, beams=all):
         """Issues the SPEAD metadata packets describing the labelling/location/connections of the system's analogue inputs."""
