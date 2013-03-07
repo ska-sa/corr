@@ -1034,7 +1034,7 @@ class fbf:
        
             #issue spead packet only once all antennas are done 
             if spead_issue:
-                self.spead_eq_meta_issue(beam, from_fgpa=False)
+                self.spead_eq_meta_issue(beam, from_fpga=False)
                 
     #untested
     def cal_default_get(self, beam, ant_str):
@@ -1082,7 +1082,7 @@ class fbf:
 		#pack real and imaginary values into 32 bit value
 		values.append(complex(datum_real, datum_imag))
        	else:
-		values = cal_default_get(beam, ant_str)
+		values = self.cal_default_get(beam, ant_str)
  
 	return values
 
