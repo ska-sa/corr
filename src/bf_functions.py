@@ -461,7 +461,7 @@ class fbf:
     
         return antenna_indices
 
-    def write_int(self, device_name, data, offset=0, frequencies=all, fft_bins=[]):
+    def write_int(self, device_name, data, offset=0, frequencies=all, fft_bins=[], blindwrite=False):
         """Writes data to all devices on all bfs in all fpgas associated with the frequencies specified"""
         
         #get all fpgas, bfs associated with frequencies specified 
@@ -484,9 +484,9 @@ class fbf:
                 print 'dummy write of 0x%.8x to %s:%s offset %i'%(datum, target['fpga'], name, offset)
             else:
                 try:
-                    target['fpga'].write_int(device_name=name, integer=datum, offset=offset)
+                    target['fpga'].write_int(device_name=name, integer=datum, blindwrite=blindwrite, offset=offset)
                 except:
-                    self.syslogger.error('write_int: error writing of 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset))
+                    self.syslogger.error('write_int: error writing to 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset))
     
     def read_int(self, device_name, offset=0, frequencies=all, fft_bins=[]):
         """Reads data from all devices on all bfs in all fpgas associated with the frequencies specified"""
@@ -540,7 +540,7 @@ class fbf:
             control = control | (id << 16) 
         return control
 
-    def bf_read_int(self, beam, destination, offset=0, antennas=None, frequencies=None, fft_bins=[]):
+    def bf_read_int(self, beam, destination, offset=0, antennas=None, frequencies=None, fft_bins=[], blindwrite=True):
         """read from destination in the bf block for a particular beam"""
 
         values = []
@@ -581,7 +581,7 @@ class fbf:
         #look up control value required to read 
         control = self.bf_control_lookup(destination, write=False, read=True)
 #        print 'bf_read_int: disabling writes, setting up reads' 
-        self.write_int('control', [control], offset=0, fft_bins=fft_bins)
+        self.write_int('control', [control], offset=0, fft_bins=fft_bins, blindwrite=blindwrite)
        
         #expand, check and convert to input indices
         antennas = self.ants2ants(antennas)
@@ -589,21 +589,21 @@ class fbf:
 
 #        print 'bf_read_int: setting up location' 
         #set up target stream (location of beam in set )
-        self.write_int('stream', [location[0]], offset=0, fft_bins=fft_bins)
+        self.write_int('stream', [location[0]], offset=0, fft_bins=fft_bins, blindwrite=blindwrite)
 
         #go through antennas (normally just one but may be all or none)
         for antenna_index in antenna_indices:
 
 #            print 'bf_read_int: setting up antenna' 
             #set up antenna register
-            self.write_int('antenna', [antenna_index], 0, fft_bins=fft_bins)
+            self.write_int('antenna', [antenna_index], 0, fft_bins=fft_bins, blindwrite=blindwrite)
 
             #cycle through frequencies (cannot have frequencies without antenna component) 
             for index, fft_bin in enumerate(fft_bins):
 
 #                print 'bf_read_int: setting up frequency' 
                 #set up frequency register
-                self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin])
+                self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
 
                 values.extend(self.read_int('value_out', offset=0, fft_bins=[fft_bin]))
  
@@ -620,7 +620,7 @@ class fbf:
 
 	return values 
 
-    def bf_write_int(self, destination, data, offset=0, beams=all, antennas=None, frequencies=None, fft_bins=[]):
+    def bf_write_int(self, destination, data, offset=0, beams=all, antennas=None, frequencies=None, fft_bins=[], blindwrite=True):
         """write to various destinations in the bf block for a particular beam"""
 
         if destination == 'calibrate':
@@ -661,13 +661,13 @@ class fbf:
 
         #disable writes
 #        print 'bf_write_int: disabling everything' 
-        self.write_int('control', [0x0], 0, fft_bins=fft_bins)
+        self.write_int('control', [0x0], 0, fft_bins=fft_bins, blindwrite=blindwrite)
         
         if len(data) == 1:
 
 #            print 'bf_write_int: setting up data for single data item' 
             #set up the value to be written
-            self.write_int('value_in', data, offset, fft_bins=fft_bins)
+            self.write_int('value_in', data, offset, fft_bins=fft_bins, blindwrite=blindwrite)
 
         #look up control value required to write when triggering write
         control = self.bf_control_lookup(destination, write=True, read=True)
@@ -681,7 +681,7 @@ class fbf:
            
  #           print 'bf_write_int: setting up location' 
             #set up target stream (location of beam in set )
-            self.write_int('stream', [location], 0, fft_bins=fft_bins)
+            self.write_int('stream', [location], 0, fft_bins=fft_bins, blindwrite=blindwrite)
 
             #go through antennas (normally just one but may be all or None)
             for antenna_index in antenna_indices:
@@ -689,36 +689,42 @@ class fbf:
                 #if no frequency component (i.e all frequencies for this antenna)
 #                print 'bf_write_int: setting up antenna' 
                 #set up antenna register
-                self.write_int('antenna', [antenna_index], 0, fft_bins=fft_bins)
+                self.write_int('antenna', [antenna_index], 0, fft_bins=fft_bins, blindwrite=blindwrite)
                
                 #cycle through frequencies (cannot have frequencies without antenna component) 
                 for index, fft_bin in enumerate(fft_bins):
                     
 #                    print 'bf_write_int: setting up frequency' 
                     #set up frequency register on bf associated with fft_bin being processed
-                    self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin])
+                    self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
                   
                     #we have a vector of data (one for every frequency)
                     if len(data) > 1:
                         #set up the value to be written
 #                        print 'bf_write_int: setting up one of multiple data values' 
-                        self.write_int('value_in', [data[index]], 0, fft_bins=[fft_bin])
+			value_in = data[index]
+			p_value_in = value_in+1
+			#write if value differs
+                        if value_in != p_value_in:
+			    self.write_int('value_in', [value_in], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
+			    p_value_in = value_in
  
-                    #trigger the write
-#                    print 'bf_write_int: triggering antenna, frequencies' 
-                    self.write_int('control', [control], 0, fft_bins=[fft_bin])      
+                    #trigger the write on first of batch
+                    if(index == 0):
+#		    	 print 'bf_write_int: triggering antenna, frequencies' 
+		     	self.write_int('control', [control], 0, fft_bins=[fft_bin], blindwrite=blindwrite)      
 
                 #if no frequency component, trigger
                 if len(fft_bins) == 0:
                     #trigger the write
 #                    print 'bf_write_int: triggering for no antenna but no frequencies' 
-                    self.write_int('control', [control], 0, fft_bins=fft_bins)      
+                    self.write_int('control', [control], 0, fft_bins=fft_bins, blindwrite=blindwrite)      
             
             #if no antenna component, trigger write
             if len(antenna_indices) == 0:
                 #trigger the write
 #                print 'bf_write_int: triggering for no antennas (and no frequencies)' 
-                self.write_int('control', [control], 0, fft_bins=fft_bins)      
+                self.write_int('control', [control], 0, fft_bins=fft_bins, blindwrite=blindwrite)      
 
     def cf_bw2fft_bins(self, centre_frequency, bandwidth):
         """returns fft bins associated with provided centre_frequency and bandwidth"""
@@ -1028,7 +1034,7 @@ class fbf:
        
             #issue spead packet only once all antennas are done 
             if spead_issue:
-                self.spead_eq_meta_issue(beam)
+                self.spead_eq_meta_issue(beam, from_fpga=False)
                 
     #untested
     def cal_default_get(self, beam, ant_str):
@@ -1057,24 +1063,27 @@ class fbf:
                                self.syslogger)
         return calibration
 
-    def cal_spectrum_get(self, beam, ant_str):
+    def cal_spectrum_get(self, beam, ant_str, from_fpga=True):
         """Retrieves the calibration settings currently programmed in all bengines for the given beam and antenna. Returns an array of length n_chans."""
 
 	values = []
-        data = self.bf_read_int(beam=beam, destination='calibrate', offset=0, antennas=[ant_str], frequencies=all) 
-	n_bits = 16
-	bin_pt = 9
-        for datum in data:
+	if from_fpga:
+	    data = self.bf_read_int(beam=beam, destination='calibrate', offset=0, antennas=[ant_str], frequencies=all) 
+	    n_bits = 16
+	    bin_pt = 9
+	    for datum in data:
 
-            val_real = (numpy.int32(datum & 0xFFFF0000)) >> 16
-            val_imag = (numpy.int32(datum & 0x0000FFFF))
-	   	       
-	    datum_real = numpy.float(val_real)/(2**bin_pt)
-	    datum_imag = numpy.float(val_imag)/(2**bin_pt)
+                val_real = (numpy.int32(datum & 0xFFFF0000)) >> 16
+		val_imag = (numpy.int32(datum & 0x0000FFFF))
+			       
+		datum_real = numpy.float(val_real)/(2**bin_pt)
+		datum_imag = numpy.float(val_imag)/(2**bin_pt)
 
-            #pack real and imaginary values into 32 bit value
-            values.append(complex(datum_real, datum_imag))
-        
+		#pack real and imaginary values into 32 bit value
+		values.append(complex(datum_real, datum_imag))
+       	else:
+		values = self.cal_default_get(beam, ant_str)
+ 
 	return values
 
     def cal_data_set(self, beam, ant_strs, frequencies, data):
@@ -1235,7 +1244,7 @@ class fbf:
         if self.config.simulate:
             print 'dummy sending spead heap'
         else:
-            send_heap(ig.get_heap())
+            spead_tx.send_heap(ig.get_heap())
 
     def spead_labelling_issue(self, beams=all):
         """Issues the SPEAD metadata packets describing the labelling/location/connections of the system's analogue inputs."""
@@ -1408,7 +1417,7 @@ class fbf:
                 self.send_spead_heap(beam, ig)
                 self.syslogger.info("Issued SPEAD timing metadata for beam %s" %beam)
 
-    def spead_eq_meta_issue(self, beams=all):
+    def spead_eq_meta_issue(self, beams=all, from_fpga=True):
         """Issues a SPEAD heap for the RF gain, EQ settings and calibration settings."""
         
         beams = self.beams2beams(beams)
@@ -1443,7 +1452,7 @@ class fbf:
                 if self.config.simulate:
                     vals=[[numpy.real(coeff),numpy.imag(coeff)] for coeff in self.cal_default_get(beam, ant_str)]
                 else:
-                    vals=[[numpy.real(coeff),numpy.imag(coeff)] for coeff in self.cal_spectrum_get(beam, ant_str)]
+                    vals=[[numpy.real(coeff),numpy.imag(coeff)] for coeff in self.cal_spectrum_get(beam, ant_str, from_fpga)]
 
                 ig.add_item(name="beamweight_input%s"%(ant_str),id=0x2000+in_n,
                     description="The unitless per-channel digital scaling factors implemented prior to combining antenna signals during beamforming for input %s. Complex number real,imag 32 bit integers."%(ant_str),
