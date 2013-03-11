@@ -463,7 +463,10 @@ class fbf:
 
     def write_int(self, device_name, data, offset=0, frequencies=all, fft_bins=[], blindwrite=False):
         """Writes data to all devices on all bfs in all fpgas associated with the frequencies specified"""
-        
+       
+        #TODO 
+        timeout = 1
+
         #get all fpgas, bfs associated with frequencies specified 
         targets = self.frequency2fpga_bf(frequencies, fft_bins, unique=True)
         
@@ -471,22 +474,67 @@ class fbf:
             raise fbfException(1, 'Many data but size (%d) does not match length of targets (%d)'%(len(data), len(targets)), \
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                self.syslogger)
-
-        for target_index,target in enumerate(targets):
-            name = '%s%s_%s' %(self.config['bf_register_prefix'], target['bf'], device_name)
-            if len(data) == 1: #write of same value to many places
-                datum = data[0]
-            else:
-                datum = data[target_index]
- 
-            #pretend to write if no FPGA
+        bf_register_prefix = self.get_param('bf_register_prefix')
+        
+        #if same data, and multiple targets, write to all targets with the same register name
+        if len(data) == 1 and len(targets) > 1:
             if self.config.simulate == True:
-                print 'dummy write of 0x%.8x to %s:%s offset %i'%(datum, target['fpga'], name, offset)
-            else:
-                try:
-                    target['fpga'].write_int(device_name=name, integer=datum, blindwrite=blindwrite, offset=offset)
-                except:
-                    self.syslogger.error('write_int: error writing to 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset))
+                print 'single data item, writing in parallel'
+            
+            n_bfs = len(self.get_bfs())
+
+            #run through all bfs
+            for bf_index in range(n_bfs):
+                fpgas = []
+
+                #generate register name
+                name = '%s%s_%s' %(bf_register_prefix, bf_index, device_name)
+#                if self.config.simulate == True:
+#                    print 'collecting targets for register %s'%name
+
+                #find all fpgas to be written to for this bf
+                for target in targets:
+                    if target['bf'] == bf_index:
+                        #pretend to write if no FPGA
+#                        if self.config.simulate == True:
+#                            print 'adding fpga %s'%target['fpga']
+                        fpgas.append(target['fpga'])
+                
+                if len(fpgas) != 0:
+                    if self.config.simulate == True: print 'dummy executing non-blocking request for write to %s on %d fpgas' %(name, len(fpgas))
+                    else:
+                        nottimedout, rv = self.c.non_blocking_request(fpgas = fpgas, \
+                                                                      timeout = timeout, \
+                                                                      request = 'write_int', \
+                                                                      request_args = {'device_name':name, 'integer':datum, 'blindwrite':blindwrite, 'offset': offset})
+                        if nottimedout == False:
+                            raise fbfException(1, 'Timeout while writing asynchronously to %s' %name, \
+                                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                               self.syslogger)
+                        for k, v in rv.items():
+                            if v['reply'] != 'ok': 
+                                raise fbfException(1, 'Did not get ''ok'' as response from every fpga while writing to %s' %name, \
+                                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                                   self.syslogger)
+                                        
+        #for many data, or a single target we need many separate writes
+        else:
+            if self.config.simulate == True:
+                print 'multiple items or single target'
+            for target_index,target in enumerate(targets):
+                name = '%s%s_%s' %(bf_register_prefix, target['bf'], device_name)
+                datum = data[target_index]
+     
+                #pretend to write if no FPGA
+                if self.config.simulate == True:
+                    print 'dummy write of 0x%.8x to %s:%s offset %i'%(datum, target['fpga'], name, offset)
+                else:
+                    try:
+                        target['fpga'].write_int(device_name=name, integer=datum, blindwrite=blindwrite, offset=offset)
+                    except:
+                        raise fbfException(1, 'Error writing to 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset), \
+                                           'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                           self.syslogger)
     
     def read_int(self, device_name, offset=0, frequencies=all, fft_bins=[]):
         """Reads data from all devices on all bfs in all fpgas associated with the frequencies specified"""
@@ -645,7 +693,11 @@ class fbf:
         #convert frequencies to list of fft_bins
         if len(fft_bins) == 0:
             fft_bins = self.frequency2fft_bin(frequencies)
-    
+        
+        #assuming people don't write to the same frequency twice 
+        if len(fft_bins) == self.get_param('n_chans'): all_freqs = True
+        else: all_freqs = False
+
         #trying to write multiple data but don't have enough frequencies
         if len(data) > 1 and len(fft_bins) != len(data):
             raise fbfException(1, 'data and frequency vector lengths incompatible', \
@@ -665,7 +717,8 @@ class fbf:
         
         if len(data) == 1:
 
-#            print 'bf_write_int: setting up data for single data item' 
+            if self.config.simulate:
+                print 'bf_write_int: setting up data for single data item' 
             #set up the value to be written
             self.write_int('value_in', data, offset, fft_bins=fft_bins, blindwrite=blindwrite)
 
@@ -679,7 +732,8 @@ class fbf:
         #cycle through beams to be written to
         for location in locations:
            
- #           print 'bf_write_int: setting up location' 
+            if self.config.simulate:
+               print 'bf_write_int: setting up location' 
             #set up target stream (location of beam in set )
             self.write_int('stream', [location], 0, fft_bins=fft_bins, blindwrite=blindwrite)
 
@@ -687,43 +741,88 @@ class fbf:
             for antenna_index in antenna_indices:
                 
                 #if no frequency component (i.e all frequencies for this antenna)
-#                print 'bf_write_int: setting up antenna' 
+                if self.config.simulate:
+                    print 'bf_write_int: setting up antenna' 
                 #set up antenna register
                 self.write_int('antenna', [antenna_index], 0, fft_bins=fft_bins, blindwrite=blindwrite)
-               
-                #cycle through frequencies (cannot have frequencies without antenna component) 
-                for index, fft_bin in enumerate(fft_bins):
-                    
-#                    print 'bf_write_int: setting up frequency' 
-                    #set up frequency register on bf associated with fft_bin being processed
-                    self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
-                  
-                    #we have a vector of data (one for every frequency)
-                    if len(data) > 1:
-                        #set up the value to be written
-#                        print 'bf_write_int: setting up one of multiple data values' 
-			value_in = data[index]
-			p_value_in = value_in+1
-			#write if value differs
-                        if value_in != p_value_in:
-			    self.write_int('value_in', [value_in], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
-			    p_value_in = value_in
+              
+                #if we are writing to all fft bins
+                if all_freqs:
+                    if self.config.simulate:
+                        print 'bf_write_int: writing to' 
+
+                    bf_fft_bins = self.get_bf_fft_bins()
+                    n_bfs = len(self.get_bfs()) * len(self.get_fpgas())
+                    bins = range(0, n_bfs*bf_fft_bins, bf_fft_bins)
+
+                    #list of previous bf values, guaranteed to not be the same for first item
+                    pvals = [data[0]+1]*n_bfs
+
+                    #cycle through all register indices
+                    for reg_index in range(bf_fft_bins):
+                        if self.config.simulate:
+                            print 'bf_write_int: writing to frequencies that are a multiple of %d from offset %d'%(bf_fft_bins, reg_index)
+                        
+                        #write to all frequency registers
+                        self.write_int('frequency', [reg_index], 0, fft_bins=bins, blindwrite=blindwrite)
+                        #TODO maybe look for the same value and do asynchronous write?
+
+                        for bf in range(n_bfs):
+                            fft_bin = bf*bf_fft_bins+reg_index
+                            value = data[fft_bin]
+                            #if this is a new value for this bf, or first time
+                            if pvals[bf] != value:
+                                #now write value
+                                self.write_int('value_in', [value], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
+                                pvals[bf] = value 
+                            else:                      
+                                if self.config.simulate:
+                                    print 'bf_write_int: skipping writing to bf %d'%(bf)
  
-                    #trigger the write on first of batch
-                    if(index == 0):
-#		    	 print 'bf_write_int: triggering antenna, frequencies' 
-		     	self.write_int('control', [control], 0, fft_bins=[fft_bin], blindwrite=blindwrite)      
+                        #trigger the write on first item (will happen automatically after that)
+                        if reg_index == 0:
+                            if self.config.simulate:
+                                print 'bf_write_int: setting up control for first item' 
+                            self.write_int('control', [control], 0, fft_bins=bins, blindwrite=blindwrite)      
+
+                #otherwise we must go through one at a time
+                else:
+                    #cycle through frequencies
+                    for index, fft_bin in enumerate(fft_bins):
+                   
+                        if self.config.simulate:
+                            print 'bf_write_int: setting up frequency' 
+                        #set up frequency register on bf associated with fft_bin being processed
+                        self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
+                      
+                        #we have a vector of data 
+                        if len(data) > 1:
+                            #set up the value to be written
+                            if self.config.simulate:
+                                print 'bf_write_int: setting up one of multiple data values' 
+                            value_in = data[index]
+                            #write if (we are writing all values and have just moved to next bf) or (value differs from previous)
+                            self.write_int('value_in', [value_in], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
+
+                        #trigger the write 
+                            #set up the value to be written
+
+                        if self.config.simulate:
+    		    	    print 'bf_write_int: triggering antenna, frequencies' 
+                        self.write_int('control', [control], 0, fft_bins=[fft_bin], blindwrite=blindwrite)      
 
                 #if no frequency component, trigger
                 if len(fft_bins) == 0:
                     #trigger the write
-#                    print 'bf_write_int: triggering for no antenna but no frequencies' 
+                    if self.config.simulate:
+                        print 'bf_write_int: triggering for no antenna but no frequencies' 
                     self.write_int('control', [control], 0, fft_bins=fft_bins, blindwrite=blindwrite)      
             
             #if no antenna component, trigger write
             if len(antenna_indices) == 0:
                 #trigger the write
-#                print 'bf_write_int: triggering for no antennas (and no frequencies)' 
+                if self.config.simulate:
+                    print 'bf_write_int: triggering for no antennas (and no frequencies)' 
                 self.write_int('control', [control], 0, fft_bins=fft_bins, blindwrite=blindwrite)      
 
     def cf_bw2fft_bins(self, centre_frequency, bandwidth):
@@ -1385,11 +1484,11 @@ class fbf:
 
     def spead_time_meta_issue(self, beams=all):
         """Issues a SPEAD packet to notify the receiver that we've resync'd the system, acc len has changed etc."""
-
-        beams = self.beams2beams(beams)       
  
+        beams = self.beams2beams(beams)       
+
         spead_ig = spead.ItemGroup()
-        
+       
         if self.config.simulate: val=0xB00B 
         else: val=self.c.acc_time_get()
         #TODO check if we need this 
@@ -1400,10 +1499,10 @@ class fbf:
         
         #sync time
         #TODO broken function in cn_conf?
-#        spead_ig.add_item(name='sync_time',id=0x1027,
-#            description="Time at which the system was last synchronised (armed and triggered by a 1PPS) in seconds since the Unix Epoch.",
-#            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-#            init_val=self.get_param('sync_time'))
+        spead_ig.add_item(name='sync_time',id=0x1027,
+            description="Time at which the system was last synchronised (armed and triggered by a 1PPS) in seconds since the Unix Epoch.",
+            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+            init_val=self.get_param('sync_time'))
 
         #scale factor for timestamp
         spead_ig.add_item(name="scale_factor_timestamp",id=0x1046,
@@ -1412,10 +1511,10 @@ class fbf:
             init_val=self.get_param('spead_timestamp_scale_factor'))
             
         for beam in beams:
-                ig = spead_ig
+            ig = spead_ig
 
-                self.send_spead_heap(beam, ig)
-                self.syslogger.info("Issued SPEAD timing metadata for beam %s" %beam)
+            self.send_spead_heap(beam, ig)
+            self.syslogger.info("Issued SPEAD timing metadata for beam %s" %beam)
 
     def spead_eq_meta_issue(self, beams=all, from_fpga=True):
         """Issues a SPEAD heap for the RF gain, EQ settings and calibration settings."""
