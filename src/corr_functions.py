@@ -192,10 +192,11 @@ def non_blocking_request(fpgas, timeout, request, request_args):
             raise KeyError('Didn\'t get a reply for FPGA \'%s\' so the request \'%s\' probably didn\'t complete.' % (f.host, request))
         reply, informs = f._nb_get_request_result(request_id) 
         frv['request'] = requests[f.host][0] 
-        frv['reply'] = reply.arguments[0] 
+        frv['reply'] = reply.arguments[0]
+        frv['reply_args'] = reply.arguments
         informlist = [] 
-        for inf in informs: 
-            informlist.append(inf.arguments[0]) 
+        for inf in informs:
+            informlist.append(inf.arguments) 
         frv['informs'] = informlist 
         rv[f.host] = frv 
         f._nb_pop_request_by_id(request_id) 
