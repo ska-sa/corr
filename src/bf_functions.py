@@ -487,47 +487,54 @@ class fbf:
                 #generate register name
                 name = '%s%s_%s' %(bf_register_prefix, bf_index, device_name)
 
+		datum = struct.pack(">I", data[0])
+
                 #find all fpgas to be written to for this bf
                 for target in targets:
                     if target['bf'] == bf_index:
-                        #pretend to write if no FPGA
                         fpgas.append(target['fpga'])
                 
                 if len(fpgas) != 0:
                     if self.config.simulate == True: print 'dummy executing non-blocking request for write to %s on %d fpgas' %(name, len(fpgas))
                     else:
-                        nottimedout, rv = self.c.non_blocking_request(fpgas = fpgas, \
-                                                                      timeout = timeout, \
-                                                                      request = 'write_int', \
-                                                                      request_args = [name, datum, blindwrite,offset])
+			
+                        nottimedout, rv = corr.corr_functions.non_blocking_request(fpgas = fpgas, \
+                                                                       		   timeout = timeout, \
+                                                                                   request = 'write', \
+                                                                                   request_args = [name, offset, datum]) 
+		
                         if nottimedout == False:
-                            raise fbfException(1, 'Timeout while writing asynchronously to %s' %name, \
-                                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
-                                               self.syslogger)
+			    raise fbfException(1, 'Timeout asynchronously writing 0x%.8x to %s on %d fpgas offset %i' %(data[0], name, len(fpgas), offset), \
+			                       'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+					       self.syslogger)
                         for k, v in rv.items():
                             if v['reply'] != 'ok': 
-                                raise fbfException(1, 'Did not get ''ok'' as response from every fpga while writing to %s' %name, \
-                                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
-                                                   self.syslogger)
+				raise fbfException(1, 'Did not get ok writing 0x%.8x to %s on %d fpgas offset %i' %(data[0], name, len(fpgas), offset), \
+						   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+						   self.syslogger)
                                         
-        #optimisations off, or (for many data, or a single target) we need many separate writes
+        #optimisations off, or (many data, or a single target) so many separate writes
         else:
-            if len(data) == 1 and len(targets) > 1:
-                if self.config.simulate == True: print 'optimisations off, single data item, writing in parallel'
-                datum = data[0]
             if self.config.simulate == True: print 'optimisations off or multiple items or single target'
+
             for target_index,target in enumerate(targets):
+
+                if len(data) == 1 and len(targets) > 1: datum = struct.pack(">I", data[0])
+                else: datum = struct.pack(">I", data[target_index])
+
                 name = '%s%s_%s' %(bf_register_prefix, target['bf'], device_name)
-                datum = data[target_index]
-     
+
                 #pretend to write if no FPGA
                 if self.config.simulate == True:
                     print 'dummy write of 0x%.8x to %s:%s offset %i'%(datum, target['fpga'], name, offset)
                 else:
                     try:
-                        target['fpga'].write_int(device_name=name, integer=datum, blindwrite=blindwrite, offset=offset)
+			if blindwrite:
+                            target['fpga'].blindwrite(device_name=name, data=datum, offset=offset)
+			else:
+                            target['fpga'].write(device_name=name, data=datum, offset=offset)
                     except:
-                        raise fbfException(1, 'Error writing to 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset), \
+                        raise fbfException(1, 'Error writing 0x%.8x to %s:%s offset %i' %(data[target_index], target['fpga'], name, offset), \
                                            'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                            self.syslogger)
     
