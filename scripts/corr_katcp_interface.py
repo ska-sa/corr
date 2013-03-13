@@ -51,7 +51,7 @@ class DeviceExampleServer(katcp.DeviceServer):
         except Exception as err_msg:
             return ("fail", err_msg)
         try:
-            self.b = corr.bf_functions.fbf(host_correlator=self.c)
+            self.b = corr.bf_functions.fbf(host_correlator=self.c, optimisations=False)
         except:
             self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Beamformer not available"),orgmsg)
             pass
@@ -131,72 +131,142 @@ class DeviceExampleServer(katcp.DeviceServer):
             return ("fail","... you haven't connected yet!")
         if (input_n < self.c.config['n_inputs']):
             self.c.label_input(input_n,ant_str)
+            # currently the correlator has no concept of the beamformer
+            # when the correlator label_input has been updated and a beamformer is known, the SPEAD metadata for the beamformer should be re-issued as well
+            # default is to issue to all beams
+            if self.b is not None: self.b.spead_labelling_issue()
             return("ok","Input %i relabelled to %s."%(input_n,ant_str))
         else:
             #return("fail","it broke.")
             return("fail","Sorry, your input number is invalid. Valid range: 0 to %i."%(self.c.config['n_inputs']-1))
-
 
     @return_reply(Str(),Str())
     def request_tx_start(self, sock, orgmsg):
         """Start transmission to the given IP address and port, or use the defaults from the config file if not specified. The first argument should be the IP address in dotted-quad notation. The second is the port."""
         if self.c is None:
             return ("fail","... you haven't connected yet!")
-        try:
-            if len(orgmsg.arguments)>1:
-                dest_port=int(orgmsg.arguments[1])
-            else:
-                dest_port=None
-            if len(orgmsg.arguments)>1:
+        # default assumption will be correlator output
+        beam=None
+        dest_ip_str=self.c.config['rx_udp_ip_str']
+        dest_port=self.c.config['rx_udp_port']
+        if len(orgmsg.arguments)>0:
+            # first argument can be either stream name or ip
+            if len(orgmsg.arguments[0].split('.')) == 4: # ip address
                 dest_ip_str=orgmsg.arguments[0]
+            elif (self.b is None): return ("fail","... no beamformer available!")
+            elif (self.b is not None): # stream name = beam name
+                beam=orgmsg.arguments[0]
+                if not beam in self.b.get_beams():
+                    beam=None
+                    self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Name %s not a know beam, assuming correlator output"%(beam)),orgmsg)
+                else:
+                    # default destination for selected beam
+                    dest_port=self.b.config['bf_rx_udp_port_beam%d'%self.b.beam2index(beam)[0]]
+                    dest_ip_str=self.b.config['bf_rx_udp_ip_str_beam%d'%self.b.beam2index(beam)[0]]
+        if len(orgmsg.arguments)>1:
+            # second argument can be either port of ip
+            if (len(orgmsg.arguments[1].split('.')) == 4) and (self.b is not None): # ip address
+                dest_ip_str=orgmsg.arguments[1]
             else:
-                dest_ip_str=None
-            self.c.config_udp_output(dest_ip_str=dest_ip_str,dest_port=dest_port)
-            self.c.spead_issue_all()
-            self.c.tx_start()
-            return ("ok",
-            "data %s:%i"%(self.c.config['rx_udp_ip_str'],self.c.config['rx_udp_port']),
-            "meta %s:%i"%(self.c.config['rx_meta_ip_str'],self.c.config['rx_udp_port'])
-            )   
-        except:
-            return ("fail","Something broke. Check the log.")
-      
-    @request()
+                try: dest_port=int(orgmsg.arguments[1])
+                except Exception as e: return ("fail", "... %s" % e)
+        if len(orgmsg.arguments)>2:
+            # beamformer port
+            try: dest_port=int(orgmsg.arguments[2])
+            except Exception as e: return ("fail", "... %s" % e)
+
+        try:
+            if (self.b is not None) and (beam is not None):
+                self.b.config_udp_output(beams=beam,dest_ip_str=dest_ip_str,dest_port=dest_port)
+                self.b.spead_issue_all(beams=beam)
+                self.b.tx_start(beams=beam)
+                return ("ok",
+                "data %s:%i"%(self.b.config['bf_rx_udp_ip_str_beam%d'%self.b.beam2index(beam)[0]], self.b.config['bf_rx_udp_port_beam%d'%self.b.beam2index(beam)[0]]),
+                "meta %s:%i"%(self.b.config['bf_rx_meta_ip_str_beam%d'%self.b.beam2index(beam)[0]], self.b.config['bf_rx_udp_port_beam%d'%self.b.beam2index(beam)[0]])
+                )
+            else:
+                self.c.config_udp_output(dest_ip_str=dest_ip_str,dest_port=dest_port)
+                self.c.spead_issue_all()
+                self.c.tx_start()
+                return ("ok",
+                "data %s:%i"%(self.c.config['rx_udp_ip_str'], self.c.config['rx_udp_port']),
+                "meta %s:%i"%(self.c.config['rx_meta_ip_str'], self.c.config['rx_udp_port'])
+                )
+        except corr.bf_functions.fbfException as be:
+            return ("fail", "... %s" % be.errmsg)
+        except Exception as e:
+            return ("fail", "... %s" % e)
+
+#     @request()
     @return_reply(Str())
-    def request_spead_issue(self, sock):
-        """Issue the SPEAD metadata so that the receiver can interpret the data stream."""
+    def request_spead_issue(self, sock, orgmsg):
+        """Issue the SPEAD metadata so that the receiver can interpret the data stream.  If a beam name is specified the SPEAD metadata is issued to the requested beam, else it is issued to the correlator stream"""
         if self.c is None:
             return ("fail","... you haven't connected yet!")
-        try:
-            self.c.spead_issue_all()
-            return ("ok",
-            "metadata sent to %s:%i"%(self.c.config['rx_meta_ip_str'],self.c.config['rx_udp_port'])
-            )
-        except:
-            return ("fail","Something broke. Check the log.")
-            
-    @request()
+
+        if len(orgmsg.arguments)>0:
+            # issue beamformer spead metadata
+            beam = orgmsg.arguments[0]
+            if self.b is None:
+                return ("fail","... no beams available!")
+            try:
+                self.b.spead_issue_all(beam)
+                return ("ok",
+                "metadata sent to %s:%i"%(self.b.config['bf_rx_meta_ip_str_beam%d'%self.b.beam2index(beam)[0]], self.b.config['bf_rx_udp_port_beam%d'%self.b.beam2index(beam)[0]])
+                )
+            except corr.bf_functions.fbfException as be:
+                return ("fail", "... %s" % be.errmsg)
+            except Exception as e:
+                return ("fail","Couldn't complete the request. Something broke. Check the log.")
+        else:
+            # issue correlator spead metadata
+            try:
+                self.c.spead_issue_all()
+                return ("ok",
+                "metadata sent to %s:%i"%(self.c.config['rx_meta_ip_str'],self.c.config['rx_udp_port'])
+                )
+            except:
+                return ("fail","Something broke. Check the log.")
+
     @return_reply()
-    def request_tx_stop(self, sock):
+    def request_tx_stop(self, sock, orgmsg):
         """Stop transmission to the IP given in the config file."""
         if self.c is None:
             return ("fail","... you haven't connected yet!")
-        try:
-            self.c.tx_stop()
-            return ("ok",)
-        except:
-            return ("fail","Something broke. Check the log.")
+        if len(orgmsg.arguments)>0:
+            # beamformer tx-stop
+            beam = orgmsg.arguments[0]
+            if self.b is None:
+                return ("fail","... no beams available!")
+            if not beam in self.b.get_beams():
+                return ("fail","Unknown beam name. Valid entries are %s."%str(self.b.get_beams()))
+            try:
+              self.b.tx_stop(beams=beam)
+              return ("ok",)
+            except corr.bf_functions.fbfException as be:
+                return ("fail", "... %s" % be.errmsg)
+            except Exception as e:
+                return ("fail", "... %s" % e)
+        else:
+            # correlator tx-stop
+            try:
+                self.c.tx_stop()
+                return ("ok",)
+            except:
+                return ("fail","Something broke. Check the log.")
 
     @return_reply(Str())
     def request_tx_status(self, sock, orgmsg):
         """Check the TX status. Returns enabled or disabled."""
         if self.c is None:
             return ("fail","... you haven't connected yet!")
-        # beamformer tx-status
         if len(orgmsg.arguments)>0:
+            # beamformer tx-status
             beam = orgmsg.arguments[0]
             if self.b is None:
                 return ("fail","... no beams available!")
+            if not beam in self.b.get_beams():
+                return ("fail","Unknown beam name. Valid entries are %s."%str(self.b.get_beams()))
             try:
                 if self.b.tx_status_get(beam): return("ok","enabled")
                 else: return("ok","disabled")
@@ -204,25 +274,13 @@ class DeviceExampleServer(katcp.DeviceServer):
                 return ("fail", "... %s" % be.errmsg)
             except Exception as e:
                 return ("fail","Couldn't complete the request. Something broke. Check the log.")
-        # correlator tx-status
         else:
+            # correlator tx-status
             try:
                 if self.c.tx_status_get(): return("ok","enabled")
                 else: return("ok","disabled")
             except:
                 return ("fail","Couldn't complete the request. Something broke. Check the log.")
-
-#     @request()
-#     @return_reply(Str())
-#     def request_tx_status(self, sock):
-#         """Check the TX status. Returns enabled or disabled."""
-#         if self.c is None:
-#             return ("fail","... you haven't connected yet!")
-#         try:
-#             if self.c.tx_status_get(): return("ok","enabled")
-#             else: return("ok","disabled")
-#         except:
-#             return ("fail","Couldn't complete the request. Something broke. Check the log.")
 
     @request(include_msg=True)
     def request_check_sys(self, sock, orgmsg):
@@ -248,6 +306,10 @@ class DeviceExampleServer(katcp.DeviceServer):
             return ("fail","... you haven't connected yet!")
         try:
             time=self.c.arm()
+            # currently the correlator has no concept of the beamformer
+            # when the correlator label_input has been updated and a beamformer is known, the SPEAD metadata for the beamformer should be re-issued as well
+            # default is to issue to all beams
+            if self.b is not None: self.b.spead_time_meta_issue()
             return ("ok",(time*1000))
         except:
             return ("fail",-1)
@@ -416,7 +478,7 @@ class DeviceExampleServer(katcp.DeviceServer):
         del_rate    =float(orgmsg.arguments[4])
         ld_time     =float(orgmsg.arguments[5])
 
-        if len(orgmsg.arguments)>6: 
+        if len(orgmsg.arguments)>6:
             ld_check=False
         #    print 'Ignoring load check.'
         else: 
