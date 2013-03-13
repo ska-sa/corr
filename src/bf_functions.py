@@ -123,10 +123,10 @@ class fbf:
 
             self.set_param('bf_%s_beam%d' %(param, beam_index), value) 
 
-    def get_fpgas(self):
+    def get_fpgas(self, names=False):
 
         #if doing dummy load (no correlator), use roach names as have not got fpgas yet
-        if self.config.simulate == False:
+        if self.config.simulate == False and names == False:
             try: 
                 all_fpgas = self.c.xfpgas
             except:
@@ -501,7 +501,7 @@ class fbf:
                         nottimedout, rv = corr.corr_functions.non_blocking_request(fpgas = fpgas, \
                                                                        		   timeout = timeout, \
                                                                                    request = 'write', \
-                                                                                   request_args = [name, offset, datum]) 
+                                                                                   request_args = [name, offset*4, datum]) 
 		
                         if nottimedout == False:
 			    raise fbfException(1, 'Timeout asynchronously writing 0x%.8x to %s on %d fpgas offset %i' %(data[0], name, len(fpgas), offset), \
@@ -532,11 +532,11 @@ class fbf:
                 else:
                     try:
 			if blindwrite:
-                            target['fpga'].blindwrite(device_name=name, data=datum_str, offset=offset)
+                            target['fpga'].blindwrite(device_name=name, data=datum_str, offset=offset*4)
 			else:
-                            target['fpga'].write(device_name=name, data=datum_str, offset=offset)
+                            target['fpga'].write(device_name=name, data=datum_str, offset=offset*4)
                     except:
-                        raise fbfException(1, 'Error writing 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset), \
+                        raise fbfException(1, 'Error writing 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset*4), \
                                            'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                            self.syslogger)
     
@@ -962,7 +962,7 @@ class fbf:
         """Stops outputting SPEAD data over 10GbE links for specified beams. Sends SPEAD packets indicating end of stream if required"""
         beams = self.beams2beams(beams)
 
-        if self.get_parma('out_type') == '10gbe':
+        if self.get_param('out_type') == '10gbe':
 
             for beam in beams:
 
@@ -973,7 +973,7 @@ class fbf:
                 if spead_stop:
                     if self.config.simulate == True: print 'tx_stop: dummy ending SPEAD stream for beam %s' %beam
                     else:
-                        spead_tx = get_spead_tx(beam)
+                        spead_tx = self.get_spead_tx(beam)
                         spead_tx.end()
                         self.syslogger.info("Sent SPEAD end-of-stream notification for beam %s" %beam)
                 else:
