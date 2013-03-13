@@ -2,7 +2,7 @@
 """ 
 Selection of commonly-used beamformer control functions.
 
-Author: Jason Manley, Andrew Martens
+Author: Jason Manley, Andrew Martens, Ruby van Royen
 """
 """
 Revisions:
@@ -11,7 +11,7 @@ Revisions:
 2013-02-11 AM basic SPEAD
 2013-02-21 AM flexible bandwidth
 2013-03-01 AM calibration 
-2013-03-02 AM fbfExceptions (thanks Ruby)
+2013-03-02 RR fbfExceptions
 2013-03-05 AM SPEAD metadata
 \n"""
 
@@ -28,12 +28,15 @@ class fbfException(Exception):
 
 class fbf:
     """Class for frequency-domain beamformers"""
-    def __init__(self, host_correlator, log_level=logging.INFO, simulate = False):
+    def __init__(self, host_correlator, log_level=logging.INFO, simulate = False, optimisations=True):
         self.c = host_correlator
 
         self.config = self.c.config 
 
+        #simulate operations (and output debug data). Useful for when there is no hardware
         self.config.simulate = simulate 
+        #optimisations on writes (that currently expose bugs)
+        self.optimisations = optimisations
 
         self.log_handler = host_correlator.log_handler
         self.syslogger = logging.getLogger('fbfsys')
@@ -43,12 +46,6 @@ class fbf:
 
         self.spead_initialise()
         self.syslogger.info('Beamformer created')
-
-#    def get_crosspol_order(self):
-#        "Returns the order of the cross-pol terms out the B engines"
-#        pol1=self.config['rev_pol_map'][0]
-#        pol2=self.config['rev_pol_map'][1]
-#        return (pol1+pol1,pol2+pol2,pol1+pol2,pol2+pol1) 
 
 	#-----------------------
 	#  helper functions
@@ -126,10 +123,10 @@ class fbf:
 
             self.set_param('bf_%s_beam%d' %(param, beam_index), value) 
 
-    def get_fpgas(self):
+    def get_fpgas(self, names=False):
 
         #if doing dummy load (no correlator), use roach names as have not got fpgas yet
-        if self.config.simulate == False:
+        if self.config.simulate == False and names == False:
             try: 
                 all_fpgas = self.c.xfpgas
             except:
@@ -234,7 +231,7 @@ class fbf:
 
         all_fpgas = self.get_fpgas()
         
-        n_chans = self.config['n_chans']
+        n_chans = self.get_param('n_chans')
         n_chans_per_fpga = n_chans/len(all_fpgas)
 
         prev_index = -1
@@ -345,7 +342,7 @@ class fbf:
     def get_bf_fft_bins(self):
 	"""Returns the number of fft bins for one bf engine"""
         
-	n_chans = self.config['n_chans']
+	n_chans = self.get_param('n_chans')
         bf_be_per_fpga = len(self.get_bfs()) 
         n_fpgas = len(self.get_fpgas())
 
@@ -449,7 +446,7 @@ class fbf:
     def antenna2antenna_indices(self, antennas=all, antenna_indices=[]):
 
         antenna_indices = []
-        n_ants = self.config['n_ants']
+        n_ants = self.get_param('n_ants')
 
         if len(antenna_indices) == 0:
             if antennas==all:
@@ -463,7 +460,10 @@ class fbf:
 
     def write_int(self, device_name, data, offset=0, frequencies=all, fft_bins=[], blindwrite=False):
         """Writes data to all devices on all bfs in all fpgas associated with the frequencies specified"""
-        
+       
+        #TODO work this out properly
+        timeout = 1
+
         #get all fpgas, bfs associated with frequencies specified 
         targets = self.frequency2fpga_bf(frequencies, fft_bins, unique=True)
         
@@ -471,22 +471,74 @@ class fbf:
             raise fbfException(1, 'Many data but size (%d) does not match length of targets (%d)'%(len(data), len(targets)), \
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                self.syslogger)
+        bf_register_prefix = self.get_param('bf_register_prefix')
+        
+        #if optimisations are enabled and (same data, and multiple targets) write to all targets with the same register name
+        if self.optimisations and (len(data) == 1 and len(targets) > 1):
+            if self.config.simulate == True: print 'optimisations on, single data item, writing in parallel'
+            
+            datum = data[0]
+            n_bfs = len(self.get_bfs())
 
-        for target_index,target in enumerate(targets):
-            name = '%s%s_%s' %(self.config['bf_register_prefix'], target['bf'], device_name)
-            if len(data) == 1: #write of same value to many places
-                datum = data[0]
-            else:
-                datum = data[target_index]
- 
-            #pretend to write if no FPGA
-            if self.config.simulate == True:
-                print 'dummy write of 0x%.8x to %s:%s offset %i'%(datum, target['fpga'], name, offset)
-            else:
-                try:
-                    target['fpga'].write_int(device_name=name, integer=datum, blindwrite=blindwrite, offset=offset)
-                except:
-                    self.syslogger.error('write_int: error writing to 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset))
+            #run through all bfs
+            for bf_index in range(n_bfs):
+                fpgas = []
+
+                #generate register name
+                name = '%s%s_%s' %(bf_register_prefix, bf_index, device_name)
+
+		datum = struct.pack(">I", data[0])
+
+                #find all fpgas to be written to for this bf
+                for target in targets:
+                    if target['bf'] == bf_index:
+                        fpgas.append(target['fpga'])
+                
+                if len(fpgas) != 0:
+                    if self.config.simulate == True: print 'dummy executing non-blocking request for write to %s on %d fpgas' %(name, len(fpgas))
+                    else:
+			
+                        nottimedout, rv = corr.corr_functions.non_blocking_request(fpgas = fpgas, \
+                                                                       		   timeout = timeout, \
+                                                                                   request = 'write', \
+                                                                                   request_args = [name, offset*4, datum]) 
+		
+                        if nottimedout == False:
+			    raise fbfException(1, 'Timeout asynchronously writing 0x%.8x to %s on %d fpgas offset %i' %(data[0], name, len(fpgas), offset), \
+			                       'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+					       self.syslogger)
+                        for k, v in rv.items():
+                            if v['reply'] != 'ok': 
+				raise fbfException(1, 'Did not get ok writing 0x%.8x to %s on %d fpgas offset %i' %(data[0], name, len(fpgas), offset), \
+						   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+						   self.syslogger)
+                                        
+        #optimisations off, or (many data, or a single target) so many separate writes
+        else:
+            if self.config.simulate == True: print 'optimisations off or multiple items or single target'
+
+            for target_index,target in enumerate(targets):
+
+                if len(data) == 1 and len(targets) > 1: datum = data[0]
+                else: datum = data[target_index]
+                
+                datum_str = struct.pack(">I", datum)
+
+                name = '%s%s_%s' %(bf_register_prefix, target['bf'], device_name)
+
+                #pretend to write if no FPGA
+                if self.config.simulate == True:
+                    print 'dummy write of 0x%.8x to %s:%s offset %i'%(datum, target['fpga'], name, offset)
+                else:
+                    try:
+			if blindwrite:
+                            target['fpga'].blindwrite(device_name=name, data=datum_str, offset=offset*4)
+			else:
+                            target['fpga'].write(device_name=name, data=datum_str, offset=offset*4)
+                    except:
+                        raise fbfException(1, 'Error writing 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset*4), \
+                                           'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                                           self.syslogger)
     
     def read_int(self, device_name, offset=0, frequencies=all, fft_bins=[]):
         """Reads data from all devices on all bfs in all fpgas associated with the frequencies specified"""
@@ -496,7 +548,7 @@ class fbf:
         targets = self.frequency2fpga_bf(frequencies, fft_bins, unique=True)
         
         for target_index,target in enumerate(targets):
-            name = '%s%s_%s' %(self.config['bf_register_prefix'], target['bf'], device_name)
+            name = '%s%s_%s' %(self.get_param('bf_register_prefix'), target['bf'], device_name)
  
             #pretend to read if no FPGA
             if self.config.simulate == True:
@@ -645,7 +697,11 @@ class fbf:
         #convert frequencies to list of fft_bins
         if len(fft_bins) == 0:
             fft_bins = self.frequency2fft_bin(frequencies)
-    
+        
+        #assuming people don't write to the same frequency twice 
+        if len(fft_bins) == self.get_param('n_chans'): all_freqs = True
+        else: all_freqs = False
+
         #trying to write multiple data but don't have enough frequencies
         if len(data) > 1 and len(fft_bins) != len(data):
             raise fbfException(1, 'data and frequency vector lengths incompatible', \
@@ -665,7 +721,8 @@ class fbf:
         
         if len(data) == 1:
 
-#            print 'bf_write_int: setting up data for single data item' 
+            if self.config.simulate:
+                print 'bf_write_int: setting up data for single data item' 
             #set up the value to be written
             self.write_int('value_in', data, offset, fft_bins=fft_bins, blindwrite=blindwrite)
 
@@ -679,7 +736,8 @@ class fbf:
         #cycle through beams to be written to
         for location in locations:
            
- #           print 'bf_write_int: setting up location' 
+            if self.config.simulate:
+               print 'bf_write_int: setting up location' 
             #set up target stream (location of beam in set )
             self.write_int('stream', [location], 0, fft_bins=fft_bins, blindwrite=blindwrite)
 
@@ -687,51 +745,96 @@ class fbf:
             for antenna_index in antenna_indices:
                 
                 #if no frequency component (i.e all frequencies for this antenna)
-#                print 'bf_write_int: setting up antenna' 
+                if self.config.simulate:
+                    print 'bf_write_int: setting up antenna' 
                 #set up antenna register
                 self.write_int('antenna', [antenna_index], 0, fft_bins=fft_bins, blindwrite=blindwrite)
-               
-                #cycle through frequencies (cannot have frequencies without antenna component) 
-                for index, fft_bin in enumerate(fft_bins):
-                    
-#                    print 'bf_write_int: setting up frequency' 
-                    #set up frequency register on bf associated with fft_bin being processed
-                    self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
-                  
-                    #we have a vector of data (one for every frequency)
-                    if len(data) > 1:
-                        #set up the value to be written
-#                        print 'bf_write_int: setting up one of multiple data values' 
-			value_in = data[index]
-			p_value_in = value_in+1
-			#write if value differs
-                        if value_in != p_value_in:
-			    self.write_int('value_in', [value_in], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
-			    p_value_in = value_in
+              
+                #if we are writing to all fft bins
+                if all_freqs:
+                    if self.config.simulate:
+                        print 'bf_write_int: writing to' 
+
+                    bf_fft_bins = self.get_bf_fft_bins()
+                    n_bfs = len(self.get_bfs()) * len(self.get_fpgas())
+                    bins = range(0, n_bfs*bf_fft_bins, bf_fft_bins)
+
+                    #list of previous bf values, guaranteed to not be the same for first item
+                    pvals = [data[0]+1]*n_bfs
+
+                    #cycle through all register indices
+                    for reg_index in range(bf_fft_bins):
+                        if self.config.simulate:
+                            print 'bf_write_int: writing to frequencies that are a multiple of %d from offset %d'%(bf_fft_bins, reg_index)
+                        
+                        #write to all frequency registers
+                        self.write_int('frequency', [reg_index], 0, fft_bins=bins, blindwrite=blindwrite)
+                        #TODO maybe look for the same value and do asynchronous write?
+
+                        for bf in range(n_bfs):
+                            fft_bin = bf*bf_fft_bins+reg_index
+                            value = data[fft_bin]
+                            #if this is a new value for this bf, or first time
+                            if pvals[bf] != value:
+                                #now write value
+                                self.write_int('value_in', [value], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
+                                pvals[bf] = value 
+                            else:                      
+                                if self.config.simulate:
+                                    print 'bf_write_int: skipping writing to bf %d'%(bf)
  
-                    #trigger the write on first of batch
-                    if(index == 0):
-#		    	 print 'bf_write_int: triggering antenna, frequencies' 
-		     	self.write_int('control', [control], 0, fft_bins=[fft_bin], blindwrite=blindwrite)      
+                        #trigger the write on first item (will happen automatically after that)
+                        if reg_index == 0:
+                            if self.config.simulate:
+                                print 'bf_write_int: setting up control for first item' 
+                            self.write_int('control', [control], 0, fft_bins=bins, blindwrite=blindwrite)      
+
+                #otherwise we must go through one at a time
+                else:
+                    #cycle through frequencies
+                    for index, fft_bin in enumerate(fft_bins):
+                   
+                        if self.config.simulate:
+                            print 'bf_write_int: setting up frequency' 
+                        #set up frequency register on bf associated with fft_bin being processed
+                        self.write_int('frequency', [self.frequency2frequency_reg_index(fft_bins=[fft_bin])][0], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
+                      
+                        #we have a vector of data 
+                        if len(data) > 1:
+                            #set up the value to be written
+                            if self.config.simulate:
+                                print 'bf_write_int: setting up one of multiple data values' 
+                            value_in = data[index]
+                            #write if (we are writing all values and have just moved to next bf) or (value differs from previous)
+                            self.write_int('value_in', [value_in], 0, fft_bins=[fft_bin], blindwrite=blindwrite)
+
+                        #trigger the write 
+                            #set up the value to be written
+
+                        if self.config.simulate:
+    		    	    print 'bf_write_int: triggering antenna, frequencies' 
+                        self.write_int('control', [control], 0, fft_bins=[fft_bin], blindwrite=blindwrite)      
 
                 #if no frequency component, trigger
                 if len(fft_bins) == 0:
                     #trigger the write
-#                    print 'bf_write_int: triggering for no antenna but no frequencies' 
+                    if self.config.simulate:
+                        print 'bf_write_int: triggering for no antenna but no frequencies' 
                     self.write_int('control', [control], 0, fft_bins=fft_bins, blindwrite=blindwrite)      
             
             #if no antenna component, trigger write
             if len(antenna_indices) == 0:
                 #trigger the write
-#                print 'bf_write_int: triggering for no antennas (and no frequencies)' 
+                if self.config.simulate:
+                    print 'bf_write_int: triggering for no antennas (and no frequencies)' 
                 self.write_int('control', [control], 0, fft_bins=fft_bins, blindwrite=blindwrite)      
 
     def cf_bw2fft_bins(self, centre_frequency, bandwidth):
         """returns fft bins associated with provided centre_frequency and bandwidth"""
         bins = []
 
-        adc_clk = self.config['adc_clk']
-        n_chans = self.config['n_chans']
+        adc_clk = self.get_param('adc_clk')
+        n_chans = self.get_param('n_chans')
 
         #TODO spectral line mode systems??
         if (centre_frequency-bandwidth/2) < 0 or (centre_frequency+bandwidth/2) > adc_clk/2:
@@ -781,10 +884,15 @@ class fbf:
             if self.tx_status_get(beam): 
                 self.tx_stop(beam)
                 self.syslogger.info('Stopped beamformer %s' %beam)
-	
+
+        #data and timestamp item ids	
         self.spead_config_basics()
         
-        if config_output: self.config_udp_output(all)
+        #configure spead_meta data transmitter and spead data destination, 
+        #don't issue related spead meta-data as will do in spead_issue_all 
+        if config_output: 
+            self.config_udp_output(all, issue_spead=False)
+            self.config_meta_output(all, issue_spead=False)
         else: self.syslogger.info('Skipped output configuration of beamformer.')
 
         if set_cal: self.cal_set_all(all)
@@ -797,7 +905,7 @@ class fbf:
     
     def tx_start(self, beams=all):
         """Start outputting SPEAD products. Only works for systems with 10GbE output atm.""" 
-        if self.config['out_type'] == '10gbe':
+        if self.get_param('out_type') == '10gbe':
 
             #NOTE that the order of the following operations is significant
             #output from bfs will be enabled if any component frequencies are required
@@ -852,27 +960,22 @@ class fbf:
 
     def tx_stop(self, beams=all, spead_stop=True):
         """Stops outputting SPEAD data over 10GbE links for specified beams. Sends SPEAD packets indicating end of stream if required"""
+        beams = self.beams2beams(beams)
 
-        if self.config['out_type'] == '10gbe':
-            #convert to actual beam names
-            beams = self.beams2beams(beams)
-            beam_indices = self.beam2index(beams)
+        if self.get_param('out_type') == '10gbe':
 
-            for index,beam in enumerate(beams):
-
-                beam_index = beam_indices[index]
+            for beam in beams:
 
                 #disable all bf outputs
                 self.bf_write_int(destination='filter', data=[0x0], offset=0x0, beams=beams)  
 
                 self.syslogger.info("Beamformer output paused for beam %s" %beam)
                 if spead_stop:
-                    if self.config.simulate == True:
-                        print 'tx_stop: dummy ending SPEAD stream for beam %s' %beam
+                    if self.config.simulate == True: print 'tx_stop: dummy ending SPEAD stream for beam %s' %beam
                     else:
-                        tx_temp = spead.Transmitter(spead.TransportUDPtx(self.config['bf_rx_meta_ip_str_beam%d'%beam_index], self.config['bf_rx_udp_port_beam%d'%beam_index]))
-                        tx_temp.end()
-                    self.syslogger.info("Sent SPEAD end-of-stream notification for beam %s" %beam)
+                        spead_tx = self.get_spead_tx(beam)
+                        spead_tx.end()
+                        self.syslogger.info("Sent SPEAD end-of-stream notification for beam %s" %beam)
                 else:
                     self.syslogger.info("Did not send SPEAD end-of-stream notification for beam %s" %beam)
         else:
@@ -884,8 +987,7 @@ class fbf:
         """Returns boolean true/false if the beamformer is currently outputting data. Currently only works on systems with 10GbE output."""
 
         #if simulating, no beam is enabled
-        if self.config.simulate:
-            return False
+        if self.config.simulate: return False
 
 	if self.get_param('out_type')!='10gbe': 
             raise fbfException(1, 'This function only works for systems with 10GbE output!', \
@@ -910,24 +1012,38 @@ class fbf:
 
         return rv
 
-    def config_udp_output(self, beams=all, dest_ip_str=None, dest_port=None):
-        """Configures the destination IP and port for B engine outputs. dest_port and dest_ip are optional parameters to override the config file defaults."""
+    def config_meta_output(self, beams=all, dest_ip_str=None, dest_port=None, issue_spead=True):
+        """Configures the destination IP and port for SPEAD meta-data outputs. dest_port and dest_ip are optional parameters to override the config file defaults."""
+        beams = self.beams2beams(beams)
+
+        for beam in beams:
+            if dest_ip_str==None: dest_ip_str=self.get_beam_param(beam, 'rx_meta_ip_str')
+            else:
+                self.set_beam_param(beam, 'rx_meta_ip_str', dest_ip_str)
+                self.set_beam_param(beam, 'rx_meta_ip', struct.unpack('>L',socket.inet_aton(dest_ip_str))[0])
+
+            if dest_port==None: dest_port=self.get_beam_param(beam, 'rx_meta_port')
+            else: self.set_beam_param(beam, 'rx_meta_port', dest_port)
+           
+            self.spead_tx['bf_spead_tx_beam%i'%self.beam2index(beam)[0]] = spead.Transmitter(spead.TransportUDPtx(dest_ip_str, dest_port))
+            self.syslogger.info("Destination for SPEAD meta data transmitter for beam %s changed. New destination IP = %s, port = %d" %(beam, dest_ip_str, dest_port))
+            
+            #reissue all SPEAD meta-data to new receiver
+            if issue_spead: self.spead_issue_all(beam)
+
+    def config_udp_output(self, beams=all, dest_ip_str=None, dest_port=None, issue_spead=True):
+        """Configures the destination IP and port for B engine data outputs. dest_port and dest_ip are optional parameters to override the config file defaults."""
         beams = self.beams2beams(beams)
 
         for beam in beams:
 
-            if dest_ip_str==None:
-                dest_ip_str=self.get_beam_param(beam, 'rx_udp_ip_str')
+            if dest_ip_str==None: dest_ip_str=self.get_beam_param(beam, 'rx_udp_ip_str')
             else:
                 self.set_beam_param(beam, 'rx_udp_ip_str', dest_ip_str)
                 self.set_beam_param(beam, 'rx_udp_ip', struct.unpack('>L',socket.inet_aton(dest_ip_str))[0])
-                self.set_beam_param(beam, 'rx_meta_ip_str', dest_ip_str)
-                self.set_beam_param(beam, 'rx_meta_ip', struct.unpack('>L',socket.inet_aton(dest_ip_str))[0])
 
-            if dest_port==None:
-                dest_port=self.get_beam_param(beam, 'rx_udp_port')
-            else:
-                self.set_beam_param(beam, 'rx_udp_port', dest_port)
+            if dest_port==None: dest_port=self.get_beam_param(beam, 'rx_udp_port')
+            else: self.set_beam_param(beam, 'rx_udp_port', dest_port)
 
             beam_offset = self.get_beam_param(beam, 'location')
 
@@ -943,6 +1059,7 @@ class fbf:
             #each beam output from each beamformer group can be configured differently
             self.syslogger.info("Beam %s configured to output to %s:%i." %(beam, dest_ip_str, dest_port))
            
+            if issue_spead: self.spead_destination_meta_issue(beam)
             if restart: self.tx_start(beam)
 
     def set_passband(self, beams=all, centre_frequency=None, bandwidth=None, spead_issue=True):
@@ -984,8 +1101,7 @@ class fbf:
                     self.syslogger.info('Restarting beam %s with new passband parameters'%beam)
 		    self.tx_stop(beam)
                     #issue related spead meta data
-                    if spead_issue:
-                        self.spead_passband_meta_issue(beam)
+                    if spead_issue: self.spead_passband_meta_issue(beam)
 		    self.tx_start(beam)
     
     def get_passband(self, beam):
@@ -1016,7 +1132,6 @@ class fbf:
         
 #   CALIBRATION 
 
-    #untested
     def cal_set_all(self, beams, init_poly = [], init_coeffs = [], spead_issue=True):
         """Initialise all antennas for all specified beams' calibration factors to given polynomial. If no polynomial or coefficients are given, use defaults from config file."""
 
@@ -1036,7 +1151,6 @@ class fbf:
             if spead_issue:
                 self.spead_eq_meta_issue(beam, from_fpga=False)
                 
-    #untested
     def cal_default_get(self, beam, ant_str):
         "Fetches the default calibration configuration from the config file and returns a list of the coefficients for a given beam and antenna." 
 
@@ -1069,8 +1183,8 @@ class fbf:
 	values = []
 	if from_fpga:
 	    data = self.bf_read_int(beam=beam, destination='calibrate', offset=0, antennas=[ant_str], frequencies=all) 
-	    n_bits = 16
-	    bin_pt = 9
+	    n_bits = self.get_param('bf_cal_n_bits') 
+	    bin_pt = self.get_param('bf_cal_bin_pt')
 	    for datum in data:
 
                 val_real = (numpy.int32(datum & 0xFFFF0000)) >> 16
@@ -1099,8 +1213,8 @@ class fbf:
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                self.syslogger)
 	
-	n_bits = 16
-	bin_pt = 9
+	n_bits = self.get_param('bf_cal_n_bits') 
+	bin_pt = self.get_param('bf_cal_bin_pt')
 	whole_bits = n_bits-bin_pt
 	top = 2**(whole_bits-1)-1
 	bottom = -2**(whole_bits-1)
@@ -1130,30 +1244,22 @@ class fbf:
         #write final vector to calibrate block
         self.bf_write_int('calibrate', values, offset=0, beams=[beam], antennas=ant_strs, fft_bins=fft_bins)
     
-    #untested
     def cal_spectrum_set(self, beam, ant_str, init_coeffs = [], init_poly = [], spead_issue = True):
         """Set given beam and antenna calibration settings to given co-efficients."""
 
-        #TODO error checking
-
         n_coeffs = self.get_param('n_chans') 
         
-        if init_coeffs == [] and init_poly == []: 
-            coeffs = self.cal_default_get(beam=beam, ant_str=ant_str)
-        elif len(init_coeffs) == n_coeffs:
-            coeffs = init_coeffs
+        if init_coeffs == [] and init_poly == []: coeffs = self.cal_default_get(beam=beam, ant_str=ant_str)
+        elif len(init_coeffs) == n_coeffs: coeffs = init_coeffs
         elif len(init_coeffs) > 0: 
             raise fbfException(1, 'You specified %i coefficients, but there are %i cal coefficients required for this design.'%(len(init_coeffs),n_coeffs), \
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                self.syslogger)
-        else:
-            coeffs = numpy.polyval(init_poly, range(n_coeffs))
+        else: coeffs = numpy.polyval(init_poly, range(n_coeffs))
         
         bf_cal_type = self.get_param('bf_cal_type')
-        if bf_cal_type == 'scalar':
-            coeffs = numpy.real(coeffs) 
-        elif self.get_param('bf_cal_type') == 'complex':
-            coeffs = numpy.array(coeffs, dtype = numpy.complex128)
+        if bf_cal_type == 'scalar': coeffs = numpy.real(coeffs) 
+        elif bf_cal_type == 'complex': coeffs = numpy.array(coeffs, dtype = numpy.complex128)
         else:
             raise fbfException(1, 'Sorry, your beamformer calibration type is not supported. Expecting scalar or complex.', \
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
@@ -1161,8 +1267,7 @@ class fbf:
 
         self.cal_data_set(beam=beam, ant_strs=[ant_str], frequencies=all, data=coeffs)
 
-        if spead_issue:
-            self.spead_eq_meta_issue(beam)
+        if spead_issue: self.spead_eq_meta_issue(beam)
 
 	#-----------
 	#   SPEAD
@@ -1181,7 +1286,7 @@ class fbf:
             self.c.xwrite_int_all('beng_time_id', (0x800000 | 5632) ) #same timestamp id as for correlator
     
     def spead_config_output(self, beams=all):
-        '''Sets up configuration registers controlling SPEAD output for beams specified'''
+        '''Sets up FPGA configuration registers controlling SPEAD output for beams specified'''
         
         beams = self.beams2beams(beams)
         beam_indices = self.beam2index(beams) 
@@ -1231,9 +1336,9 @@ class fbf:
         try:
             spead_tx = self.spead_tx['bf_spead_tx_beam%i'%beam_index]
         except:
-            print 'error locating spead_tx for beam %s' %beam
-            return
-            #TODO proper exception
+           raise fbfException(1, 'Error locating SPEAD transmitter for beam %s' %beam, \
+                               'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
+                               self.syslogger)
         return spead_tx
 
     def send_spead_heap(self, beam, ig):
@@ -1385,11 +1490,11 @@ class fbf:
 
     def spead_time_meta_issue(self, beams=all):
         """Issues a SPEAD packet to notify the receiver that we've resync'd the system, acc len has changed etc."""
-
-        beams = self.beams2beams(beams)       
  
+        beams = self.beams2beams(beams)       
+
         spead_ig = spead.ItemGroup()
-        
+       
         if self.config.simulate: val=0xB00B 
         else: val=self.c.acc_time_get()
         #TODO check if we need this 
@@ -1399,11 +1504,10 @@ class fbf:
             init_val = val)
         
         #sync time
-        #TODO broken function in cn_conf?
-#        spead_ig.add_item(name='sync_time',id=0x1027,
-#            description="Time at which the system was last synchronised (armed and triggered by a 1PPS) in seconds since the Unix Epoch.",
-#            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-#            init_val=self.get_param('sync_time'))
+        spead_ig.add_item(name='sync_time',id=0x1027,
+            description="Time at which the system was last synchronised (armed and triggered by a 1PPS) in seconds since the Unix Epoch.",
+            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+            init_val=self.get_param('sync_time'))
 
         #scale factor for timestamp
         spead_ig.add_item(name="scale_factor_timestamp",id=0x1046,
@@ -1412,10 +1516,10 @@ class fbf:
             init_val=self.get_param('spead_timestamp_scale_factor'))
             
         for beam in beams:
-                ig = spead_ig
+            ig = spead_ig
 
-                self.send_spead_heap(beam, ig)
-                self.syslogger.info("Issued SPEAD timing metadata for beam %s" %beam)
+            self.send_spead_heap(beam, ig)
+            self.syslogger.info("Issued SPEAD timing metadata for beam %s" %beam)
 
     def spead_eq_meta_issue(self, beams=all, from_fpga=True):
         """Issues a SPEAD heap for the RF gain, EQ settings and calibration settings."""
@@ -1425,7 +1529,7 @@ class fbf:
         spead_ig = spead.ItemGroup()
     
         #RF
-        if self.config['adc_type'] == 'katadc':
+        if self.get_param('adc_type') == 'katadc':
             for input_n,ant_str in enumerate(self.c.config._get_ant_mapping_list()):
                 spead_ig.add_item(name="rf_gain_%i"%(input_n),id=0x1200+input_n,
                     description="The analogue RF gain applied at the ADC for input %i (ant %s) in dB."%(input_n,ant_str),
@@ -1471,7 +1575,7 @@ class fbf:
         spead_ig = spead.ItemGroup()
 
         #timestamp
-        spead_ig.add_item(name=('timestamp'), id=0x1016,
+        spead_ig.add_item(name=('timestamp'), id=0x1600,
             description='Timestamp of start of this block of data. uint counting multiples of ADC samples since last sync (sync_time, id=0x1027). Divide this number by timestamp_scale (id=0x1046) to get back to seconds since last sync when this integration was actually started. Note that the receiver will need to figure out the centre timestamp of the accumulation (eg, by adding half of int_time, id 0x1016).',
             shape=[], fmt=spead.mkfmt(('u',spead.ADDRSIZE)),init_val=0)
 
@@ -1482,7 +1586,7 @@ class fbf:
             #data item
             ig.add_item(name=beam, id=0xB000,
                 description="Raw data for bengines in the system.  Frequencies are assembled from lowest frequency to highest frequency. Frequencies come in blocks of values in time order where the number of samples in a block is given by xeng_acc_len (id 0x101F). Each value is a complex number -- two (real and imaginary) signed integers.",
-                ndarray=(numpy.dtype(numpy.int8),(2,self.get_param('n_bls'),2)))
+                ndarray=(numpy.dtype(numpy.int8),(self.get_param('n_chans'),self.get_param('xeng_acc_len'),2)))
                 
             self.send_spead_heap(beam, ig)
             self.syslogger.info("Issued SPEAD data descriptor for beam %s" %beam)

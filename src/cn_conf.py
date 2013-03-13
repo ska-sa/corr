@@ -332,6 +332,8 @@ class CorrConf:
             self.read_int('beamformer', 'bf_bits_out')
             self.read_str('beamformer', 'bf_cal_type')
             self.read_str('beamformer', 'bf_cal_default')
+            self.read_int('beamformer', 'bf_cal_n_bits')
+            self.read_int('beamformer', 'bf_cal_bin_pt')
             if not self.config['bf_cal_default'] in ['poly','coeffs']: raise RuntimeError('ERR invalid bf_cal_default')
             
             for beam_n in range(self.config['bf_n_beams']):
@@ -346,14 +348,15 @@ class CorrConf:
                 udp_ip_str=self.get_line('beamformer','bf_rx_udp_ip_str_beam%i'%beam_n)
                 self.config['bf_rx_udp_ip_str_beam%i'%(beam_n)]=udp_ip_str
                 self.config['bf_rx_udp_ip_beam%i'%(beam_n)]=struct.unpack('>I',socket.inet_aton(udp_ip_str))[0]
+                #port destination for data
+                self.read_int('beamformer', 'bf_rx_udp_port_beam%i'%(beam_n))
 
                 #ip destination for spead meta data
                 meta_ip_str=self.get_line('beamformer','bf_rx_meta_ip_str_beam%i'%(beam_n))
                 self.config['bf_rx_meta_ip_str_beam%i'%(beam_n)]=meta_ip_str
                 self.config['bf_rx_meta_ip_beam%i'%(beam_n)]=struct.unpack('>I',socket.inet_aton(meta_ip_str))[0] 
-
-                #port destination for data
-                self.read_int('beamformer', 'bf_rx_udp_port_beam%i'%(beam_n))
+                #port destination for spead meta data
+                self.read_int('beamformer', 'bf_rx_meta_port_beam%i'%(beam_n))
 
                 #calibration
 
