@@ -156,39 +156,51 @@ def log_runtimeerror(logger, err):
 def non_blocking_request(fpgas, timeout, request, request_args): 
     """Make a non-blocking request to one or more FPGAs, using the Asynchronous FPGA client.
     """
-    verbose = False 
-    replies = {} 
-    requests = {} 
-    # reply callback 
+    import Queue, threading
+    verbose = False
+    reply_queue = Queue.Queue(maxsize=len(fpgas)) 
+    requests = {}
+    # reply callback
     def reply_cb(host, request_id): 
+        #if not requests.has_key(host):
+        #    raise RuntimeError('Rx reply(%s) from host(%s), did not send request?' % (request_id, host))
+        ## is the reply queue full?
+        #if reply_queue.full():
+        #    raise RuntimeError('Rx reply(%s) from host(%s), reply queue is full?' % (request_id, host))
         if verbose: print 'Reply(%s) from host(%s)' % (request_id, host); sys.stdout.flush() 
-        if not requests.has_key(host): 
-            raise RuntimeError('Received reply %s for host %s but did not send request?' % (request_id, host)) 
-        if replies.has_key(host): 
-            raise RuntimeError('Already have reply from %s for request_id %s?' % (host, request_id)) 
-        replies[host] = request_id
+        reply_queue.put_nowait([host, request_id])
     # start the requests 
-    if verbose: print 'Send request(%s) to %i hosts.' % (request, len(fpgas)) 
+    if verbose: print 'Send request(%s) to %i hosts.' % (request, len(fpgas))
+    lock = threading.Lock()
     for f in fpgas:
-        r = f._nb_request(request, None, reply_cb, *request_args) 
+        lock.acquire()
+        r = f._nb_request(request, None, reply_cb, *request_args)
         requests[r['host']] = [r['request'], r['id']] 
+        lock.release()
+        if verbose: print 'Request \'%s\' id(%s) to host(%s)' % (r['request'], r['id'], r['host']); sys.stdout.flush()
     # wait for replies from the requests
-    timedout = False 
-    timenow = time.time() 
-    while len(replies) < len(fpgas): 
-        if (time.time() > timenow + timeout): 
-            timedout = True 
-            break 
-        time.sleep(0.01) 
-    if timedout: 
-        if verbose: print "non_blocking_request timeout after %is" % timeout 
-    # process the responses - return a dictionary keyed on hostname
+    replies = {}
+    timedout = False
+    done = False
+    while (not timedout) and (not done):
+        try:
+            it = reply_queue.get(block = True, timeout = timeout)
+        except:
+            timedout = True
+            break
+        replies[it[0]] = it[1]
+        if len(replies) == len(fpgas): done = True
+    if timedout and verbose:
+        print replies
+        print "non_blocking_request timeout after %is." % timeout; sys.stdout.flush()
     rv = {} 
     for f in fpgas: 
         frv = {}
         try: 
             request_id = replies[f.host]
         except:
+            print replies
+            sys.stdout.flush()
             raise KeyError('Didn\'t get a reply for FPGA \'%s\' so the request \'%s\' probably didn\'t complete.' % (f.host, request))
         reply, informs = f._nb_get_request_result(request_id) 
         frv['request'] = requests[f.host][0] 
