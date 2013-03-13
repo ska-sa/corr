@@ -519,8 +519,10 @@ class fbf:
 
             for target_index,target in enumerate(targets):
 
-                if len(data) == 1 and len(targets) > 1: datum = struct.pack(">I", data[0])
-                else: datum = struct.pack(">I", data[target_index])
+                if len(data) == 1 and len(targets) > 1: datum = data[0]
+                else: datum = data[target_index]
+                
+                datum_str = struct.pack(">I", datum)
 
                 name = '%s%s_%s' %(bf_register_prefix, target['bf'], device_name)
 
@@ -530,11 +532,11 @@ class fbf:
                 else:
                     try:
 			if blindwrite:
-                            target['fpga'].blindwrite(device_name=name, data=datum, offset=offset)
+                            target['fpga'].blindwrite(device_name=name, data=datum_str, offset=offset)
 			else:
-                            target['fpga'].write(device_name=name, data=datum, offset=offset)
+                            target['fpga'].write(device_name=name, data=datum_str, offset=offset)
                     except:
-                        raise fbfException(1, 'Error writing 0x%.8x to %s:%s offset %i' %(data[target_index], target['fpga'], name, offset), \
+                        raise fbfException(1, 'Error writing 0x%.8x to %s:%s offset %i' %(datum, target['fpga'], name, offset), \
                                            'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                            self.syslogger)
     
@@ -1027,7 +1029,7 @@ class fbf:
             self.syslogger.info("Destination for SPEAD meta data transmitter for beam %s changed. New destination IP = %s, port = %d" %(beam, dest_ip_str, dest_port))
             
             #reissue all SPEAD meta-data to new receiver
-            if meta_data_issue: self.spead_issue_all(beam)
+            if issue_spead: self.spead_issue_all(beam)
 
     def config_udp_output(self, beams=all, dest_ip_str=None, dest_port=None, issue_spead=True):
         """Configures the destination IP and port for B engine data outputs. dest_port and dest_ip are optional parameters to override the config file defaults."""
