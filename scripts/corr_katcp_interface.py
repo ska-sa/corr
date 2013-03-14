@@ -51,7 +51,7 @@ class DeviceExampleServer(katcp.DeviceServer):
         except Exception as err_msg:
             return ("fail", err_msg)
         try:
-            self.b = corr.bf_functions.fbf(host_correlator=self.c, optimisations=False)
+            self.b = corr.bf_functions.fbf(host_correlator=self.c, optimisations=True)
         except:
             self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Beamformer not available"),orgmsg)
             pass
@@ -234,21 +234,26 @@ class DeviceExampleServer(katcp.DeviceServer):
         if self.c is None:
             return ("fail","... you haven't connected yet!")
         if len(orgmsg.arguments)>0:
-            # beamformer tx-stop
-            beam = orgmsg.arguments[0]
-            if self.b is None:
-                return ("fail","... no beams available!")
-            if not beam in self.b.get_beams():
-                return ("fail","Unknown beam name. Valid entries are %s."%str(self.b.get_beams()))
-            try:
-              self.b.tx_stop(beams=beam)
-              return ("ok",)
-            except corr.bf_functions.fbfException as be:
-                return ("fail", "... %s" % be.errmsg)
-            except Exception as e:
-                return ("fail", "... %s" % e)
+            if self.b is None: return ('fail', '... stream specification not available in correlator mode')
+            else:
+                # beamformer tx-stop
+                stream = orgmsg.arguments[0]
+                try:
+                    if stream in self.b.get_beams(): # stop beamformer output
+                        self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Stop beamformer stream %s"%stream),orgmsg)
+                        self.b.tx_stop(beams=stream)
+                        return ("ok",)
+                    else: # default -- correlator status in beamformer mode
+                        self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Stop correlator stream %s"%stream),orgmsg)
+                        self.c.tx_stop()
+                        return ("ok",)
+                except corr.bf_functions.fbfException as be:
+                    return ("fail", "... %s" % be.errmsg)
+                except Exception as e:
+                    return ("fail", "... %s" % e)
         else:
             # correlator tx-stop
+            self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Stop correlator"),orgmsg)
             try:
                 self.c.tx_stop()
                 return ("ok",)
@@ -261,21 +266,26 @@ class DeviceExampleServer(katcp.DeviceServer):
         if self.c is None:
             return ("fail","... you haven't connected yet!")
         if len(orgmsg.arguments)>0:
-            # beamformer tx-status
-            beam = orgmsg.arguments[0]
-            if self.b is None:
-                return ("fail","... no beams available!")
-            if not beam in self.b.get_beams():
-                return ("fail","Unknown beam name. Valid entries are %s."%str(self.b.get_beams()))
-            try:
-                if self.b.tx_status_get(beam): return("ok","enabled")
-                else: return("ok","disabled")
-            except corr.bf_functions.fbfException as be:
-                return ("fail", "... %s" % be.errmsg)
-            except Exception as e:
-                return ("fail","Couldn't complete the request. Something broke. Check the log.")
+            if self.b is None: return ('fail', '... stream specification not available in correlator mode')
+            else:
+                # beamformer tx-status
+                stream = orgmsg.arguments[0]
+                try:
+                    if stream in self.b.get_beams(): # beamformer status
+                        self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Beamformer status for stream %s"%stream),orgmsg)
+                        if self.b.tx_status_get(stream): return("ok","enabled")
+                        else: return("ok","disabled")
+                    else: # default -- correlator status in beamformer mode
+                        self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Correlator status for stream %s"%stream),orgmsg)
+                        if self.c.tx_status_get(): return("ok","enabled")
+                        else: return("ok","disabled")
+                except corr.bf_functions.fbfException as be:
+                    return ("fail", "... %s" % be.errmsg)
+                except Exception as e:
+                    return ("fail","Couldn't complete the request. Something broke. Check the log.")
         else:
             # correlator tx-status
+            self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Correlator status"),orgmsg)
             try:
                 if self.c.tx_status_get(): return("ok","enabled")
                 else: return("ok","disabled")
