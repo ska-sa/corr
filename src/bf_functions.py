@@ -509,7 +509,7 @@ class fbf:
 					       self.syslogger)
                         for k, v in rv.items():
                             if v['reply'] != 'ok': 
-				raise fbfException(1, 'Did not get ok writing 0x%.8x to %s on %d fpgas offset %i' %(data[0], name, len(fpgas), offset), \
+				raise fbfException(1, 'Got %s instead of ''ok'' when writing 0x%.8x to %s:%s offset %i' %(v['reply'], data[0], k, name, offset), \
 						   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
 						   self.syslogger)
                                         
