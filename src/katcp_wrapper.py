@@ -80,15 +80,19 @@ class FpgaClient(CallbackClient):
                            client operations.
            @param logger Object: Logger to log to.
            """
+        import threading
+
         super(FpgaClient, self).__init__(host, port, tb_limit = tb_limit, timeout = timeout, logger = logger)
         self.host = host
         self._timeout = timeout
         self.start(daemon = True)
 
         # async stuff
+        self._nb_request_id_lock = threading.Lock()
         self._nb_request_id = 0
+        self._nb_requests_lock = threading.Lock()
         self._nb_requests = {}
-        self._nb_max_requests = 10
+        self._nb_max_requests = 100
 
     """**********************************************************************************"""
     """**********************************************************************************"""
@@ -101,7 +105,10 @@ class FpgaClient(CallbackClient):
 
     def _nb_pop_request_by_id(self, request_id):
         try:
-            return self._nb_requests.pop(request_id)
+            self._nb_requests_lock.acquire()
+            r = self._nb_requests.pop(request_id)
+            self._nb_requests_lock.release()
+            return r
         except KeyError:
             return None
 
@@ -110,7 +117,10 @@ class FpgaClient(CallbackClient):
         for k, v in self._nb_requests.iteritems():
             if v.time_tx < req.time_tx:
                 req = v
-        return self._nb_pop_request_by_id(req.request_id)
+        self._nb_requests_lock.acquire()
+        r = self._nb_pop_request_by_id(req.request_id)
+        self._nb_requests_lock.release()
+        return r
 
     def _nb_get_request_result(self, request_id):
         req = self._nb_get_request_by_id(request_id)
@@ -119,11 +129,16 @@ class FpgaClient(CallbackClient):
     def _nb_add_request(self, request_name, request_id, inform_cb, reply_cb):
         if self._nb_requests.has_key(request_id):
             raise RuntimeError('Trying to add request with id(%s) but it already exists.' % request_id)
+        self._nb_requests_lock.acquire()
         self._nb_requests[request_id] = FpgaAsyncRequest(self.host, request_name, request_id, inform_cb, reply_cb)
+        self._nb_requests_lock.release()
 
     def _nb_get_next_request_id(self):
+        self._nb_request_id_lock.acquire()
         self._nb_request_id += 1
-        return str(self._nb_request_id)
+        reqid = self._nb_request_id
+        self._nb_request_id_lock.release()
+        return str(reqid)
 
     def _nb_replycb(self, msg, *userdata):
         """The callback for request replies. Check that the ID exists and call that request's got_reply function.
@@ -154,8 +169,8 @@ class FpgaClient(CallbackClient):
             self._logger.info("Request list full, removing oldest one(%s,%s)." % (oldreq.request, oldreq.request_id))
             print "Request list full, removing oldest one(%s,%s)." % (oldreq.request, oldreq.request_id)
         request_id = self._nb_get_next_request_id()
-        self.request(msg = Message.request(request, *args), reply_cb = self._nb_replycb, inform_cb = self._nb_informcb, user_data = request_id)
         self._nb_add_request(request, request_id, inform_cb, reply_cb)
+        self.callback_request(msg = Message.request(request, *args), reply_cb = self._nb_replycb, inform_cb = self._nb_informcb, user_data = request_id)
         return {'host': self.host, 'request': request, 'id': request_id}
 
     """**********************************************************************************"""
