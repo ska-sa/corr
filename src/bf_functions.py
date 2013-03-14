@@ -2,7 +2,7 @@
 """ 
 Selection of commonly-used beamformer control functions.
 
-Author: Jason Manley, Andrew Martens, Ruby van Royen
+Author: Jason Manley, Andrew Martens, Ruby van Rooyen
 """
 """
 Revisions:
@@ -885,9 +885,6 @@ class fbf:
                 self.tx_stop(beam)
                 self.syslogger.info('Stopped beamformer %s' %beam)
 
-        #data and timestamp item ids	
-        self.spead_config_basics()
-        
         #configure spead_meta data transmitter and spead data destination, 
         #don't issue related spead meta-data as will do in spead_issue_all 
         if config_output: 
@@ -1273,17 +1270,6 @@ class fbf:
 	#   SPEAD
 	#-----------
 
-    def spead_config_basics(self):
-        '''Sets up spead item and data values in gateware'''
-        
-        #set up data and timestamp ids
-        if self.config.simulate == True:
-            print 'spead_config_basics: dummy write to beng_data_id on all x engines'
-            print 'spead_config_basics: dummy write to beng_time_id on all x engines'
-        else:
-                #TODO data id should increment for beams
-            self.c.xwrite_int_all('beng_data_id', (0x000000 | 0xB000)) #data id
-            self.c.xwrite_int_all('beng_time_id', (0x800000 | 5632) ) #same timestamp id as for correlator
     
     def spead_config_output(self, beams=all):
         '''Sets up FPGA configuration registers controlling SPEAD output for beams specified'''
@@ -1584,7 +1570,11 @@ class fbf:
             ig = spead_ig
  
             #data item
-            ig.add_item(name=beam, id=0xB000,
+            beam_index = self.beam2index(beam)[0]
+            #id is 0xB + 12 least sig bits id of each beam
+            beam_data_id = 0xB000 | (beam_index & 0x00000FFF)
+
+            ig.add_item(name=beam, id=beam_data_id,
                 description="Raw data for bengines in the system.  Frequencies are assembled from lowest frequency to highest frequency. Frequencies come in blocks of values in time order where the number of samples in a block is given by xeng_acc_len (id 0x101F). Each value is a complex number -- two (real and imaginary) signed integers.",
                 ndarray=(numpy.dtype(numpy.int8),(self.get_param('n_chans'),self.get_param('xeng_acc_len'),2)))
                 
