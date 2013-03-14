@@ -971,7 +971,7 @@ class fbf:
                     if self.config.simulate == True: print 'tx_stop: dummy ending SPEAD stream for beam %s' %beam
                     else:
                         spead_tx = self.get_spead_tx(beam)
-                        spead_tx.end()
+                        spead_tx.send_halt()
                         self.syslogger.info("Sent SPEAD end-of-stream notification for beam %s" %beam)
                 else:
                     self.syslogger.info("Did not send SPEAD end-of-stream notification for beam %s" %beam)
