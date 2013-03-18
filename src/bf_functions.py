@@ -944,8 +944,7 @@ class fbf:
                 for offset in range(len(fpga_bf_e)):
                     bf_config.append(((beam_index+1) << 16) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
                 
-                if self.config.simulate == True:
-                    print 'configuring included bfs'
+                if self.config.simulate == True: print 'configuring included bfs'
                 self.write_int('cfg%i'%beam_index, bf_config, 0, fft_bins=enabled_fft_bins)
 
                 if self.config.simulate == True:
@@ -1053,7 +1052,7 @@ class fbf:
             restart = self.tx_status_get(beam)
 
             if restart: self.tx_stop(beam)
-    
+
             self.write_int('dest', data=[dest_ip], offset=(beam_offset*2))                     
             self.write_int('dest', data=[dest_port], offset=(beam_offset*2+1))                     
             #each beam output from each beamformer group can be configured differently
@@ -1094,15 +1093,19 @@ class fbf:
             if bandwidth != None:
                 self.set_beam_param(beam, 'bandwidth', bandwidth)
                 self.syslogger.info('Bandwidth for beam %s set to %i Hz'%(beam, bandwidth))
-        
+            
             if centre_frequency != None or bandwidth != None:
                 #restart if currently transmitting
-		if self.tx_status_get(beam):
+                restart = self.tx_status_get(beam)
+
+                if restart: self.tx_stop(beam)
+
+                #issue related spead meta data
+                if spead_issue: self.spead_passband_meta_issue(beam)
+
+		if restart:                     
                     self.syslogger.info('Restarting beam %s with new passband parameters'%beam)
-		    self.tx_stop(beam)
-                    #issue related spead meta data
-                    if spead_issue: self.spead_passband_meta_issue(beam)
-		    self.tx_start(beam)
+                    self.tx_start(beam)
     
     def get_passband(self, beam):
         """gets the centre frequency and bandwidth for the specified beam"""
@@ -1294,36 +1297,6 @@ class fbf:
 	#-----------
 	#   SPEAD
 	#-----------
-
-    
-    def spead_config_output(self, beams=all):
-        '''Sets up FPGA configuration registers controlling SPEAD output for beams specified'''
-        
-        beams = self.beams2beams(beams)
-        beam_indices = self.beam2index(beams) 
-        bf_prefix = self.get_param('bf_register_prefix')
-        n_ants = self.get_param('n_ants')
-        bf_be_per_fpga = self.get_param('bf_be_per_fpga')        
-
-        #go through all beams
-        for index, beam in enumerate(beams):
-            location = self.get_beam_param(beam, 'location')        
-            beam_id = beam_indices[index]
-
-            bf_indices = range(n_ants * bf_be_per_fpga)
- 
-            beam_fpgas = self.get_fpgas()
-
-            for index in range(len(bf_indices)):
-                bf_index = bf_indices[index]
-                fpga = beam_fpgas[int(bf_index/bf_be_per_fpga)] #truncate
-                bf = bf_index%bf_be_per_fpga
-                bf_config_reg = '%s%i_cfg%i'%(bf_prefix, bf, location)
-                offset = index #offset in heap depends on frequency band which increases linearly through fpga and bf
-                
-                bf_config = (beam_id << 16) & 0xffff0000 | (len(bf_indices) << 8) & 0x0000ff00 | offset & 0x000000ff  
-                if self.simulate == False:
-                    fpga.write_int(bf_config_reg, bf_config, 0)
     
     def spead_initialise(self):
         """creates spead transmitters that will be used by the beams in our system"""
