@@ -1597,9 +1597,7 @@ class fbf:
         """ Issues the SPEAD data descriptors for the HW 10GbE output, to enable receivers to decode the data."""
 
         beams = self.beams2beams(beams)
-        
         spead_ig = spead.ItemGroup()
-
         #timestamp
         spead_ig.add_item(name=('timestamp'), id=0x1600,
             description='Timestamp of start of this block of data. uint counting multiples of ADC samples since last sync (sync_time, id=0x1027). Divide this number by timestamp_scale (id=0x1046) to get back to seconds since last sync when this integration was actually started. Note that the receiver will need to figure out the centre timestamp of the accumulation (eg, by adding half of int_time, id 0x1016).',
@@ -1614,9 +1612,8 @@ class fbf:
             #id is 0xB + 12 least sig bits id of each beam
             beam_data_id = 0xB000 | (beam_index & 0x00000FFF)
 
-            ig.add_item(name=beam, id=beam_data_id,
-                description="Raw data for bengines in the system.  Frequencies are assembled from lowest frequency to highest frequency. Frequencies come in blocks of values in time order where the number of samples in a block is given by xeng_acc_len (id 0x101F). Each value is a complex number -- two (real and imaginary) signed integers.",
-                ndarray=(numpy.dtype(numpy.int8),(self.get_param('n_chans'),self.get_param('xeng_acc_len'),2)))
+            ig.add_item(name=beam, id=beam_data_id,description="Raw data for bengines in the system.  Frequencies are assembled from lowest frequency to highest frequency. Frequencies come in blocks of values in time order where the number of samples in a block is given by xeng_acc_len (id 0x101F). Each value is a complex number -- two (real and imaginary) signed integers.", 
+            ndarray=numpy.ndarray(shape=(self.get_param('n_chans'),self.get_param('xeng_acc_len'),2),dtype=numpy.int8))
                 
 	    if self.config.simulate: print 'Issuing data descriptor meta data for beam %s'%beam
             self.send_spead_heap(beam, ig)
