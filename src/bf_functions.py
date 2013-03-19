@@ -1209,7 +1209,6 @@ class fbf:
 	    datum_real = numpy.float(val_real)/(2**bin_pt)
 	    datum_imag = numpy.float(val_imag)/(2**bin_pt)
 
-	    #pack real and imaginary values into 32 bit value
             values.append(complex(datum_real, datum_imag))
 	
 	return values
@@ -1305,7 +1304,7 @@ class fbf:
         #create a spead transmitter for every beam and store in config
         for beam in self.beams2beams(all):
             ip_str = self.get_beam_param(beam, 'rx_meta_ip_str')
-            port = self.get_beam_param(beam, 'rx_udp_port')
+            port = self.get_beam_param(beam, 'rx_meta_port')
             self.spead_tx['bf_spead_tx_beam%i'%self.beam2index(beam)[0]] = spead.Transmitter(spead.TransportUDPtx(ip_str, port))
             self.syslogger.info("Created spead transmitter for beam %s. Destination IP = %s, port = %d" %(beam, ip_str, port))
 
@@ -1399,7 +1398,7 @@ class fbf:
 #TODO ADD VERSION INFO!
 
         spead_ig.add_item(name="b_per_fpga",id=0x1047,
-            description="The total number of baselines in the data product.",
+            description="The number of b-engines per fpga.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.get_param('bf_be_per_fpga'))
 
@@ -1418,6 +1417,16 @@ class fbf:
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
             init_val=self.get_param('bf_bits_out'))
 
+        spead_ig.add_item(name="fft_shift",id=0x101E,
+            description="The FFT bitshift pattern. F-engine correlator internals.",
+            shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
+            init_val=self.config['fft_shift'])
+
+        #timestamp
+        spead_ig.add_item(name=('timestamp'), id=0x1600,
+            description='Timestamp of start of this block of data. uint counting multiples of ADC samples since last sync (sync_time, id=0x1027). Divide this number by timestamp_scale (id=0x1046) to get back to seconds since last sync when this block of data started.',
+            shape=[], fmt=spead.mkfmt(('u',spead.ADDRSIZE)),init_val=0)
+        
         for beam in beams:
 	    
 	    if self.config.simulate: print 'Issuing static meta data for beam %s'%beam
@@ -1455,7 +1464,7 @@ class fbf:
             cf,bw = self.get_passband(beam)
  
             spead_ig.add_item(name="center_freq",id=0x1011,
-                description="The center frequency of the DBE in Hz, 64-bit IEEE floating-point number.",
+                description="The center frequency of the output data in Hz, 64-bit IEEE floating-point number.",
                 shape=[],fmt=spead.mkfmt(('f',64)),
                 init_val=cf)
 
@@ -1465,9 +1474,17 @@ class fbf:
                 init_val=bw)
             
             spead_ig.add_item(name="n_chans",id=0x1009,
-                description="The total number of frequency channels present in any integration.",
+                description="The total number of frequency channels present in the output data.",
                 shape=[], fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
                 init_val=self.get_n_chans(beam))
+            
+            #data item
+            beam_index = self.beam2index(beam)[0]
+            #id is 0xB + 12 least sig bits id of each beam
+            beam_data_id = 0xB000 | (beam_index & 0x00000FFF)
+
+            spead_ig.add_item(name=beam, id=beam_data_id,description="Raw data for bengines in the system.  Frequencies are assembled from lowest frequency to highest frequency. Frequencies come in blocks of values in time order where the number of samples in a block is given by xeng_acc_len (id 0x101F). Each value is a complex number -- two (real and imaginary) signed integers.", 
+            ndarray=numpy.ndarray(shape=(self.get_n_chans(beam),self.get_param('xeng_acc_len'),2),dtype=numpy.int8))
             
 	    if self.config.simulate: print 'Issuing passband meta data for beam %s'%beam
             self.send_spead_heap(beam, spead_ig)
@@ -1480,19 +1497,13 @@ class fbf:
 
         spead_ig = spead.ItemGroup()
        
-        if self.config.simulate: val=0xB00B 
-        else: val=self.c.acc_time_get()
-        #TODO check if we need this 
-        spead_ig.add_item(name="int_time",id=0x1016,
-            description="Approximate (it's a float!) integration time per accumulation in seconds.",
-            shape=[],fmt=spead.mkfmt(('f',64)),
-            init_val = val)
-        
         #sync time
+        if self.config.simulate: val=0
+        else: val = self.get_param('sync_time')
         spead_ig.add_item(name='sync_time',id=0x1027,
             description="Time at which the system was last synchronised (armed and triggered by a 1PPS) in seconds since the Unix Epoch.",
             shape=[],fmt=spead.mkfmt(('u',spead.ADDRSIZE)),
-            init_val=self.get_param('sync_time'))
+            init_val=val)
 
         #scale factor for timestamp
         spead_ig.add_item(name="scale_factor_timestamp",id=0x1046,
@@ -1558,44 +1569,17 @@ class fbf:
                 vals=[[numpy.real(coeff),numpy.imag(coeff)] for coeff in self.cal_spectrum_get(beam, ant_str, from_fpga)]
 
                 ig.add_item(name="beamweight_input%s"%(ant_str),id=0x2000+in_n,
-                    description="The unitless per-channel digital scaling factors implemented prior to combining antenna signals during beamforming for input %s. Complex number real,imag 32 bit integers."%(ant_str),
-                    shape=[self.get_param('n_chans'),2],fmt=spead.mkfmt(('u',32)),
+                    description="The unitless per-channel digital scaling factors implemented prior to combining antenna signals during beamforming for input %s. Complex number real,imag 64 bit floats."%(ant_str),
+                    shape=[self.get_param('n_chans'),2],fmt=spead.mkfmt(('f',64)),
                     init_val=vals)
             
 	    if self.config.simulate: print 'Issuing calibration meta data for beam %s'%beam
             self.send_spead_heap(beam, ig)
             self.syslogger.info("Issued SPEAD EQ metadata for beam %s" %beam)
 
-    def spead_data_descriptor_issue(self, beams=all):
-        """ Issues the SPEAD data descriptors for the HW 10GbE output, to enable receivers to decode the data."""
-
-        beams = self.beams2beams(beams)
-        spead_ig = spead.ItemGroup()
-        #timestamp
-        spead_ig.add_item(name=('timestamp'), id=0x1600,
-            description='Timestamp of start of this block of data. uint counting multiples of ADC samples since last sync (sync_time, id=0x1027). Divide this number by timestamp_scale (id=0x1046) to get back to seconds since last sync when this integration was actually started. Note that the receiver will need to figure out the centre timestamp of the accumulation (eg, by adding half of int_time, id 0x1016).',
-            shape=[], fmt=spead.mkfmt(('u',spead.ADDRSIZE)),init_val=0)
-
-        beam_indices = self.beam2index(beams)
-        for beam in beams:
-            ig = spead_ig
- 
-            #data item
-            beam_index = self.beam2index(beam)[0]
-            #id is 0xB + 12 least sig bits id of each beam
-            beam_data_id = 0xB000 | (beam_index & 0x00000FFF)
-
-            ig.add_item(name=beam, id=beam_data_id,description="Raw data for bengines in the system.  Frequencies are assembled from lowest frequency to highest frequency. Frequencies come in blocks of values in time order where the number of samples in a block is given by xeng_acc_len (id 0x101F). Each value is a complex number -- two (real and imaginary) signed integers.", 
-            ndarray=numpy.ndarray(shape=(self.get_param('n_chans'),self.get_param('xeng_acc_len'),2),dtype=numpy.int8))
-                
-	    if self.config.simulate: print 'Issuing data descriptor meta data for beam %s'%beam
-            self.send_spead_heap(beam, ig)
-            self.syslogger.info("Issued SPEAD data descriptor for beam %s" %beam)
-    
     def spead_issue_all(self, beams=all):
         """Issues all SPEAD metadata."""
 
-        self.spead_data_descriptor_issue(beams)
         self.spead_static_meta_issue(beams)
         self.spead_passband_meta_issue(beams)
         self.spead_destination_meta_issue(beams)
