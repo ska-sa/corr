@@ -331,10 +331,8 @@ class CorrConf:
             self.read_str('beamformer', 'bf_data_type')
             self.read_int('beamformer', 'bf_bits_out')
             self.read_str('beamformer', 'bf_cal_type')
-            self.read_str('beamformer', 'bf_cal_default')
             self.read_int('beamformer', 'bf_cal_n_bits')
             self.read_int('beamformer', 'bf_cal_bin_pt')
-            if not self.config['bf_cal_default'] in ['poly','coeffs']: raise RuntimeError('ERR invalid bf_cal_default')
             
             for beam_n in range(self.config['bf_n_beams']):
 
@@ -360,25 +358,27 @@ class CorrConf:
 
                 #calibration
 
-                if self.config['bf_cal_default'] == 'poly':
-                    for input_n in range(self.config['n_inputs']):
-                        try:
-                            ant_cal_str=self.get_line('beamformer','bf_cal_poly_input%i_beam%i'%(input_n, beam_n))
-                            self.config['bf_cal_poly_input%i_beam%i'%(input_n, beam_n)]=[int(coef) for coef in ant_cal_str.split(LISTDELIMIT)]
-                        except: 
-                            print 'error reading polynomial for input %i, beam %i' %(input_n, beam_n)
-                            raise RuntimeError('ERR bf_cal_poly_input%i_beam%i'%(input_n, beam_n))
-
-                #we need to try to read eq_coeffs every time so that this info is available to corr_functions even if it's not how we default program the system.
-                elif self.config['bf_cal_default'] == 'coeffs':
-                    n_coeffs = self.config['n_chans']
-                    for input_n in range(self.config['n_inputs']):
-                        try:
-                            ant_cal_str=self.get_line('beamformer','bf_cal_coeffs_input%i_beam%i'%(input_n, beam_n))
-                            self.config['bf_cal_coeffs_input%i_beam%i'%(input_n, beam_n)]=eval(ant_cal_str)
-                            if len(self.config['bf_cal_coeffs_input%i_beam%i'%(input_n, beam_n)]) != n_coeffs:
-                                raise RuntimeError('ERR bf_cal_coeffs_input%i_beam%i... incorrect number of coefficients. Expecting %i, got %i.'%(input_n, beam_n, n_coeffs,len(self.config['eq_cal_coeffs_input%i_beam%i'%(input_n, beam_n)])))
-                        except: raise RuntimeError('ERR bf_cal_coeffs_input%i_beam%i'%(input_n, beam_n))
+                n_coeffs = self.config['n_chans']
+	        for input_n in range(self.config['n_ants']):
+		    try:
+		        cal_default=self.get_line('beamformer', 'bf_cal_default_input%i_beam%i'%(input_n, beam_n))
+			self.config['bf_cal_default_input%i_beam%i'%(input_n, beam_n)]=cal_default
+                    except:
+                        raise RuntimeError('ERR reading bf_cal_default_input%i_beam%i'%(input_n, beam_n))
+		    if cal_default == 'poly': 
+		        try:
+			    ant_cal_str=self.get_line('beamformer','bf_cal_poly_input%i_beam%i'%(input_n, beam_n))
+			    self.config['bf_cal_poly_input%i_beam%i'%(input_n, beam_n)]=[int(coef) for coef in ant_cal_str.split(LISTDELIMIT)]
+		        except: raise RuntimeError('ERR bf_cal_coeffs_input%i_beam%i'%(input_n, beam_n))
+		    elif cal_default == 'coeffs':
+		        try:
+			    ant_cal_str=self.get_line('beamformer','bf_cal_coeffs_input%i_beam%i'%(input_n, beam_n))
+			    self.config['bf_cal_coeffs_input%i_beam%i'%(input_n, beam_n)]=eval(ant_cal_str)
+			    if len(self.config['bf_cal_coeffs_input%i_beam%i'%(input_n, beam_n)]) != n_coeffs:
+			        raise RuntimeError('ERR bf_cal_coeffs_input%i_beam%i... incorrect number of coefficients. Expecting %i, got %i.'%(input_n, beam_n, n_coeffs,len(self.config['eq_cal_coeffs_input%i_beam%i'%(input_n, beam_n)])))
+		        except: raise RuntimeError('ERR bf_cal_coeffs_input%i_beam%i'%(input_n, beam_n))
+		    else:
+		        raise RuntimeError('ERR bf_cal_default_input%i_beam%i not poly or coeffs'%(input_n, beam_n))
             
             self.logger.info('%i beam beamformer found in this design outputting %s data.'%(self.config['bf_n_beams'], self.config['bf_data_type']))
         except Exception:
