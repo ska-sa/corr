@@ -147,8 +147,8 @@ class DeviceExampleServer(katcp.DeviceServer):
             return ("fail","... you haven't connected yet!")
         # default assumption will be correlator output
         beam=None
-        dest_ip_str=self.c.config['rx_udp_ip_str']
-        dest_port=self.c.config['rx_udp_port']
+        dest_ip_str=None
+        dest_port=None
         if len(orgmsg.arguments)>0:
             # first argument can be either stream name or ip
             if len(orgmsg.arguments[0].split('.')) == 4: # ip address
@@ -161,8 +161,8 @@ class DeviceExampleServer(katcp.DeviceServer):
                     self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Name %s not a know beam, assuming correlator output"%(beam)),orgmsg)
                 else:
                     # default destination for selected beam
-                    dest_port=self.b.config['bf_rx_udp_port_beam%d'%self.b.beam2index(beam)[0]]
-                    dest_ip_str=self.b.config['bf_rx_udp_ip_str_beam%d'%self.b.beam2index(beam)[0]]
+                    dest_port=None
+                    dest_ip_str=None
         if len(orgmsg.arguments)>1:
             # second argument can be either port of ip
             if (len(orgmsg.arguments[1].split('.')) == 4) and (self.b is not None): # ip address
