@@ -947,7 +947,7 @@ class fbf:
                 fpga_bf_e = self.frequency2fpga_bf(fft_bins=enabled_fft_bins, unique=True)
                 bf_config = []
                 for offset in range(len(fpga_bf_e)):
-                    bf_config.append(((beam_index+1) << 16) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
+                    bf_config.append((beam_index << 16) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
                 
                 if self.config.simulate == True: print 'configuring included bfs'
                 self.write_int('cfg%i'%beam_index, bf_config, 0, fft_bins=enabled_fft_bins)
