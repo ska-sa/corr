@@ -898,7 +898,12 @@ class fbf:
         if set_cal: self.cal_set_all(all, spead_issue=False)
         else: self.syslogger.info('Skipped calibration config of beamformer.')
 
-        if send_spead: self.spead_issue_all(all)
+        #if we set up calibration weights, then config has these already so don't 
+        #read from fpga
+        if set_cal: from_fpga = False
+        else: from_fpga = True
+
+        if send_spead: self.spead_issue_all(beams=all, from_fpga=from_fpga)
         else: self.syslogger.info('Skipped issue of spead meta data.')
 
         self.syslogger.info("Beamformer initialisation complete.")
@@ -1577,7 +1582,7 @@ class fbf:
             self.send_spead_heap(beam, ig)
             self.syslogger.info("Issued SPEAD EQ metadata for beam %s" %beam)
 
-    def spead_issue_all(self, beams=all):
+    def spead_issue_all(self, beams=all, from_fpga=True):
         """Issues all SPEAD metadata."""
 
         self.spead_static_meta_issue(beams)
@@ -1585,6 +1590,6 @@ class fbf:
         self.spead_destination_meta_issue(beams)
         self.spead_time_meta_issue(beams)
         self.spead_eq_meta_issue(beams)
-        self.spead_cal_meta_issue(beams)
+        self.spead_cal_meta_issue(beams=beams, from_fpga=from_fpga)
         self.spead_labelling_issue(beams)
 
