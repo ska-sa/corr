@@ -338,7 +338,7 @@ class fbf:
         elif frequencies == all:
             fft_bins = range(n_chans)
         else:
-            bandwidth = (self.get_param('adc_clk')/2)
+            bandwidth = self.get_param('bandwidth')
             start_freq = 0
             channel_width = bandwidth/n_chans
             for frequency in frequencies:
@@ -350,7 +350,7 @@ class fbf:
     def get_bf_bandwidth(self):
 	"""Returns the bandwidth for one bf engine"""
         
-	bandwidth = (self.get_param('adc_clk')/2)
+	bandwidth = self.get_param('bandwidth')
         bf_be_per_fpga = len(self.get_bfs()) 
         n_fpgas = len(self.get_fpgas())
    
@@ -370,7 +370,7 @@ class fbf:
     def get_fft_bin_bandwidth(self):
 	"""get bandwidth of single fft bin"""
 	n_chans = self.get_param('n_chans')
-        bandwidth = self.get_param('adc_clk')/2
+        bandwidth = self.get_param('bandwidth')
 
 	fft_bin_bandwidth = bandwidth/n_chans
 	return fft_bin_bandwidth
@@ -391,7 +391,7 @@ class fbf:
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                self.syslogger)
 
-        bandwidth = self.get_param('adc_clk')/2
+        bandwidth = self.get_param('bandwidth')
 
 	for fft_bin in fft_bins:
 	    frequencies.append((float(fft_bin)/n_chans)*bandwidth)
@@ -833,27 +833,44 @@ class fbf:
                 self.write_int('control', [control], 0, fft_bins=fft_bins, blindwrite=blindwrite)      
 
     def cf_bw2fft_bins(self, centre_frequency, bandwidth):
-        """returns fft bins associated with provided centre_frequency and bandwidth"""
+        """returns fft bins associated with provided centre_frequency and bandwidth
+        centre_frequency is assumed to be the centre of the 2^(N-1) fft bin"""
         bins = []
 
-        adc_clk = self.get_param('adc_clk')
         n_chans = self.get_param('n_chans')
+        max_bandwidth = self.get_param('bandwidth')
+        fft_bin_width = self.get_fft_bin_bandwidth()
 
         #TODO spectral line mode systems??
-        if (centre_frequency-bandwidth/2) < 0 or (centre_frequency+bandwidth/2) > adc_clk/2:
-            raise fbfException(1, 'Band specified out of range of our system', \
+        if (centre_frequency-bandwidth/2) < 0 or \
+           (centre_frequency+bandwidth/2) > max_bandwidth or \
+           (centre_frequency-bandwidth/2) >= (centre_frequency+bandwidth/2):
+            raise fbfException(1, 'Band specified not valid for our system', \
                                'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
                                self.syslogger)
 
-        #full band required
-        if bandwidth == adc_clk/2:
-            bins = range(n_chans) 
-        else:    
-            #get fft bin for edge frequencies
-            edge_bins = self.frequency2fft_bin(frequencies=[centre_frequency-bandwidth/2, centre_frequency+bandwidth/2])
-            bins = range(edge_bins[0], edge_bins[1]+1)
+        #get fft bin for edge frequencies
+        edge_bins = self.frequency2fft_bin(frequencies=[centre_frequency-bandwidth/2, centre_frequency+bandwidth/2-fft_bin_width])
+        bins = range(edge_bins[0], edge_bins[1]+1)
 
         return bins
+    
+    def cf_bw2cf_bw(self, centre_frequency, bandwidth):
+        """converts specfied centre_frequency, bandwidth to values possible for our system"""
+
+        bins = self.cf_bw2fft_bins(centre_frequency, bandwidth)
+
+        bfs = self.frequency2bf_index(fft_bins=bins, unique=True)
+	bf_bandwidth = self.get_bf_bandwidth()
+	fft_bin_bandwidth = self.get_fft_bin_bandwidth()
+
+	#calculate start frequency accounting for frequency specified in centre of bin
+	start_frequency = min(bfs)*bf_bandwidth
+	beam_centre_frequency = start_frequency+bf_bandwidth*(float(len(bfs))/2)
+
+	beam_bandwidth = len(bfs) * bf_bandwidth
+
+        return beam_centre_frequency, beam_bandwidth
 
     def get_enabled_fft_bins(self, beam):
         """Returns fft bins representing band that is enabled for beam"""
@@ -1071,7 +1088,7 @@ class fbf:
         
         beams = self.beams2beams(beams)
         
-	max_bandwidth = self.get_param('adc_clk')/2
+	max_bandwidth = self.get_param('bandwidth')
 
         for beam in beams:
 
@@ -1086,18 +1103,15 @@ class fbf:
 	    else:
 		b = bandwidth
 
-	    if ((cf-b/2) < 0) or ((cf+b/2) > max_bandwidth):
-                raise fbfException(1, 'Passband settings specified for beam %s out of range 0->%iMHz'%(beam, max_bandwidth/1000000), \
-                                   'function %s, line no %s\n' %(__name__, inspect.currentframe().f_lineno), \
-                                   self.syslogger)
+            cf_actual, b_actual = self.cf_bw2cf_bw(cf,b)
 
             if centre_frequency != None:
-                self.set_beam_param(beam, 'centre_frequency', centre_frequency)
-                self.syslogger.info('Centre frequency for beam %s set to %i Hz'%(beam, centre_frequency))
+                self.set_beam_param(beam, 'centre_frequency', cf_actual)
+                self.syslogger.info('Centre frequency for beam %s set to %i Hz'%(beam, cf_actual))
 
             if bandwidth != None:
-                self.set_beam_param(beam, 'bandwidth', bandwidth)
-                self.syslogger.info('Bandwidth for beam %s set to %i Hz'%(beam, bandwidth))
+                self.set_beam_param(beam, 'bandwidth', b_actual)
+                self.syslogger.info('Bandwidth for beam %s set to %i Hz'%(beam, b_actual))
             
             if centre_frequency != None or bandwidth != None:
                 #restart if currently transmitting
@@ -1115,18 +1129,14 @@ class fbf:
     def get_passband(self, beam):
         """gets the centre frequency and bandwidth for the specified beam"""
     
-        fft_bins = self.get_enabled_fft_bins(beam)
-        bfs = self.frequency2bf_index(fft_bins=fft_bins, unique=True)
-	bf_bandwidth = self.get_bf_bandwidth()
-	fft_bin_bandwidth = self.get_fft_bin_bandwidth()
+        #parameter checking
+        cf = self.get_beam_param(beam, 'centre_frequency')
 
-	#calculate start frequency accounting for frequency specified in centre of bin
-	start_frequency = min(bfs)*bf_bandwidth-fft_bin_bandwidth/2
-	centre_frequency = start_frequency+bf_bandwidth*(float(len(bfs))/2)
+        b = self.get_beam_param(beam, 'bandwidth')
 
-	beam_bandwidth = len(bfs) * bf_bandwidth
-	
-        return centre_frequency, beam_bandwidth
+        cf_actual, b_actual = self.cf_bw2cf_bw(cf,b)
+
+        return cf_actual, b_actual
     
     def get_n_chans(self, beam):
         """gets the number of active channels for the specified beam"""       
