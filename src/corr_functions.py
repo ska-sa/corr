@@ -237,8 +237,8 @@ class Correlator:
             logger.setLevel(log_level)
 
         self.syslogger.info('Configuration file %s parsed ok.' % config_file)
-        self.spead_tx=spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
-        self.spead_ig=spead.ItemGroup()
+        self.spead_tx = spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
+        self.spead_ig = spead.ItemGroup()
 
         if connect == True:
             self.connect()
@@ -1738,7 +1738,7 @@ class Correlator:
 #                # Assign an IP address to each XAUI port's associated 10GbE core.
 #                fpga.write_int('gbe_ip%i'%x, ip)
 
-    def config_udp_output(self,dest_ip_str=None,dest_port=None):
+    def config_udp_output(self, dest_ip_str=None, dest_port=None):
         """Configures the destination IP and port for X engine output. dest_port and dest_ip are optional parameters to override the config file defaults. dest_ip is string in dotted-quad notation."""
         if dest_ip_str==None:
             dest_ip_str=self.config['rx_udp_ip_str']
@@ -1756,6 +1756,10 @@ class Correlator:
         self.xwrite_int_all('gbe_out_ip',struct.unpack('>L',socket.inet_aton(dest_ip_str))[0])
         self.xwrite_int_all('gbe_out_port',dest_port)
         self.syslogger.info("Correlator output configured to %s:%i." % (dest_ip_str, dest_port))
+
+        # need a new spead transmitter if the port and ip have changed
+        self.spead_tx = spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
+
         #self.xwrite_int_all('gbe_out_pkt_len',self.config['rx_pkt_payload_len']) now a compile-time option
 
         #Temporary for correlators with separate gbe core for output data:
