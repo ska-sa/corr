@@ -371,6 +371,7 @@ class Correlator:
 
     def prog_all(self, timeout=10):
         """Progam all the FPGAs asynchronously."""
+        self.syslogger.info("Programming all FPGAs.")
         f_nottimedout, frv = non_blocking_request(fpgas = self.ffpgas, timeout = timeout, request = 'progdev', request_args = [self.config['bitstream_f']])
         f_okay = True
         for k, v in frv.items():
@@ -394,6 +395,7 @@ class Correlator:
     def prog_all_old(self):
         """Programs all the FPGAs."""
         #tested ok corr-0.5.0 2010-07-19
+        self.syslogger.info("Reprogramming all FPGAs")
         for fpga in self.ffpgas:
             fpga.progdev(self.config['bitstream_f'])
         for fpga in self.xfpgas:
@@ -604,6 +606,7 @@ class Correlator:
 
     def initialise(self, n_retries = 40, reprogram = True, clock_check = True, set_eq = True, config_10gbe = True, config_output = True, send_spead = True, prog_timeout_s = 5):
         """Initialises the system and checks for errors."""
+        self.syslogger.info("Reinitialising correlator.")
         if reprogram:
             self.deprog_all()
             time.sleep(prog_timeout_s)
@@ -652,8 +655,14 @@ class Correlator:
             ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_ant_str_location(ant_str)
             if (stat[ant_str]['adc_disabled']==True) or (stat[ant_str]['adc_overrange']==True):
                 self.floggers[ffpga_n].warn("%s input levels are too high!"%ant_str)
-            if stat[ant_str]['fft_overrange']==True:
-                self.floggers[ffpga_n].error("%s FFT is overranging. Spectrum output is garbage."%ant_str)
+            if self.is_narrowband():
+                if stat[ant_str]['coarse_fft_overrange']==True:
+                    self.floggers[ffpga_n].error("%s coarse FFT is overranging. Spectrum output is garbage."%ant_str)
+                if stat[ant_str]['fine_fft_overrange']==True:
+                    self.floggers[ffpga_n].error("%s fine FFT is overranging. Spectrum output is garbage."%ant_str)
+            else:
+                if stat[ant_str]['fft_overrange']==True:
+                    self.floggers[ffpga_n].error("%s FFT is overranging. Spectrum output is garbage."%ant_str)
 
             # This is not quite right... Both ROACH's QDRs are used in a single corner-turn for both inputs. HARDCODED to check two QDRs per board!
             if stat[ant_str]['ct_error']==True:

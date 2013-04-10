@@ -1,7 +1,7 @@
 from distutils.core import setup, Extension
 import os, sys, glob
 
-__version__ = '0.7.2'
+__version__ = '0.7.3'
 
 setup(name = 'corr',
     version = __version__,
