@@ -173,128 +173,15 @@ class SerialClient(CallbackClient):
         """Gets a boolean value on a digital IO pin."""
         return int(self._request("getd",int(pin)).arguments[1])
 
-    kat_pins = {'switch1_pin1'  : 13,
-            'switch1_pin2'  : 12,
-            'switch1_pin3'  : 19,
-            'switch1_pin4'  : 18,
-            'switch2_pin1'  : 17,
-            'switch2_pin2'  : 16,
-            'switch2_pin3'  : 15,
-            'switch2_pin4'  : 14,
-            'atten1_le_pin' : 5,
-            'atten2_le_pin' : 6,
-            'atten3_le_pin' : 7,
-            'atten_clk_pin' : 3,
-            'atten_data_pin': 4}
-    
-
-    def set_atten_db(self,atten,db=31):
-        """Sets the db of an attenuator. Valid attenuators are 1-4 with a range of 0-31 db of attenuation"""
-        assert db in range(0,32), "Invalid db value %i. Valid pins are %s."%(db,range(0,32))
-        assert atten in range(0,4), "Invalid attenuator %i. Valid attenuators are %s."%(atten,range(0,4))
-        db = db*2
+    def set_atten_db(self,le_pin,data_pin,clk_pin,atten,db=31):
+        """Sets the db of a serial minicircuits attenuator with a range of 0-31.5 db of attenuation"""
+        db = int(db*2)
+        assert db in range(0,63), "Invalid db value %i. Valid range is 0 to 31.5dB."%(db/2.)
+        self.setd(le_pin,0)
+        self.setd(clk_pin,0)
+        for bit in range(5,-1,-1):
+            self.setd(self.data_pin,(db>>bit)&1)
+            self.setd(self.clk_pin,1)
+            self.setd(self.clk_pin,0)
+        self.setd(self.kat_pins['atten1_le_pin'],1)
         self.setd(self.kat_pins['atten1_le_pin'],0)
-        self.setd(self.kat_pins['atten2_le_pin'],0)
-        self.setd(self.kat_pins['atten3_le_pin'],0)
-        self.setd(self.kat_pins['atten_clk_pin'],0)
-        for bit in range(5,-1,-1):
-            self.setd(self.kat_pins['atten_data_pin'],(db>>bit)&1)
-            self.setd(self.kat_pins['atten_clk_pin'],1)
-            self.setd(self.kat_pins['atten_clk_pin'],0)
-        if atten   == 1:
-            self.setd(self.kat_pins['atten1_le_pin'],1)
-        elif atten == 2:
-            self.setd(self.kat_pins['atten2_le_pin'],1)
-        elif atten == 3:
-            self.setd(self.kat_pins['atten3_le_pin'],1)
-        elif atten == 0:
-            self.setd(self.kat_pins['atten1_le_pin'],1)
-            self.setd(self.kat_pins['atten2_le_pin'],1)
-            self.setd(self.kat_pins['atten3_le_pin'],1)
-
-    def set_freq_range_switch(self,freq_range=1):
-        """Sets the switch to target a frequency range. Valid ranges are 1: 0-828 MHz, 2: 800-1100 MHz - Not implemented, 3: 900-1670 MHz, 4: Not implemented."""
-        assert freq_range in range(1,5), "Invalid frequence range %i. Valid frequency ranges are %s."%(freq_range,range(1,5))
-        self.setd(self.kat_pins['switch1_pin1'], 1)
-        self.setd(self.kat_pins['switch1_pin2'], 1)
-        self.setd(self.kat_pins['switch1_pin3'], 1)
-        self.setd(self.kat_pins['switch1_pin4'], 1)
-        self.setd(self.kat_pins['switch2_pin1'], 1)
-        self.setd(self.kat_pins['switch2_pin2'], 1)
-        self.setd(self.kat_pins['switch2_pin3'], 1)
-        self.setd(self.kat_pins['switch2_pin4'], 1)
-        # 0 - 828 MHz
-        if freq_range  == 1:
-            self.setd(self.kat_pins['switch1_pin4'], 0)
-            self.setd(self.kat_pins['switch2_pin1'], 0)
-        # 800 - 1100 MHz - Not implemented
-        elif freq_range == 2:
-            self.setd(self.kat_pins['switch1_pin2'], 0)
-            self.setd(self.kat_pins['switch2_pin3'], 0)
-        # 900 - 1670 MHz
-        elif freq_range == 3:
-            self.setd(self.kat_pins['switch1_pin3'], 0)
-            self.setd(self.kat_pins['switch2_pin2'], 0)
-        # currently not connected
-        elif freq_range == 4:
-            self.setd(self.kat_pins['switch1_pin1'], 0)
-            self.setd(self.kat_pins['switch2_pin4'], 0)
-
-    misc_pins = {'switch1_pin1'  : 3,
-            'switch1_pin2'  : 4,
-            'switch1_pin3'  : 5,
-            'switch1_pin4'  : 6,
-            'switch2_pin1'  : 7,
-            'switch2_pin2'  : 8,
-            'switch2_pin3'  : 9,
-            'switch2_pin4'  : 10,
-            'switch3'       : 11,
-            'atten_le_pin'  : 16,
-            'atten_clk_pin' : 15,
-            'atten_data_pin': 17}
-
-    def stellies_set_atten_db(self,db=31):
-        """Sets the db of an attenuator. Valid attenuators are 1-4 with a range of 0-31 db of attenuation"""
-        assert db in range(0,32), "Invalid db value %i. Valid pins are %s."%(db,range(0,32))
-        db = db*2 
-        self.setd(self.misc_pins['atten_le_pin'],0)
-        self.setd(self.misc_pins['atten_clk_pin'],0)
-        for bit in range(5,-1,-1):
-            self.setd(self.misc_pins['atten_data_pin'],(db>>bit)&1)
-            self.setd(self.misc_pins['atten_clk_pin'],1)
-            self.setd(self.misc_pins['atten_clk_pin'],0)
-        self.setd(self.misc_pins['atten_le_pin'],1)
-
-    def stellies_set_freq_range_switch(self,freq_range=1):
-        """Sets the switch to target a frequency range. Valid ranges are 1: 0-828 MHz, 2: 800-1100 MHz - Not implemented, 3: 900-1670 MHz, 4: Not implemented."""
-        assert freq_range in range(1,5), "Invalid frequence range %i. Valid frequency ranges are %s."%(freq_range,range(1,5))
-        self.setd(self.misc_pins['switch1_pin1'], 1)
-        self.setd(self.misc_pins['switch1_pin2'], 1)
-        self.setd(self.misc_pins['switch1_pin3'], 1)
-        self.setd(self.misc_pins['switch1_pin4'], 1)
-        self.setd(self.misc_pins['switch2_pin1'], 1)
-        self.setd(self.misc_pins['switch2_pin2'], 1)
-        self.setd(self.misc_pins['switch2_pin3'], 1)
-        self.setd(self.misc_pins['switch2_pin4'], 1)
-        # 0 - 828 MHz
-        if freq_range  == 1:
-            self.setd(self.misc_pins['switch1_pin3'], 0)
-            self.setd(self.misc_pins['switch2_pin2'], 0)
-            self.setd(self.misc_pins['switch3'], 1)
-        # 800 - 1100 MHz - Not implemented
-        elif freq_range == 2:
-            self.setd(self.misc_pins['switch1_pin2'], 0)
-            self.setd(self.misc_pins['switch2_pin4'], 0)
-            self.setd(self.misc_pins['switch3'], 0)
-        # 900 - 1670 MHz
-        elif freq_range == 3:
-            self.setd(self.misc_pins['switch1_pin1'], 0)
-            self.setd(self.misc_pins['switch2_pin3'], 0)
-            self.setd(self.misc_pins['switch3'], 0)
-        # currently not connected
-        elif freq_range == 4:
-            self.setd(self.misc_pins['switch1_pin1'], 0)
-            self.setd(self.misc_pins['switch2_pin4'], 0)
-
-
-
