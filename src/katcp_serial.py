@@ -173,15 +173,15 @@ class SerialClient(CallbackClient):
         """Gets a boolean value on a digital IO pin."""
         return int(self._request("getd",int(pin)).arguments[1])
 
-    def set_atten_db(self,le_pin,data_pin,clk_pin,atten,db=31):
+    def set_atten_db(self,le_pin,data_pin,clk_pin,atten_db=31):
         """Sets the db of a serial minicircuits attenuator with a range of 0-31.5 db of attenuation"""
-        db = int(db*2)
-        assert db in range(0,63), "Invalid db value %i. Valid range is 0 to 31.5dB."%(db/2.)
+        atten_db = int(atten_db*2)
+        assert atten_db in range(0,63), "Invalid db value %i. Valid range is 0 to 31.5dB."%(atten_db/2.)
         self.setd(le_pin,0)
         self.setd(clk_pin,0)
         for bit in range(5,-1,-1):
-            self.setd(self.data_pin,(db>>bit)&1)
-            self.setd(self.clk_pin,1)
-            self.setd(self.clk_pin,0)
-        self.setd(self.kat_pins['atten1_le_pin'],1)
-        self.setd(self.kat_pins['atten1_le_pin'],0)
+            self.setd(data_pin,(atten_db>>bit)&1)
+            self.setd(clk_pin,1)
+            self.setd(clk_pin,0)
+        self.setd(le_pin,1)
+        self.setd(le_pin,0)
