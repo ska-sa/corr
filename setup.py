@@ -1,7 +1,7 @@
 from distutils.core import setup, Extension
 import os, sys, glob
 
-__version__ = '0.7.2'
+__version__ = '0.7.3'
 
 setup(name = 'corr',
     version = __version__,
@@ -19,7 +19,7 @@ setup(name = 'corr',
         'Topic :: Scientific/Engineering :: Astronomy',
         'Topic :: Software Development :: Libraries :: Python Modules',
         ],
-    requires=['katcp', 'pylab','matplotlib','iniparse', 'numpy', 'spead', 'curses', 'construct'],
+    install_requires=['katcp', 'matplotlib', 'iniparse', 'numpy', 'spead', 'construct', 'h5py'],
     provides=['corr'],
     package_dir = {'corr':'src'},
     packages = ['corr'],

@@ -237,8 +237,8 @@ class Correlator:
             logger.setLevel(log_level)
 
         self.syslogger.info('Configuration file %s parsed ok.' % config_file)
-        self.spead_tx=spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
-        self.spead_ig=spead.ItemGroup()
+        self.spead_tx = spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
+        self.spead_ig = spead.ItemGroup()
 
         if connect == True:
             self.connect()
@@ -371,6 +371,7 @@ class Correlator:
 
     def prog_all(self, timeout=10):
         """Progam all the FPGAs asynchronously."""
+        self.syslogger.info("Programming all FPGAs.")
         f_nottimedout, frv = non_blocking_request(fpgas = self.ffpgas, timeout = timeout, request = 'progdev', request_args = [self.config['bitstream_f']])
         f_okay = True
         for k, v in frv.items():
@@ -394,6 +395,7 @@ class Correlator:
     def prog_all_old(self):
         """Programs all the FPGAs."""
         #tested ok corr-0.5.0 2010-07-19
+        self.syslogger.info("Reprogramming all FPGAs")
         for fpga in self.ffpgas:
             fpga.progdev(self.config['bitstream_f'])
         for fpga in self.xfpgas:
@@ -604,6 +606,7 @@ class Correlator:
 
     def initialise(self, n_retries = 40, reprogram = True, clock_check = True, set_eq = True, config_10gbe = True, config_output = True, send_spead = True, prog_timeout_s = 5):
         """Initialises the system and checks for errors."""
+        self.syslogger.info("Reinitialising correlator.")
         if reprogram:
             self.deprog_all()
             time.sleep(prog_timeout_s)
@@ -650,26 +653,30 @@ class Correlator:
         stat=self.check_all(details=True)
         for in_n,ant_str in enumerate(self.config._get_ant_mapping_list()):
             ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_ant_str_location(ant_str)
-            try:
-                # This is not quite right... Both ROACH's QDRs are used in a single corner-turn for both inputs. HARDCODED to check two QDRs per board!
-                if stat['ant_str']['ct_error']==True:
-                    self.floggers[ffpga_n].warn("Corner-Turn is in error.")
-                    for qdr_n in range(2):
-                        loop_retry_cnt=0
-                        while (c.ffpgas[ffpga_n].qdr_status(qdr_n)['calfail']==True) and (loop_retry_cnt< n_retries):
-                            time.sleep(0.2)
-                            loop_retry_cnt+=1
-                            self.floggers[ffpga_n].warn("SRAM calibration failed. Forcing software reset/recalibration... retry %i"%loop_retry_cnt)
-                            c.ffpgas[ffpga_n].qdr_rst(qdr_n)
-                        if c.ffpgas[ffpga_n].qdr_status(qdr_n)['calfail']==True:
-                            raise RuntimeError("Could not calibrate QDR%i after %i retries. Giving up."%(qdr_n,n_retries))
+            if (stat[ant_str]['adc_disabled']==True) or (stat[ant_str]['adc_overrange']==True):
+                self.floggers[ffpga_n].warn("%s input levels are too high!"%ant_str)
+            if self.is_narrowband():
+                if stat[ant_str]['coarse_fft_overrange']==True:
+                    self.floggers[ffpga_n].error("%s coarse FFT is overranging. Spectrum output is garbage."%ant_str)
+                if stat[ant_str]['fine_fft_overrange']==True:
+                    self.floggers[ffpga_n].error("%s fine FFT is overranging. Spectrum output is garbage."%ant_str)
+            else:
+                if stat[ant_str]['fft_overrange']==True:
+                    self.floggers[ffpga_n].error("%s FFT is overranging. Spectrum output is garbage."%ant_str)
 
-                if (stat['ant_str']['adc_disabled']==True) or (stat['ant_str']['adc_overrange']==True):
-                    self.floggers[ffpga_n].warn("%s input levels are too high!"%ant_str)
-                if stat['ant_str']['fft_overrange']==True:
-                    self.floggers[ffpga_n].warn("%s FFT is overranging. Spectrum output is garbage."%ant_str)
-            except:
-                pass 
+            # This is not quite right... Both ROACH's QDRs are used in a single corner-turn for both inputs. HARDCODED to check two QDRs per board!
+            if stat[ant_str]['ct_error']==True:
+                self.floggers[ffpga_n].error("Corner-Turn for input %s is in error."%ant_str)
+                for qdr_n in range(2):
+                    loop_retry_cnt=0
+                    while (c.ffpgas[ffpga_n].qdr_status(qdr_n)['calfail']==True) and (loop_retry_cnt< n_retries):
+                        time.sleep(0.2)
+                        loop_retry_cnt+=1
+                        self.floggers[ffpga_n].error("SRAM calibration on input %s failed. Forcing software reset/recalibration... retry %i"%(ant_str,loop_retry_cnt))
+                        c.ffpgas[ffpga_n].qdr_rst(qdr_n)
+                    if c.ffpgas[ffpga_n].qdr_status(qdr_n)['calfail']==True:
+                        self.floggers[ffpga_n].error("Could not calibrate Fengine QDR%i on input %s after %i retries. Giving up."%(qdr_n,ant_str,n_retries))
+                        raise RuntimeError("Could not calibrate Fengine QDR%i on input %s after %i retries. Giving up."%(qdr_n,ant_str,n_retries))
 
         if self.config['feng_out_type'] == 'xaui':
             if not self.check_xaui_error(): raise RuntimeError("XAUI checks failed.")
@@ -685,15 +692,15 @@ class Correlator:
         if not self.check_vacc(): 
             for x in range(self.config['x_per_fpga']):
                 for nx,xsrv in enumerate(self.xsrvs):
+                    loop_retry_cnt=0
                     while (self.xfpgas[nx].qdr_status(x)['calfail']==True) and (loop_retry_cnt< n_retries):
                         time.sleep(0.2)
                         loop_retry_cnt+=1
-                        self.xloggers[nx].warn("SRAM calibration failed. Forcing software reset/recalibration... retry %i"%loop_retry_cnt)
+                        self.xloggers[nx].error("QDR%i calibration failed on Xengine%i. Forcing software reset/recalibration... retry %i"%(x,nx,loop_retry_cnt))
                         self.xfpgas[nx].qdr_rst(x)
                     if self.xfpgas[nx].qdr_status(x)['calfail']==True:
-                        raise RuntimeError("Could not calibrate QDR%i."%x)
+                        raise RuntimeError("Could not calibrate QDR%i on X engine %i. VACC is broken."%(x,nx))
             
-            raise RuntimeError("Vector accumulators are broken.")
 
         if send_spead:
             self.spead_issue_all()
@@ -1738,7 +1745,7 @@ class Correlator:
 #                # Assign an IP address to each XAUI port's associated 10GbE core.
 #                fpga.write_int('gbe_ip%i'%x, ip)
 
-    def config_udp_output(self,dest_ip_str=None,dest_port=None):
+    def config_udp_output(self, dest_ip_str=None, dest_port=None):
         """Configures the destination IP and port for X engine output. dest_port and dest_ip are optional parameters to override the config file defaults. dest_ip is string in dotted-quad notation."""
         if dest_ip_str==None:
             dest_ip_str=self.config['rx_udp_ip_str']
@@ -1756,6 +1763,10 @@ class Correlator:
         self.xwrite_int_all('gbe_out_ip',struct.unpack('>L',socket.inet_aton(dest_ip_str))[0])
         self.xwrite_int_all('gbe_out_port',dest_port)
         self.syslogger.info("Correlator output configured to %s:%i." % (dest_ip_str, dest_port))
+
+        # need a new spead transmitter if the port and ip have changed
+        self.spead_tx = spead.Transmitter(spead.TransportUDPtx(self.config['rx_meta_ip_str'], self.config['rx_udp_port']))
+
         #self.xwrite_int_all('gbe_out_pkt_len',self.config['rx_pkt_payload_len']) now a compile-time option
 
         #Temporary for correlators with separate gbe core for output data:
