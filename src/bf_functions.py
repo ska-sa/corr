@@ -1218,8 +1218,8 @@ class fbf:
 	bin_pt = self.get_param('bf_cal_bin_pt')
 	for datum in data:
 
-	    val_real = (numpy.int32(datum & 0xFFFF0000)) >> 16
-	    val_imag = (numpy.int32(datum & 0x0000FFFF))
+	    val_real = (numpy.int16(datum & 0xFFFF0000 >> 16))
+	    val_imag = (numpy.int16(datum & 0x0000FFFF      ))
 			       
 	    datum_real = numpy.float(val_real)/(2**bin_pt)
 	    datum_imag = numpy.float(val_imag)/(2**bin_pt)
