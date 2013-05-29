@@ -113,7 +113,7 @@ try:
     print '------------------------'
     print 'Triggering capture at byte offset %i...' % (offset_bytes),
     sys.stdout.flush()
-    bram_dmp = corr.snap.snapshots_get(fpgas, dev_name, man_trig = False, wait_period = 2, offset = offset_bytes)
+    bram_dmp = corr.snap.snapshots_get(fpgas, dev_name, man_trig = False, wait_period = acc_time*2, offset = offset_bytes)
     print 'done.'
 
     print 'Unpacking bram contents...'
