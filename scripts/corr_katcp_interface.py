@@ -3,10 +3,10 @@
 Author: Jason Manley
 Date: 2010-11-11"""
 
-import logging,corr,sys,Queue,katcp
+import logging,corr,sys,Queue,katcp,time
 from optparse import OptionParser
 from katcp.kattypes import request, return_reply, Float, Int, Str, Bool
-import struct
+import struct, re, string
 
 logging.basicConfig(level=logging.WARN,
                     stream=sys.stderr,
@@ -87,6 +87,7 @@ class DeviceExampleServer(katcp.DeviceServer):
         # Next, if beamformer object is instantiated, initiate the beamformer
         if self.b is not None:
             try:
+              time.sleep(1) # allow little time for corr init to close
               self.b.initialise()
             except:
               return("fail","Beamformer could not initialise. Check the log.")
@@ -140,6 +141,37 @@ class DeviceExampleServer(katcp.DeviceServer):
             #return("fail","it broke.")
             return("fail","Sorry, your input number is invalid. Valid range: 0 to %i."%(self.c.config['n_inputs']-1))
 
+
+    @return_reply(Str(),Str())
+    def request_bf_destination(self, sock, orgmsg):
+        """Set destination for a given stream to a new IP address. The first argument should be the stream name, the second meta/data, the third the IP address in dotted-quad notation. An optional fourth parameters is the port."""
+        if self.c is None:
+            return ("fail","... you haven't connected yet!")
+        if self.b is None:
+            return ("fail","... no beamformer available!")
+        if len(orgmsg.arguments) < 3: return ("fail", "... usage: <stream> <meta/data> <ip> [port]")
+        stream     = orgmsg.arguments[0]
+        identifier = orgmsg.arguments[1]
+        ip         = orgmsg.arguments[2]
+
+        if not stream in self.b.get_beams():
+            return ("fail", "... name %s not a known beam!"%(stream))
+        if len(ip.split('.')) != 4: return ("fail", "Not an expected ip address format")
+        if len(orgmsg.arguments)>3:
+            try: port=int(orgmsg.arguments[3])
+            except Exception as e: return ("fail", "... Exception %s" % e)
+        else: port=None
+
+        if string.lower(identifier) == "meta":
+            self.b.config_meta_output(beams=stream,dest_ip_str=ip,dest_port=port, issue_spead=False)
+        if string.lower(identifier) == "data":
+            self.b.config_udp_output(beams=stream,dest_ip_str=ip,dest_port=port, issue_spead=False)
+        time.sleep(3)
+        return ("ok",
+        "data %s:%i"%(self.b.config['bf_rx_udp_ip_str_beam%d'%self.b.beam2index(stream)[0]], self.b.config['bf_rx_udp_port_beam%d'%self.b.beam2index(stream)[0]]),
+        "meta %s:%i"%(self.b.config['bf_rx_meta_ip_str_beam%d'%self.b.beam2index(stream)[0]], self.b.config['bf_rx_udp_port_beam%d'%self.b.beam2index(stream)[0]])
+        )
+
     @return_reply(Str(),Str())
     def request_tx_start(self, sock, orgmsg):
         """Start transmission to the given IP address and port, or use the defaults from the config file if not specified. The first argument should be the IP address in dotted-quad notation. The second is the port."""
@@ -149,6 +181,20 @@ class DeviceExampleServer(katcp.DeviceServer):
         beam=None
         dest_ip_str=None
         dest_port=None
+
+        if len(orgmsg.arguments)>2:
+            # beamformer port
+            try: dest_port=int(orgmsg.arguments[2])
+            except Exception as e: return ("fail", "... %s" % e)
+
+        if len(orgmsg.arguments)>1:
+            # second argument can be either port of ip
+            if (len(orgmsg.arguments[1].split('.')) == 4) and (self.b is not None): # ip address
+                dest_ip_str=orgmsg.arguments[1]
+            else:
+                try: dest_port=int(orgmsg.arguments[1])
+                except Exception as e: return ("fail", "... %s" % e)
+
         if len(orgmsg.arguments)>0:
             # first argument can be either stream name or ip
             if len(orgmsg.arguments[0].split('.')) == 4: # ip address
@@ -157,28 +203,14 @@ class DeviceExampleServer(katcp.DeviceServer):
             elif (self.b is not None): # stream name = beam name
                 beam=orgmsg.arguments[0]
                 if not beam in self.b.get_beams():
+                    self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Name %s not a known beam, assuming correlator output"%(beam)),orgmsg)
                     beam=None
-                    self.reply_inform(sock, katcp.Message.inform(orgmsg.name, "Name %s not a know beam, assuming correlator output"%(beam)),orgmsg)
-                else:
-                    # default destination for selected beam
-                    dest_port=None
-                    dest_ip_str=None
-        if len(orgmsg.arguments)>1:
-            # second argument can be either port of ip
-            if (len(orgmsg.arguments[1].split('.')) == 4) and (self.b is not None): # ip address
-                dest_ip_str=orgmsg.arguments[1]
-            else:
-                try: dest_port=int(orgmsg.arguments[1])
-                except Exception as e: return ("fail", "... %s" % e)
-        if len(orgmsg.arguments)>2:
-            # beamformer port
-            try: dest_port=int(orgmsg.arguments[2])
-            except Exception as e: return ("fail", "... %s" % e)
-
         try:
             if (self.b is not None) and (beam is not None):
-                self.b.config_udp_output(beams=beam,dest_ip_str=dest_ip_str,dest_port=dest_port)
-                self.b.spead_issue_all(beams=beam)
+                self.b.config_meta_output(beams=beam,dest_ip_str=dest_ip_str,dest_port=dest_port, issue_spead=False)
+                self.b.config_udp_output(beams=beam,dest_ip_str=dest_ip_str,dest_port=dest_port, issue_spead=False)
+                self.b.spead_issue_all(beams=beam, from_fpga=False)
+                time.sleep(1) # allow little time for meta data issue to finish
                 self.b.tx_start(beams=beam)
                 return ("ok",
                 "data %s:%i"%(self.b.config['bf_rx_udp_ip_str_beam%d'%self.b.beam2index(beam)[0]], self.b.config['bf_rx_udp_port_beam%d'%self.b.beam2index(beam)[0]]),
