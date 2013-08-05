@@ -688,7 +688,7 @@ class Correlator:
         if not self.check_x_miss(): raise RuntimeError("X engines are missing data.")
         self.acc_time_set()   #self.rst_status_and_count() is done as part of this setup
         self.syslogger.info("Waiting %i seconds for an integration to finish so we can test the VACCs."%self.config['int_time'])
-        time.sleep(self.config['int_time']+0.1)
+        time.sleep(2*self.config['int_time']+0.1)
         if not self.check_vacc(): 
             for x in range(self.config['x_per_fpga']):
                 for nx,xsrv in enumerate(self.xsrvs):
@@ -1166,15 +1166,15 @@ class Correlator:
             cnt_check = self.xread_uint_all('vacc_cnt%i'%(x))
             for nx,xsrv in enumerate(self.xsrvs):
                 if (err_check[nx] !=0):
-                    self.xloggers[nx].error('Vector accumulator errors on this X engine %i.'%(x))
+                    self.xloggers[nx].error("Vector accumulator errors on my X engine %i."%(x))
                     rv=False
                 elif (cnt_check[nx] == 0) :
-                    self.xloggers[nx].error('No vector accumulator data this X engine %i.'%(x))
+                    self.xloggers[nx].error("No vector accumulator data on my X engine %i."%(x))
                     rv=False
                 else:
-                    self.xloggers[nx].info('Vector accumulator on this X engine %i ok.'%(x))
+                    self.xloggers[nx].info('Vector accumulator on my X engine %i ok.'%(x))
         if rv == True: self.syslogger.info("All vector accumulators are workin' perfectly.")
-        else: self.syslogger.error("Some vector accumulators are broken.")
+        else: self.syslogger.error("Some vector accumulator problems detected.")
         return rv
 
     def check_all(self,clock_check=False,basic_check=True,details=False):
@@ -1889,7 +1889,7 @@ class Correlator:
 
         # wait for the load time to elapse
         #print 'waiting %2.3f seconds' % sleep_time
-        time.sleep(self.time_from_pcnt(pcnt_ld) - self.time_from_pcnt(pcnt_before))
+        time.sleep(2*(self.time_from_pcnt(pcnt_ld) - self.time_from_pcnt(pcnt_before)))
         # allow for the fact that reading/writing over the network may take some time
         time.sleep(network_wait) # account for a crazy network latency
         pcnt_after = self.pcnt_current_get()
