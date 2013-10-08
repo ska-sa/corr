@@ -690,7 +690,7 @@ class Correlator:
         if not self.check_x_miss(): raise RuntimeError("X engines are missing data.")
         self.acc_time_set()   #self.rst_status_and_count() is done as part of this setup
         self.syslogger.info("Waiting %i seconds for an integration to finish so we can test the VACCs."%self.config['int_time'])
-        time.sleep(self.config['int_time']+0.1)
+        time.sleep(2*self.config['int_time']+0.1)
         if not self.check_vacc(): 
             for x in range(self.config['x_per_fpga']):
                 for nx,xsrv in enumerate(self.xsrvs):
@@ -1168,15 +1168,15 @@ class Correlator:
             cnt_check = self.xread_uint_all('vacc_cnt%i'%(x))
             for nx,xsrv in enumerate(self.xsrvs):
                 if (err_check[nx] !=0):
-                    self.xloggers[nx].error('Vector accumulator errors on this X engine %i.'%(x))
+                    self.xloggers[nx].error("Vector accumulator errors on my X engine %i."%(x))
                     rv=False
                 elif (cnt_check[nx] == 0) :
-                    self.xloggers[nx].error('No vector accumulator data this X engine %i.'%(x))
+                    self.xloggers[nx].error("No vector accumulator data on my X engine %i."%(x))
                     rv=False
                 else:
-                    self.xloggers[nx].info('Vector accumulator on this X engine %i ok.'%(x))
+                    self.xloggers[nx].info('Vector accumulator on my X engine %i ok.'%(x))
         if rv == True: self.syslogger.info("All vector accumulators are workin' perfectly.")
-        else: self.syslogger.error("Some vector accumulators are broken.")
+        else: self.syslogger.error("Some vector accumulator problems detected.")
         return rv
 
     def check_all(self,clock_check=False,basic_check=True,details=False):
@@ -1315,26 +1315,26 @@ class Correlator:
             elif abs(coarse_delay) > (2**(coarse_delay_bits)):
                 log_runtimeerror(self.floggers[ffpga_n], 'Requested coarse delay (%es) is out of range (+-%es).' % (float(coarse_delay)/self.config['adc_clk'], float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
             else:
-                self.floggers[ffpga_n].info('Delay actually set to %e seconds.' % act_delay)
+                self.floggers[ffpga_n].debug('Delay actually set to %e seconds.' % act_delay)
         if (delay_rate != 0):
             if fine_delay_rate == 0:
                 self.floggers[ffpga_n].info('Requested delay rate too slow for this configuration. Setting delay rate to zero.')
             if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)):
                 log_runtimeerror(self.floggers[ffpga_n], 'Requested delay rate out of range (+-%e).' % (2**(bitshift_schedule-1)))
             else:
-                self.floggers[ffpga_n].info('Delay rate actually set to %e seconds per second.' % act_delay_rate) 
+                self.floggers[ffpga_n].debug('Delay rate actually set to %e seconds per second.' % act_delay_rate) 
 
         if fringe_phase != 0:
             if fr_offset == 0: 
                 self.floggers[ffpga_n].info('Requested fringe phase is too small for this configuration (we do not have enough resolution). Setting fringe phase to zero.')
             else:
-                self.floggers[ffpga_n].info('Fringe offset actually set to %6.3f degrees.' % act_fringe_offset)
+                self.floggers[ffpga_n].debug('Fringe offset actually set to %6.3f degrees.' % act_fringe_offset)
 
         if fringe_rate != 0:
             if fr_rate == 0: 
                 self.floggers[ffpga_n].info('Requested fringe rate is too slow for this configuration. Setting fringe rate to zero.')
             else:
-                self.floggers[ffpga_n].info('Fringe rate actually set to %e Hz.' % act_fringe_rate)
+                self.floggers[ffpga_n].debug('Fringe rate actually set to %e Hz.' % act_fringe_rate)
 
         # get the current mcnt for this feng
         mcnt_before = self.mcnt_current_get(ant_str)
@@ -1508,23 +1508,23 @@ class Correlator:
                     log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Internal logic error calculating fine delays.')
                 elif abs(coarse_delay) > (2**(coarse_delay_bits)):
                     log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Requested coarse delay (%es) is out of range (+-%es).' % (float(coarse_delay)/self.config['adc_clk'], float(2**(coarse_delay_bits-1))/self.config['adc_clk']))
-            self.floggers[ffpga_n].info('fr_delay_set_all - Delay actually set to %e seconds.'%act_delay)
+            self.floggers[ffpga_n].debug('fr_delay_set_all - Delay actually set to %e seconds.'%act_delay)
 
             if (delay_rate != 0):
                 if (fine_delay_rate==0): self.floggers[ffpga_n].error('fr_delay_set_all - Requested delay rate too slow for this configuration.')
                 if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)):
                     log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Requested delay rate out of range (+-%e).' % (2**(bitshift_schedule-1)))
-            self.floggers[ffpga_n].warn('fr_delay_set_all - Delay rate actually set to %e seconds per second.'%act_delay_rate) 
+            self.floggers[ffpga_n].debug('fr_delay_set_all - Delay rate actually set to %e seconds per second.'%act_delay_rate) 
 
             if (fringe_phase !=0):
                 if (fr_offset == 0): 
                     self.floggers[ffpga_n].error('fr_delay_set_all - Requested fringe phase is too small for this configuration (we do not have enough resolution).')
-            self.floggers[ffpga_n].info('fr_delay_set_all - Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
+            self.floggers[ffpga_n].debug('fr_delay_set_all - Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
 
             if (fringe_rate != 0):
                 if (fr_rate==0): 
                     self.floggers[ffpga_n].error('fr_delay_set_all - Requested fringe rate is too slow for this configuration.')
-            self.floggers[ffpga_n].info('fr_delay_set_all - Fringe rate actually set to %e Hz.'%act_fringe_rate)
+            self.floggers[ffpga_n].debug('fr_delay_set_all - Fringe rate actually set to %e Hz.'%act_fringe_rate)
 
             #setup the delays:
             self.ffpgas[ffpga_n].write_int('coarse_delay%i'%feng_input,coarse_delay)
@@ -1891,7 +1891,7 @@ class Correlator:
 
         # wait for the load time to elapse
         #print 'waiting %2.3f seconds' % sleep_time
-        time.sleep(self.time_from_pcnt(pcnt_ld) - self.time_from_pcnt(pcnt_before))
+        time.sleep(2*(self.time_from_pcnt(pcnt_ld) - self.time_from_pcnt(pcnt_before)))
         # allow for the fact that reading/writing over the network may take some time
         time.sleep(network_wait) # account for a crazy network latency
         pcnt_after = self.pcnt_current_get()

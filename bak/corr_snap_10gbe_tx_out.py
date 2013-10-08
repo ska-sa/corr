@@ -105,7 +105,7 @@ try:
     print 'Grabbing snap data...',
     servers = c.xsrvs
     fpgas=c.xfpgas
-    bram_dmp=c.xsnap_all(dev_name,brams,man_trig=man_trig,man_valid=man_valid,wait_period=2)
+    bram_dmp=bram_dmp=corr.snap.snapshots_get(fpgas=c.xfpgas,dev_names=dev_name,man_trig=man_trig,man_valid=man_valid,wait_period=2)
     print 'done'
 
 #print 'BRAM DUMPS:'

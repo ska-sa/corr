@@ -554,16 +554,17 @@ class FpgaClient(CallbackClient):
         assert ((offset%4) ==0) , 'You must write 32bit-bounded words!'
         self._request("write", self._timeout, device_name, str(offset), data)
 
-    def read_int(self, device_name):
+    def read_int(self, device_name, offset=0):
         """Calls .read() command with size=4, offset=0 and
            unpacks returned four bytes into signed 32bit integer.
 
            @see read
            @param self  This object.
            @param device_name  String: name of device / register to read.
+           @param offset int: The offset (in 32bit words) at which to read; default is zero.
            @return  Integer: value read.
            """
-        data = self.read(device_name, 4, 0)
+        data = self.read(device_name, 4, offset*4)
         return struct.unpack(">i", data)[0]
 
     def write_int(self, device_name, integer, blindwrite=False, offset=0):
@@ -598,6 +599,7 @@ class FpgaClient(CallbackClient):
            @see read_int
            @param self  This object.
            @param device_name  String: name of device / register to read from.
+           @param offset int: The offset (in 32bit words) at which to read; default is zero.
            @return  Integer: value read.
            """
         data = self.read(device_name, 4, offset*4)

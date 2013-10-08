@@ -954,17 +954,25 @@ class fbf:
                         print 'configuring excluded bfs'
 
                     #configure disabled beamformers to output to HEAP 0 HEAP size of 0, offset 0
-                    bf_config = ((0 << 16) & 0xffff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff) 
+                    bf_config = ((0 << 16) & 0x7fff0000 | (0 << 8) & 0x0000ff00 | 0 & 0x000000ff) 
                     self.write_int('cfg%i'%beam_index, [bf_config], 0, fft_bins=disabled_fft_bins)
                 
                 #get frequency_indices associated with enabled parts of beams
                 enabled_fft_bins = self.get_enabled_fft_bins(beam)
-        
-                #generate vector of values that will match the number of bfs in the list
+                
+		            #reset speadify blocks associated with fft bins required
                 fpga_bf_e = self.frequency2fpga_bf(fft_bins=enabled_fft_bins, unique=True)
                 bf_config = []
+                for offset in range(len(fpga_bf_e)): 
+		                bf_config.append((1 << 31))
+                
+                if self.config.simulate == True: print 'resetting included speadify blocks'
+                self.write_int('cfg%i'%beam_index, bf_config, 0, fft_bins=enabled_fft_bins)
+        
+                #generate vector of values that will match the number of bfs in the list
+                bf_config = []
                 for offset in range(len(fpga_bf_e)):
-                    bf_config.append((beam_index << 16) & 0xffff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
+                    bf_config.append((beam_index << 16) & 0x7fff0000 | (len(fpga_bf_e) << 8) & 0x0000ff00 | offset & 0x000000ff)
                 
                 if self.config.simulate == True: print 'configuring included bfs'
                 self.write_int('cfg%i'%beam_index, bf_config, 0, fft_bins=enabled_fft_bins)
@@ -1218,8 +1226,8 @@ class fbf:
 	bin_pt = self.get_param('bf_cal_bin_pt')
 	for datum in data:
 
-	    val_real = (numpy.int32(datum & 0xFFFF0000)) >> 16
-	    val_imag = (numpy.int32(datum & 0x0000FFFF))
+	    val_real = (numpy.int16((datum & 0xFFFF0000) >> 16))
+	    val_imag = (numpy.int16( datum & 0x0000FFFF       ))
 			       
 	    datum_real = numpy.float(val_real)/(2**bin_pt)
 	    datum_imag = numpy.float(val_imag)/(2**bin_pt)
