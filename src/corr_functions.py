@@ -511,7 +511,6 @@ class Correlator:
         Turn ONE TVG on at a time. Use feng_tvg_vailable_tvgs() to see what TVGs are available to you in the current mode. 
         """
         available_tvgs = self.feng_tvg_available_tvgs()
-        newkwargs = {}
         if len(kwargs) == 0:
             print 'No TVG given. Available f-engine TVGs in this mode are:'
             print available_tvgs
@@ -519,18 +518,21 @@ class Correlator:
         elif len(kwargs) > 1:
             raise RuntimeError('Only one TVG can be turned on at a time.')
         matched = False
-        seltvg = kwargs.keys()[0]
-        for avtvg in available_tvgs:
-            newkwargs[avtvg] = False
-            if avtvg == seltvg:
-                newkwargs[avtvg] = True
+        selected_tvg = kwargs.keys()[0]
+        newkwargs = {}
+        allfalse = {}
+        for t in available_tvgs:
+            allfalse[t] = False
+            newkwargs[t] = False
+            if t == selected_tvg:
                 matched = True
+                newkwargs[t] = True
         if not matched:
-            print 'TVG \'%s\' doesn\'t exist. Available f-engine TVGs in this mode are:' % seltvg
+            print 'TVG \'%s\' doesn\'t exist. Available f-engine TVGs in this mode are:' % selected_tvg
             print available_tvgs
             raise RuntimeError('Invalid TVG specified.')
         self.feng_ctrl_set_all(tvg_en = True, **newkwargs)
-        self.feng_ctrl_set_all(tvg_en = False, **newkwargs)
+        self.feng_ctrl_set_all(tvg_en = False, **allfalse)
 
     def feng_tvg_sel_OLD(self, noise = False, ct = False, pkt = False, fdfs = False):
         """Turns TVGs on/off on the F engines."""
