@@ -234,7 +234,7 @@ class FpgaClient(CallbackClient):
            @return  String: device status.
            """
         if boffile=='' or boffile==None:
-            reply, informs = self._request("progdev", self._timeout, '')
+            reply, informs = self._request("progdev", self._timeout)
             self._logger.info("Deprogramming FPGA... %s."%(reply.arguments[0]))
         else:
             reply, informs = self._request("progdev", self._timeout, boffile)
@@ -349,9 +349,9 @@ class FpgaClient(CallbackClient):
         import threading, socket, time, Queue
         def makerequest(result_queue):
             try:
-                result = self._request('uploadbof', timeout, port, filename)
+                result = self._request('upload', timeout, port)
                 if(result[0].arguments[0] == Message.OK):
-                    result_queue.put('')
+                    result_queue.put('OK')
                 else:
                     result_queue.put('Request to client returned, but not Message.OK.')
             except:
@@ -360,7 +360,7 @@ class FpgaClient(CallbackClient):
             upload_socket = socket.socket()
             stime = time.time()
             connected = False
-            while (not connected) and (time.time() - stime < 2):
+            while (not connected) and (time.time() < stime + 2):
                 try:
                     upload_socket.connect((self.host, port))
                     connected = True
@@ -372,7 +372,7 @@ class FpgaClient(CallbackClient):
                 upload_socket.send(open(filename).read())
             except:
                 result_queue.put('Could not send file to upload port.')
-            result_queue.put('')
+            result_queue.put('OK')
         # request thread
         request_queue = Queue.Queue()
         request_thread = threading.Thread(target = makerequest, args = (request_queue,))
@@ -388,11 +388,20 @@ class FpgaClient(CallbackClient):
         self._timeout = old_timeout
         request_result = request_queue.get()
         upload_result = upload_queue.get()
-        if (request_result != '') or (upload_result != ''):
+        if (request_result != 'OK') or (upload_result != 'OK'):
             raise Exception('Error: request(%s), upload(%s)' %(request_result, upload_result))
-        debugstr = "Bof file upload for '", bof_file,"': request (", request_result, "), uploaded (", upload_result,")" 
+        debugstr = "Bof file upload for '%s': request (%s), upload (%s)" % (bof_file, request_result, upload_result) 
         self._logger.info(debugstr)
-        return
+        stime = time.time()
+        done = False
+        while (not done) and (time.time() < stime + 2):
+            try:
+                self.listdev()
+                done = True
+            except:
+                time.sleep(0.1)
+        if not done:
+            raise RuntimeError('BOF file seemed to upload, but is not running?')
 
     def status(self):
         """Return the status of the FPGA.
