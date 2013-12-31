@@ -8,7 +8,7 @@
    @Revised 2009/12/01 to include print 10gbe core details.
    """
 
-import struct, re, threading, socket, select, traceback, logging, sys, time, os
+import struct, threading, socket, logging, time, os
 
 from katcp import *
 log = logging.getLogger("katcp")
@@ -80,8 +80,6 @@ class FpgaClient(CallbackClient):
                            client operations.
            @param logger Object: Logger to log to.
            """
-        import threading
-
         super(FpgaClient, self).__init__(host, port, tb_limit = tb_limit, timeout = timeout, logger = logger)
         self.host = host
         self._timeout = timeout
@@ -178,7 +176,7 @@ class FpgaClient(CallbackClient):
 
     def _request(self, name, request_timeout, *args):
         """Make a blocking request and check the result.
-        
+
            Raise an error if the reply indicates a request failure.
 
            @param self  This object.
@@ -217,7 +215,7 @@ class FpgaClient(CallbackClient):
         return [i.arguments[0] for i in informs]
 
     def listcmd(self):
-        """Return a list of available commands. this should not be made  
+        """Return a list of available commands. this should not be made
            available to the user, but can be used internally to query if a
            command is supported.
 
@@ -261,11 +259,11 @@ class FpgaClient(CallbackClient):
         #0x1c - 0x1f: Not assigned
         #0x20       : soft reset (bit 0)
         #0x21       : fabric enable (bit 0)
-        #0x22 - 0x23: fabric port 
-        
+        #0x22 - 0x23: fabric port
+
         #0x24 - 0x27: XAUI status (bit 2,3,4,5=lane sync, bit6=chan_bond)
         #0x28 - 0x2b: PHY config
- 
+
         #0x28       : RX_eq_mix
         #0x29       : RX_eq_pol
         #0x2a       : TX_preemph
@@ -274,7 +272,7 @@ class FpgaClient(CallbackClient):
         #0x1000     : CPU TX buffer
         #0x2000     : CPU RX buffer
         #0x3000     : ARP tables start
-        
+
         ctrl_pack=struct.pack('>QLLLLLLBBH',mac, 0, gateway, ip, 0, 0, 0, 0, 1, port)
         arp_pack=struct.pack('>256Q',*arp_table)
         self.blindwrite(device_name,ctrl_pack,offset=0)
@@ -306,10 +304,10 @@ class FpgaClient(CallbackClient):
         mac4 = (mac & ((1<<16)-(1<<8))) >> 8
         mac5 = (mac & ((1<<8)-(1<<0))) >> 0
 
-        mac_str= "%02X:%02X:%02X:%02X:%02X:%02X"%(mac0,mac1,mac2,mac3,mac4,mac5)
-        ip_str="%i.%i.%i.%i"%(ip_1,ip_2,ip_3,ip_4)
+        mac_str = "%02X:%02X:%02X:%02X:%02X:%02X"%(mac0,mac1,mac2,mac3,mac4,mac5)
+        ip_str = "%i.%i.%i.%i"%(ip_1,ip_2,ip_3,ip_4)
         port_str = "%i"%port
- 
+
         self._logger.info("Starting tgtap driver instance for %s: %s %s %s %s %s"%("tap-start", tap_dev, device, ip_str, port_str, mac_str))
         reply, informs = self._request("tap-start", self._timeout, tap_dev, device, ip_str, port_str, mac_str)
         if reply.arguments[0]=='ok': return
@@ -317,17 +315,82 @@ class FpgaClient(CallbackClient):
 
     def tap_stop(self, device):
         """Stop a TAP driver.
+           @param self  This object.
+           @param device  String: name of the device you want to stop.
+        """
+        reply, informs = self._request("tap-stop", self._timeout, device)
+        if reply.arguments[0]=='ok': return
+        else: raise RuntimeError("Failure stopping tap device %s."%(device))
+
+    def tap_multicast_add_send(self, tap_dev, ip, mask):
+        """Adds a range of address to which the roach must subscribe to.
+
+            @param self    This object.
+            @param tap_dev String: name of the tap device (a Linux identifier). If you want to destroy a device later, you need to use this name.
+            @param ip      integer: IP address, 32 bits.
+            @param mask    power of 2 integer: effectively a mask to specify a range of ip addresses.
+
+            Please note that the function definition changed from corr-0.4.0 to corr-0.4.1 to include the tap_dev identifier.
+           """
+        if len(tap_dev) > 8:
+            raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s for device %s." % (tap_dev, device))
+
+        if mask&(mask-1) != 0:
+            raise RuntimeError("The mask needs to be a power of 2. You specified %s for device %s." % (mask, device))
+
+        ip_1 = (ip/(2**24))
+        ip_2 = (ip%(2**24))/(2**16)
+        ip_3 = (ip%(2**16))/(2**8)
+        ip_4 = (ip%(2**8))
+
+        ip_str="%i.%i.%i.%i"%(ip_1,ip_2,ip_3,ip_4)
+
+        self._logger.info("Joining the multicast groups with %s with range %s" %(ip_str, mask))
+        reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'send', str(ip_str) + '+' + str(mask))
+        if reply.arguments[0]=='ok': return
+        else: raise RuntimeError("Failure adding multicast address %s to tap device %s" %(ip_str, device))
+
+    def tap_multicast_add_recv(self, tap_dev, ip, mask):
+        """Adds a range of address to which the roach must subscribe to.
+
+            @param self    This object.
+            @param tap_dev String: name of the tap device (a Linux identifier). If you want to destroy a device later, you need to use this name.
+            @param ip      integer: IP address, 32 bits.
+            @param mask    power of 2 integer: effectively a mask to specify a range of ip addresses.
+
+            Please note that the function definition changed from corr-0.4.0 to corr-0.4.1 to include the tap_dev identifier.
+           """
+        if len(tap_dev) > 8:
+            raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s for device %s." % (tap_dev, device))
+
+        if mask&(mask-1) != 0:
+            raise RuntimeError("The mask needs to be a power of 2. You specified %s for device %s." % (mask, device))
+
+        ip_1 = (ip/(2**24))
+        ip_2 = (ip%(2**24))/(2**16)
+        ip_3 = (ip%(2**16))/(2**8)
+        ip_4 = (ip%(2**8))
+
+        ip_str="%i.%i.%i.%i"%(ip_1,ip_2,ip_3,ip_4)
+
+        self._logger.info("iRemoving the multicast groups with %s with range %s" %(ip_str, mask))
+        reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'recv', str(ip_str), str(mask))
+        if reply.arguments[0]=='ok': return
+        else: raise RuntimeError("Failure removing multicast address %s to tap device %s" %(ip_str, device))
+
+    def tap_multicast_remove(self, device):
+        """Remove the specified range of multicast addresses.
 
            @param self  This object.
            @param device  String: name of the device you want to stop.
         """
 
-        reply, informs = self._request("tap-stop", self._timeout, device)
+        reply, informs = self._request("tap-multicast_remove", self._timeout, device)
         if reply.arguments[0]=='ok': return
         else: raise RuntimeError("Failure stopping tap device %s."%(device))
 
-    def upload_bof(self, bof_file, port, force_upload = False, timeout = 30):
-        """Upload a BORPH file to the ROACH board for execution. 
+    def upload_program_bof(self, bof_file, port, timeout = 30):
+        """Upload a BORPH file to the ROACH board for execution.
            @param self  This object.
            @param bof_file  The path and/or filename of the bof file to upload.
            @param port  The port to use for uploading.
@@ -335,18 +398,11 @@ class FpgaClient(CallbackClient):
            @return
         """
         # does the bof file exist?
-        import os
         try:
-            filesize = os.path.getsize(bof_file)
-            filename = bof_file.split("/")[-1]
+            os.path.getsize(bof_file)
         except:
             raise IOError('BOF file not found.')
-        # is it on the FPGA already?
-        if not force_upload:
-            bofs = self.listbof()
-            if bofs.count(filename) == 1:
-                return
-        import threading, socket, time, Queue
+        import time, Queue
         def makerequest(result_queue):
             try:
                 result = self._request('upload', timeout, port)
@@ -390,7 +446,7 @@ class FpgaClient(CallbackClient):
         upload_result = upload_queue.get()
         if (request_result != 'OK') or (upload_result != 'OK'):
             raise Exception('Error: request(%s), upload(%s)' %(request_result, upload_result))
-        debugstr = "Bof file upload for '%s': request (%s), upload (%s)" % (bof_file, request_result, upload_result) 
+        debugstr = "Bof file upload for '%s': request (%s), upload (%s)" % (bof_file, request_result, upload_result)
         self._logger.info(debugstr)
         stime = time.time()
         done = False
@@ -410,7 +466,7 @@ class FpgaClient(CallbackClient):
            """
         reply, informs = self._request("status", self._timeout)
         return reply.arguments[1]
-    
+
     def ping(self):
         """Tries to ping the FPGA.
            @param self  This object.
@@ -431,7 +487,7 @@ class FpgaClient(CallbackClient):
 
     def bulkread(self, device_name, size, offset=0):
         """Return size_bytes of binary data with carriage-return escape-sequenced.
-           Uses much fast bulkread katcp command which returns data in pages 
+           Uses much fast bulkread katcp command which returns data in pages
            using informs rather than one read reply, which has significant buffering
            overhead on the ROACH.
 
@@ -485,7 +541,7 @@ class FpgaClient(CallbackClient):
             #local_reads = min(read_chunk_size,size-n_reads,dram_indirect_page_size-(offset%dram_indirect_page_size))
             local_reads = min(size-n_reads,dram_indirect_page_size-(offset%dram_indirect_page_size))
             if verbose: print 'Reading %8i bytes from indirect address %4i at local offset %8i...'%(local_reads,dram_page,local_offset)
-            if last_dram_page != dram_page: 
+            if last_dram_page != dram_page:
                 self.write_int('dram_controller',dram_page)
                 last_dram_page = dram_page
             local_data=(self.bulkread('dram_memory',local_reads,local_offset))
@@ -517,7 +573,7 @@ class FpgaClient(CallbackClient):
             local_offset = (offset+n_writes)%(dram_indirect_page_size)
             local_writes = min(write_chunk_size,size-n_writes,dram_indirect_page_size-(offset%dram_indirect_page_size))
             if verbose: print 'Writing %8i bytes from indirect address %4i at local offset %8i...'%(local_writes,dram_page,local_offset)
-            if last_dram_page != dram_page: 
+            if last_dram_page != dram_page:
                 self.write_int('dram_controller',dram_page)
                 last_dram_page = dram_page
 
@@ -584,7 +640,7 @@ class FpgaClient(CallbackClient):
            @param device_name  String: name of device / register to write to.
            @param integer  Integer: value to write.
            @param blindwrite  Boolean: if true, don't verify the write (calls blindwrite instead of write function).
-           @param offset  Integer: position in 32-bit words where to write data. 
+           @param offset  Integer: position in 32-bit words where to write data.
            """
         # careful of packing input data into 32 bit - check range: if
         # negative, must be signed int; if positive over 2^16, must be unsigned
@@ -623,7 +679,7 @@ class FpgaClient(CallbackClient):
         self.join(timeout=self._timeout)
 
     def get_10gbe_core_details(self, dev_name):
-        """Prints 10GbE core details. 
+        """Prints 10GbE core details.
            @param dev_name string: Name of the core.
         """
         #assemble struct for header stuff...
@@ -636,7 +692,7 @@ class FpgaClient(CallbackClient):
         #0x1c - 0x1f: Not assigned
         #0x20       : soft reset (bit 0)
         #0x21       : fabric enable (bit 0)
-        #0x22 - 0x23: fabric port 
+        #0x22 - 0x23: fabric port
         #0x24 - 0x27: XAUI status (bit 2,3,4,5=lane sync, bit6=chan_bond)
         #0x28 - 0x2b: PHY config
         #0x28       : RX_eq_mix
@@ -648,7 +704,7 @@ class FpgaClient(CallbackClient):
         #0x3000     : ARP tables start
 
         port_dump=list(struct.unpack('>16384B',self.read(dev_name,16384)))
-        ip_prefix= '%3d.%3d.%3d.'%(port_dump[0x10],port_dump[0x11],port_dump[0x12])
+        #ip_prefix = '%3d.%3d.%3d.'%(port_dump[0x10],port_dump[0x11],port_dump[0x12])
 
         rv={}
         mymac=((port_dump[02]<<40) + (port_dump[03]<<32) + (port_dump[04]<<24) + (port_dump[05]<<16) + (port_dump[06]<<8) + port_dump[07])
@@ -693,7 +749,7 @@ class FpgaClient(CallbackClient):
         return rv
 
     def print_10gbe_core_details(self,dev_name,arp=False, cpu=False):
-        """Prints 10GbE core details. 
+        """Prints 10GbE core details.
            @param dev_name string: Name of the core.
            @param arp boolean: Include the ARP table
            @param cpu boolean: Include the cpu packet buffers
@@ -708,7 +764,7 @@ class FpgaClient(CallbackClient):
         #0x1c - 0x1f: Not assigned
         #0x20       : soft reset (bit 0)
         #0x21       : fabric enable (bit 0)
-        #0x22 - 0x23: fabric port 
+        #0x22 - 0x23: fabric port
         #0x24 - 0x27: XAUI status (bit 2,3,4,5=lane sync, bit6=chan_bond)
         #0x28 - 0x2b: PHY config
         #0x28       : RX_eq_mix
@@ -826,8 +882,8 @@ class FpgaClient(CallbackClient):
             \t\t{brams}: list of data from each fpga for corresponding bram.\n"""
         #print "Deprecation warning: get_snap is to be deprecated. Please replace your design's %s block with a 'snapshot' block and use the snapshot_get function instead."%dev_name
         self._logger.warn("Deprecation warning: get_snap is to be deprecated. Please replace your design's %s block with a 'snapshot' block and use the snapshot_get function instead."%dev_name)
-        #2011-02-03 JRM added circular capture to trigger statement. 
-        #               Invert logic for end detect. 
+        #2011-02-03 JRM added circular capture to trigger statement.
+        #               Invert logic for end detect.
         #               Added wait forever option.
         #               copy-paste errors from corr_functions :( really need to consolodate these snap functions.
         #2010-02-19 JRM Updated to match snap_x.
@@ -851,7 +907,7 @@ class FpgaClient(CallbackClient):
         bram_dmp={'length':bram_size+1}
         bram_dmp['offset']=0
         if (bram_size != self.read_uint(dev_name+'_addr')&0x7fffffff) or bram_size==0:
-            #if address is still changing, then the snap block didn't finish capturing. we return empty.  
+            #if address is still changing, then the snap block didn't finish capturing. we return empty.
             raise RuntimeError("Looks like snap block didn't finish.")
             bram_dmp['length']=0
             bram_dmp['offset']=0
@@ -862,15 +918,15 @@ class FpgaClient(CallbackClient):
             bram_dmp['offset']=self.read_uint(dev_name+'_tr_en_cnt') + offset - bram_size
         else: bram_dmp['offset']=0
 
-        if (bram_dmp['offset'] < 0):  
+        if (bram_dmp['offset'] < 0):
             #you got a trigger and then a stop before the bram could even fill.
             bram_dmp['offset']=0
 
         for b,bram in enumerate(brams):
             bram_path = dev_name+'_'+bram
-            if (bram_size == 0): 
+            if (bram_size == 0):
                 bram_dmp[bram]=[]
-            else: 
+            else:
                 bram_dmp[bram]=(self.read(bram_path,(bram_size+1)*4*word_mult))
         return bram_dmp
 
@@ -880,9 +936,9 @@ class FpgaClient(CallbackClient):
         rv['user']=self.read_uint(rcs_block_name+'_user')
         app=self.read_uint(rcs_block_name+'_app')
         lib=self.read_uint(rcs_block_name+'_lib')
-        if lib&(1<<31): 
+        if lib&(1<<31):
             rv['compile_timestamp']=lib&((2**31)-1)
-        else: 
+        else:
             if lib&(1<<30):
                 #type is svn
                 rv['lib_rcs_type']='svn'
@@ -895,9 +951,9 @@ class FpgaClient(CallbackClient):
             else:
                 rv['lib_dirty']=False
             rv['lib_rev']=lib&((2**28)-1)
-        if app&(1<<31): 
+        if app&(1<<31):
             rv['app_last_modified']=app&((2**31)-1)
-        else: 
+        else:
             if app&(1<<30):
                 #type is svn
                 rv['app_rcs_type']='svn'
@@ -925,7 +981,7 @@ class FpgaClient(CallbackClient):
             \t\tdata: list of data from each fpga for corresponding bram.\n"""
         # new snapshot block support (bytes instead of words) with hardware-configurable datawidth and user-selectable features.
         #TODO Test offset, get_extra_val and circular capture modes.
-    
+
         if offset >=0:
             self.write_int(dev_name+'_trig_offset',offset)
             #print 'Capturing from snap offset %i'%offset
@@ -945,7 +1001,7 @@ class FpgaClient(CallbackClient):
         bram_dmp=dict()
         bram_dmp['length']=bram_size
         if (bram_size != self.read_uint(dev_name+'_status')&0x7fffffff) or bram_size==0:
-            #if address is still changing, then the snap block didn't finish capturing. we return empty.  
+            #if address is still changing, then the snap block didn't finish capturing. we return empty.
             raise RuntimeError("A snap block logic error occurred or it didn't finish capturing in the allotted %2.2f seconds. Reported %i bytes captured."%(wait_period,bram_size))
             bram_dmp['length']=0
             bram_dmp['offset']=0
@@ -955,18 +1011,18 @@ class FpgaClient(CallbackClient):
             #print 'offset: %i,tr_en_cnt: %i'%(offset,self.read_uint(dev_name+'_tr_en_cnt'))
             # Snap block only starts incrementing tr_en_cnt after it has started writing into memory. Must thus add requested offset. Done later anyway.
             bram_dmp['offset']=self.read_uint(dev_name+'_tr_en_cnt') - bram_size
-        else: 
+        else:
             bram_dmp['offset']=0
 
         bram_dmp['offset']+=offset
 
-        if (bram_dmp['offset'] < 0):  
+        if (bram_dmp['offset'] < 0):
             #you got a trigger and then a stop before the bram could even fill.
             bram_dmp['offset']=0
 
-        if (bram_size == 0): 
+        if (bram_size == 0):
             bram_dmp['data']=[]
-        else: 
+        else:
             bram_dmp['data']=(self.read(dev_name+'_bram',(bram_size)))
 
         if get_extra_val==True:

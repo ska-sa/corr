@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-""" 
+"""
 Selection of commonly-used correlator control functions. This is the top-level file used to communicate with correlators.
 
 Author: Jason Manley
@@ -17,7 +17,7 @@ Revisions:
                 spead metadata changes: antenna mapping and baseline ordering. no more cross-pol ordering.
                 new functions: fr_delay_set_all to set all fringe and delay rates in one go. does check to ensure things loaded correctly.
 2011-04-20: JRM Added xeng status call
-                Mods to check_all 
+                Mods to check_all
                 acc_time_set now resets counters (vaccs produce errors when resyncing)
 2011-04-04: JRM Don't write to config file anymore
                 Cleanup of RF frontend stuff
@@ -36,7 +36,7 @@ Revisions:
 2010-08-05: JRM acc_len_set -> acc_n_set. acc_let_set now in seconds.
 2010-06-28  JRM Port to use ROACH based F and X engines.
                 Changed naming convention for function calls.
-2010-04-02  JCL Removed base_ant0 software register from Xengines, moved it to Fengines, and renamed it to use ibob_addr0 and ibob_data0.  
+2010-04-02  JCL Removed base_ant0 software register from Xengines, moved it to Fengines, and renamed it to use ibob_addr0 and ibob_data0.
                 New function write_ibob().
                 Check for VACC errors.
 2010-01-06  JRM Added gbe_out enable to X engine control register
@@ -51,7 +51,7 @@ Revisions:
 2009-06-26  JRM UNDER CONSTRUCTION.
 \n"""
 
-import corr, time, sys, numpy, os, logging, katcp, struct, construct, socket, spead
+import corr, time, sys, numpy, logging, struct, construct, socket, spead
 
 CORR_MODE_WB = 'wbc'
 CORR_MODE_NB = 'nbc'
@@ -63,9 +63,9 @@ def statsmode(inlist):
     count=inlist.count(value)
     for i in inlist:
         if inlist.count(i) > count:
-            value = i 
+            value = i
             count = inlist.count(i)
-    return value 
+    return value
 
 def ip2str(pkt_ip, verbose = False):
     """
@@ -79,7 +79,7 @@ def ip2str(pkt_ip, verbose = False):
     if verbose:
         print 'IP(%i) decoded to:' % pkt_ip, ipstr
     return ipstr
-    
+
 def write_masked_register(device_list, bitstruct, names = None, **kwargs):
     """
     Modify arbitrary bitfields within a 32-bit register, given a list of devices that offer the write_int interface - should be KATCP FPGA devices.
@@ -153,29 +153,29 @@ def log_runtimeerror(logger, err):
     logger.error(err)
     raise RuntimeError(err)
 
-def non_blocking_request(fpgas, timeout, request, request_args): 
+def non_blocking_request(fpgas, timeout, request, request_args):
     """Make a non-blocking request to one or more FPGAs, using the Asynchronous FPGA client.
     """
     import Queue, threading
     verbose = False
-    reply_queue = Queue.Queue(maxsize=len(fpgas)) 
+    reply_queue = Queue.Queue(maxsize=len(fpgas))
     requests = {}
     # reply callback
-    def reply_cb(host, request_id): 
+    def reply_cb(host, request_id):
         #if not requests.has_key(host):
         #    raise RuntimeError('Rx reply(%s) from host(%s), did not send request?' % (request_id, host))
         ## is the reply queue full?
         #if reply_queue.full():
         #    raise RuntimeError('Rx reply(%s) from host(%s), reply queue is full?' % (request_id, host))
-        if verbose: print 'Reply(%s) from host(%s)' % (request_id, host); sys.stdout.flush() 
+        if verbose: print 'Reply(%s) from host(%s)' % (request_id, host); sys.stdout.flush()
         reply_queue.put_nowait([host, request_id])
-    # start the requests 
+    # start the requests
     if verbose: print 'Send request(%s) to %i hosts.' % (request, len(fpgas))
     lock = threading.Lock()
     for f in fpgas:
         lock.acquire()
         r = f._nb_request(request, None, reply_cb, *request_args)
-        requests[r['host']] = [r['request'], r['id']] 
+        requests[r['host']] = [r['request'], r['id']]
         lock.release()
         if verbose: print 'Request \'%s\' id(%s) to host(%s)' % (r['request'], r['id'], r['host']); sys.stdout.flush()
     # wait for replies from the requests
@@ -193,25 +193,25 @@ def non_blocking_request(fpgas, timeout, request, request_args):
     if timedout and verbose:
         print replies
         print "non_blocking_request timeout after %is." % timeout; sys.stdout.flush()
-    rv = {} 
-    for f in fpgas: 
+    rv = {}
+    for f in fpgas:
         frv = {}
-        try: 
+        try:
             request_id = replies[f.host]
         except:
             print replies
             sys.stdout.flush()
             raise KeyError('Didn\'t get a reply for FPGA \'%s\' so the request \'%s\' probably didn\'t complete.' % (f.host, request))
-        reply, informs = f._nb_get_request_result(request_id) 
-        frv['request'] = requests[f.host][0] 
+        reply, informs = f._nb_get_request_result(request_id)
+        frv['request'] = requests[f.host][0]
         frv['reply'] = reply.arguments[0]
         frv['reply_args'] = reply.arguments
-        informlist = [] 
+        informlist = []
         for inf in informs:
-            informlist.append(inf.arguments) 
-        frv['informs'] = informlist 
-        rv[f.host] = frv 
-        f._nb_pop_request_by_id(request_id) 
+            informlist.append(inf.arguments)
+        frv['informs'] = informlist
+        rv[f.host] = frv
+        f._nb_pop_request_by_id(request_id)
     return (not timedout), (rv)
 
 class Correlator:
@@ -221,7 +221,7 @@ class Correlator:
         self.syslogger.addHandler(self.log_handler)
         self.syslogger.setLevel(log_level)
 
-        if config_file == '/etc/corr/default': 
+        if config_file == '/etc/corr/default':
             self.syslogger.warn('Defaulting to config file %s.' % '/etc/corr/default')
         self.config = corr.cn_conf.CorrConf(config_file)
 
@@ -232,7 +232,7 @@ class Correlator:
         self.floggers = [logging.getLogger(s) for s in self.fsrvs]
         self.xloggers = [logging.getLogger(s) for s in self.xsrvs]
         self.loggers = self.floggers + self.xloggers
-        for logger in (self.loggers): 
+        for logger in (self.loggers):
             logger.addHandler(self.log_handler)
             logger.setLevel(log_level)
 
@@ -367,7 +367,7 @@ class Correlator:
         "Returns the order of the cross-pol terms out the X engines"
         pol1=self.config['rev_pol_map'][0]
         pol2=self.config['rev_pol_map'][1]
-        return (pol1+pol1, pol2+pol2, pol1+pol2, pol2+pol1) 
+        return (pol1+pol1, pol2+pol2, pol1+pol2, pol2+pol1)
 
     def prog_all(self, timeout=10):
         """Progam all the FPGAs asynchronously."""
@@ -383,7 +383,7 @@ class Correlator:
         if not(f_nottimedout and x_nottimedout):
             raise RuntimeError('Programming the FPGAs timed out: F(%i) X(%i)' % (not f_nottimedout, not x_nottimedout))
         elif not(x_okay and f_okay):
-            errstr = 'One or more FPGAs didn\'t reply \'ok\' to progdev request:\n', str(frv), '\n', str(xrv) 
+            errstr = 'One or more FPGAs didn\'t reply \'ok\' to progdev request:\n', str(frv), '\n', str(xrv)
             raise RuntimeError(errstr)
         elif not self.check_fpga_comms():
             raise RuntimeError("FPGAs were programmed but we don\'t have comms?")
@@ -400,7 +400,7 @@ class Correlator:
             fpga.progdev(self.config['bitstream_f'])
         for fpga in self.xfpgas:
             fpga.progdev(self.config['bitstream_x'])
-        if not self.check_fpga_comms(): 
+        if not self.check_fpga_comms():
             raise RuntimeError("Failed to successfully program FPGAs.")
         else:
             self.syslogger.info("All FPGAs programmed ok.")
@@ -414,10 +414,10 @@ class Correlator:
         for fn,fpga in enumerate(self.allfpgas):
             #keep the random number below 2^32-1 and do not include zero (default register start value), but use a fair bit of the address space...
             rn=numpy.random.randint(1,2**30)
-            try: 
+            try:
                 fpga.write_int('sys_scratchpad',rn)
                 self.loggers[fn].info("FPGA comms ok")
-            except: 
+            except:
                 rv=False
                 self.loggers[fn].error("FPGA comms failed")
         if rv==True: self.syslogger.info("All FPGA comms ok.")
@@ -459,7 +459,7 @@ class Correlator:
         [fpga.write_int(register,value) for fpga in self.ffpgas]
 
     def feng_ctrl_set_all(self, **kwargs):
-        """Valid keyword args include: 
+        """Valid keyword args include:
         tvgsel_noise','tvgsel_fdfs', 'tvgsel_pkt', 'tvgsel_ct', 'tvg_en', 'adc_protect_disable', 'flasher_en', 'gbe_enable', 'gbe_rst', 'clr_status', 'arm', 'soft_sync', 'mrst'
         """
         if self.is_wideband():
@@ -508,7 +508,7 @@ class Correlator:
 
     def feng_tvg_select(self, **kwargs):
         """
-        Turn ONE TVG on at a time. Use feng_tvg_vailable_tvgs() to see what TVGs are available to you in the current mode. 
+        Turn ONE TVG on at a time. Use feng_tvg_vailable_tvgs() to see what TVGs are available to you in the current mode.
         """
         available_tvgs = self.feng_tvg_available_tvgs()
         if len(kwargs) == 0:
@@ -577,7 +577,7 @@ class Correlator:
     def feng_status_get_all(self):
         """Reads and decodes the status register from all the Fengines. Also does basic clock check."""
         rv={}
-        feng_clks=self.check_feng_clks(quick_test=True,per_board=True)
+        self.check_feng_clks(quick_test=True,per_board=True)
         for ant_str in self.config._get_ant_mapping_list():
             rv[ant_str] = self.feng_status_get(ant_str)
         return rv
@@ -597,9 +597,9 @@ class Correlator:
             for xfpga_num, srv in enumerate(self.xsrvs):
                 xeng_id = 'xeng%i' % (loc_xeng_n + self.config['x_per_fpga'] * xfpga_num)
                 rv[xeng_id] = read_masked_register([self.xfpgas[xfpga_num]], corr.corr_wb.register_xengine_status, names = ['xstatus%i' % loc_xeng_n])[0]
-                if (rv[xeng_id]['gbe_lnkdn'] or rv[xeng_id]['xeng_err'] or 
-                    rv[xeng_id]['vacc_err'] or rv[xeng_id]['rx_bad_pkt'] or 
-                    rv[xeng_id]['rx_bad_frame'] or rv[xeng_id]['tx_over'] or 
+                if (rv[xeng_id]['gbe_lnkdn'] or rv[xeng_id]['xeng_err'] or
+                    rv[xeng_id]['vacc_err'] or rv[xeng_id]['rx_bad_pkt'] or
+                    rv[xeng_id]['rx_bad_frame'] or rv[xeng_id]['tx_over'] or
                     rv[xeng_id]['pkt_reord_err'] or rv[xeng_id]['pack_err']):
                     rv[xeng_id]['lru_state'] = 'fail'
                 else:
@@ -621,8 +621,8 @@ class Correlator:
         self.gbe_reset_hold_x()
 
         if not self.arm(): self.syslogger.error("Failed to successfully arm and trigger system.")
-        if clock_check == True: 
-            if not self.check_feng_clks(): 
+        if clock_check == True:
+            if not self.check_feng_clks():
                 raise RuntimeError("System clocks are bad. Please fix and try again.")
 
         #Only need to set brd id on xeng if there's no incomming 10gbe, else get from base ip addr
@@ -630,7 +630,7 @@ class Correlator:
             self.xeng_brd_id_set()
         self.feng_brd_id_set()
 
-        if self.config['adc_type'] == 'katadc': 
+        if self.config['adc_type'] == 'katadc':
             self.rf_gain_set_all()
 
         self.fft_shift_set_all()
@@ -638,12 +638,12 @@ class Correlator:
         if set_eq: self.eq_set_all()
         else: self.syslogger.info('Skipped EQ config.')
 
-        if config_10gbe: 
+        if config_10gbe:
             self.config_roach_10gbe_ports()
             sleep_time=((self.config['10gbe_ip']&255) + self.config['n_xeng']*self.config['n_xaui_ports_per_xfpga'])*0.1
             self.syslogger.info("Waiting %i seconds for ARP to complete."%sleep_time)
             time.sleep(sleep_time)
-            
+
         if self.config['feng_out_type'] == '10gbe':
             self.gbe_reset_release_f()
         self.gbe_reset_release_x()
@@ -691,7 +691,7 @@ class Correlator:
         self.acc_time_set()   #self.rst_status_and_count() is done as part of this setup
         self.syslogger.info("Waiting %i seconds for an integration to finish so we can test the VACCs."%self.config['int_time'])
         time.sleep(2*self.config['int_time']+0.1)
-        if not self.check_vacc(): 
+        if not self.check_vacc():
             for x in range(self.config['x_per_fpga']):
                 for nx,xsrv in enumerate(self.xsrvs):
                     loop_retry_cnt=0
@@ -702,12 +702,12 @@ class Correlator:
                         self.xfpgas[nx].qdr_rst(x)
                     if self.xfpgas[nx].qdr_status(x)['calfail']==True:
                         raise RuntimeError("Could not calibrate QDR%i on X engine %i. VACC is broken."%(x,nx))
-            
+
 
         if send_spead:
             self.spead_issue_all()
 
-        if config_output: 
+        if config_output:
             self.config_udp_output()
 
         self.kitt_enable()
@@ -738,7 +738,7 @@ class Correlator:
         self.syslogger.info("F engine 10GbE cores released from reset.")
 
     def tx_start(self):
-        """Start outputting SPEAD products. Only works for systems with 10GbE output atm.""" 
+        """Start outputting SPEAD products. Only works for systems with 10GbE output atm."""
         if self.config['out_type'] == '10gbe':
             self.xeng_ctrl_set_all(gbe_out_enable = True)
             self.syslogger.info("Correlator output started.")
@@ -763,7 +763,7 @@ class Correlator:
 
     def tx_status_get(self):
         """Returns boolean true/false if the correlator is currently outputting data. Currently only works on systems with 10GbE output."""
-        if self.config['out_type']!='10gbe': 
+        if self.config['out_type']!='10gbe':
             self.syslogger.warn("This function only works for systems with 10GbE output!")
             return False
         rv=True
@@ -779,30 +779,30 @@ class Correlator:
         rv = [True for b in self.fsrvs]
         expect_rate = round(self.config['feng_clk'] / 1000000) # expected clock rate in MHz.
 
-        # estimate actual clk freq 
+        # estimate actual clk freq
         if quick_test == False:
             clk_freq=self.feng_clks_get()
             clk_mhz=[round(cf) for cf in clk_freq] #round to nearest MHz
             for fbrd,fsrv in enumerate(self.fsrvs):
-                if clk_freq[fbrd] <= 100: 
+                if clk_freq[fbrd] <= 100:
                     self.floggers[fbrd].error("No clock detected!")
                     rv[fbrd] = False
                 if (clk_mhz[fbrd] > (expect_rate+1)) or (clk_mhz[fbrd] < (expect_rate -1)) or (clk_mhz[fbrd]==0):
                     self.floggers[fbrd].error("Estimated clock freq is %i MHz, where expected rate is %i MHz."%(clk_mhz[fbrd], expect_rate))
                     rv[fbrd] = False
-            if False in rv: 
+            if False in rv:
                 self.syslogger.error("Some Fengine clocks are dead. We can't continue.")
                 if not per_board:
                     return False
                 else:
                     return rv
-            else: 
+            else:
                 self.syslogger.info("Fengine clocks are approximately correct at %i MHz."%expect_rate)
 
         #check long-term integrity
         #wait for within 100ms of a second, then delay a bit and query PPS count.
         ready=((int(time.time()*10)%10)==5)
-        while not ready: 
+        while not ready:
             ready=((int(time.time()*10)%10)==5)
             #print time.time()
             time.sleep(0.05)
@@ -811,13 +811,13 @@ class Correlator:
         mode = statsmode(uptime)
         modalmean=numpy.mean(mode)
         for fbrd,fsrv in enumerate(self.fsrvs):
-            if uptime[fbrd] == 0: 
+            if uptime[fbrd] == 0:
                 rv[fbrd]=False
                 self.floggers[fbrd].error("No PPS detected! PPS count is zero.")
             elif (uptime[fbrd] > (modalmean+1)) or (uptime[fbrd] < (modalmean -1)) or (uptime[fbrd]==0):
                 rv[fbrd]=False
                 self.floggers[fbrd].error("PPS count is %i pulses, where modal mean is %i pulses. This board has a bad 1PPS input."%(uptime[fbrd], modalmean))
-            elif uptime[fbrd] != exp_uptime: 
+            elif uptime[fbrd] != exp_uptime:
                 rv[fbrd]=False
                 self.floggers[fbrd].error("Expected uptime is %i seconds, but we've counted %i PPS pulses."%(exp_uptime,uptime[fbrd]))
             else:
@@ -836,7 +836,7 @@ class Correlator:
             self.syslogger.info("Assuming a clock of %iMHz and that the PPS and clock are correct on most boards, PPS period is %3.2fHz and clock rate is %6.3fMHz."%(expect_rate,modalfreq,modalmean/1000000.))
 
         for fbrd,fsrv in enumerate(self.fsrvs):
-            if all_values[fbrd] == 0: 
+            if all_values[fbrd] == 0:
                 self.floggers[fbrd].error("No PPS or no clock... clk_freq register is zero!")
                 rv[fbrd]=False
             if (all_values[fbrd] > (modalmean+2)) or (all_values[fbrd] < (modalmean -2)) or (all_values[fbrd]==0):
@@ -875,20 +875,20 @@ class Correlator:
                 fpga_num = ffpga_n
             msw = self.ffpgas[fpga_num].read_uint('mcount_msw')
             lsw = self.ffpgas[fpga_num].read_uint('mcount_lsw')
-            return (msw << 32) + lsw 
-    
+            return (msw << 32) + lsw
+
     def pcnt_current_get(self, ant_str = None, fpga_num = 0):
         "Returns the current packet count. ASSUMES THE SYSTEM IS SYNC'd!"
         mcount = self.mcnt_current_get(ant_str = ant_str, fpga_num = fpga_num)
         return int(mcount * self.config['pcnt_scale_factor'] / self.config['mcnt_scale_factor'])
-    
+
     def arm(self, spead_update = True):
         """Arms all F engines, records arm time in config file and issues SPEAD update. Returns the UTC time at which the system was sync'd in seconds since the Unix epoch (MCNT=0)"""
         # tested ok corr-0.5.0 2010-07-19
         # wait for within 100ms of a half-second, then send out the arm signal.
         rv = True
         ready = ((int(time.time() * 10) % 10) == 5)
-        while not ready: 
+        while not ready:
             ready = ((int(time.time() * 10) % 10) == 5)
         start_time = time.time()
         self.feng_ctrl_set_all(arm = 'pulse')
@@ -928,7 +928,7 @@ class Correlator:
         return int(numpy.floor(done_time))
 
     def get_roach_gbe_conf(self,start_addr,fpga,port):
-        """Generates 10GbE configuration strings for ROACH-based xengines starting from 
+        """Generates 10GbE configuration strings for ROACH-based xengines starting from
         ip "start_addr" for FPGA numbered "FPGA" (offset from start addr).
         Returns a (mac,ip,port) tuple suitable for passing to tap_start."""
         sys.stdout.flush()
@@ -1034,7 +1034,7 @@ class Correlator:
         if rv == True: self.syslogger.info("All XAUI links look good.")
         else: self.syslogger.error("Some bad XAUI links here.")
         return rv
-    
+
     def check_10gbe_tx(self):
         """Checks that the 10GbE cores are transmitting data. Outputs boolean good/bad."""
         rv=True
@@ -1127,10 +1127,10 @@ class Correlator:
             self.syslogger.info("waiting for loopback lock... %i tries so far."%loop_retry_cnt)
             sys.stdout.flush()
             loopback_ok=self.check_loopback_mcnt()
-        if self.check_loopback_mcnt(): 
+        if self.check_loopback_mcnt():
             self.syslogger.info("loopback lock achieved after %i tries."%loop_retry_cnt)
             return True
-        else: 
+        else:
             self.syslogger.error("Failed to achieve loopback lock after %i tries."%n_retries)
             return False
 
@@ -1153,7 +1153,7 @@ class Correlator:
                     self.xloggers[f].error('Loopback on GbE port %i is stalled.' %x)
                     rv = False
 
-                if abs(secondloopmcnt - secondgbemcnt) > (self.config['x_per_fpga']*len(self.xsrvs)): 
+                if abs(secondloopmcnt - secondgbemcnt) > (self.config['x_per_fpga']*len(self.xsrvs)):
                     self.xloggers[f].error('Loopback mux on GbE port %i is not syncd.'%x)
                     rv=False
         if rv == True: self.syslogger.info("All loopback muxes are locked.")
@@ -1187,19 +1187,19 @@ class Correlator:
 
         for b,s in rv.iteritems():
             if s['lru_state']=='fail': rv['sys']['lru_state']='warn'
-        
+
         if clock_check:
-            if not self.check_feng_clks(): rv['sys']['lru_state']='fail' 
+            if not self.check_feng_clks(): rv['sys']['lru_state']='fail'
 
         if not basic_check:
             if self.config['feng_out_type'] == 'xaui':
-                if not self.check_xaui_error(): rv['sys']['lru_state']='fail' 
-                if not self.check_xaui_sync(): rv['sys']['lru_state']='fail' 
-            if not self.check_10gbe_tx(): rv['sys']['lru_state']='fail' 
-            if not self.check_10gbe_rx(): rv['sys']['lru_state']='fail' 
+                if not self.check_xaui_error(): rv['sys']['lru_state']='fail'
+                if not self.check_xaui_sync(): rv['sys']['lru_state']='fail'
+            if not self.check_10gbe_tx(): rv['sys']['lru_state']='fail'
+            if not self.check_10gbe_rx(): rv['sys']['lru_state']='fail'
             if self.config['feng_out_type'] == 'xaui':
-                if not self.check_loopback_mcnt_wait(n_retries=n_retries): rv['sys']['lru_state']='fail' 
-            if not self.check_x_miss(): rv['sys']['lru_state']='fail' 
+                if not self.check_loopback_mcnt_wait(n_retries=n_retries): rv['sys']['lru_state']='fail'
+            if not self.check_x_miss(): rv['sys']['lru_state']='fail'
         if details:
             return rv
         else:
@@ -1207,7 +1207,7 @@ class Correlator:
 
 
     def tvg_vacc_sel(self,constant=0,n_values=-1,spike_value=-1,spike_location=0,counter=False):
-        """Select Vector Accumulator TVG in X engines. Disables other TVGs in the process. 
+        """Select Vector Accumulator TVG in X engines. Disables other TVGs in the process.
             Options can be any combination of the following:
                 constant:   Integer.    Insert a constant value for accumulation.
                 n_values:   Integer.    How many numbers to inject into VACC. Value less than zero uses xengine timing.
@@ -1229,7 +1229,7 @@ class Correlator:
 
         if n_values>0:
             ctrl += (1<<2)
-            
+
         for xeng in range(self.config['x_per_fpga']):
             self.xwrite_int_all('vacc_tvg%i_write1'%(xeng),constant)
             self.xwrite_int_all('vacc_tvg%i_ins_vect_loc'%(xeng),spike_location)
@@ -1251,7 +1251,7 @@ class Correlator:
         if mode>4 or mode<0:
             raise RuntimeError("Invalid mode selection. Mode must be in range(0,4).")
         else:
-            self.xwrite_int_all('tvg_sel',mode<<3) 
+            self.xwrite_int_all('tvg_sel',mode<<3)
 
         if mode==3:
             for i,v in enumerate(user_val):
@@ -1276,7 +1276,7 @@ class Correlator:
         fine_delay_rate_bits =  16
         fringe_offset_bits =    16
         fringe_rate_bits =      16
-        bitshift_schedule =     23 
+        bitshift_schedule =     23
         min_ld_time = 0.1 # assume we're able to set and check all the registers in 100ms
         network_latency_adjust = 0.015
 
@@ -1289,10 +1289,10 @@ class Correlator:
         coarse_delay = int(delay_n)                             # delay in whole clock cycles #testing for rev370
         fine_delay = (delay_n-coarse_delay)                     # delay remainder. need a negative slope for positive delay
         fine_delay_i = int(fine_delay*(2**(fine_delay_bits)))   # 16 bits of signed data over range 0 to +pi
-    
-        fine_delay_rate = int(float(delay_rate) * (2**(bitshift_schedule + fine_delay_rate_bits-1))) 
 
-        # figure out the fringe as a fraction of a cycle        
+        fine_delay_rate = int(float(delay_rate) * (2**(bitshift_schedule + fine_delay_rate_bits-1)))
+
+        # figure out the fringe as a fraction of a cycle
         fr_offset = int(fringe_phase/float(360) * (2**(fringe_offset_bits)))
         # figure out the fringe rate. Input is in cycles per second (Hz). 1) divide by brd clock rate to get cycles per clock. 2) multiply by 2**20
         fr_rate = int(float(fringe_rate) / self.config['feng_clk'] * (2**(bitshift_schedule + fringe_rate_bits-1)))
@@ -1303,12 +1303,12 @@ class Correlator:
         ld_count_before = delay_fr_status_before & 0xffff
 
         act_delay = (coarse_delay + float(fine_delay_i)/2**fine_delay_bits)/self.config['adc_clk']
-        act_fringe_offset = float(fr_offset)/(2**fringe_offset_bits)*360 
+        act_fringe_offset = float(fr_offset)/(2**fringe_offset_bits)*360
         act_fringe_rate = float(fr_rate)/(2**(fringe_rate_bits+bitshift_schedule-1))*self.config['feng_clk']
         act_delay_rate = float(fine_delay_rate)/(2**(bitshift_schedule + fine_delay_rate_bits-1))
 
         if (delay != 0):
-            if (fine_delay_i == 0) and (coarse_delay == 0): 
+            if (fine_delay_i == 0) and (coarse_delay == 0):
                 self.floggers[ffpga_n].info('Requested delay is too small for this configuration (our resolution is too low). Setting delay to zero.')
             elif abs(fine_delay_i) > 2**(fine_delay_bits):
                 log_runtimeerror('Internal logic error calculating fine delays.')
@@ -1322,16 +1322,16 @@ class Correlator:
             if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)):
                 log_runtimeerror(self.floggers[ffpga_n], 'Requested delay rate out of range (+-%e).' % (2**(bitshift_schedule-1)))
             else:
-                self.floggers[ffpga_n].debug('Delay rate actually set to %e seconds per second.' % act_delay_rate) 
+                self.floggers[ffpga_n].debug('Delay rate actually set to %e seconds per second.' % act_delay_rate)
 
         if fringe_phase != 0:
-            if fr_offset == 0: 
+            if fr_offset == 0:
                 self.floggers[ffpga_n].info('Requested fringe phase is too small for this configuration (we do not have enough resolution). Setting fringe phase to zero.')
             else:
                 self.floggers[ffpga_n].debug('Fringe offset actually set to %6.3f degrees.' % act_fringe_offset)
 
         if fringe_rate != 0:
-            if fr_rate == 0: 
+            if fr_rate == 0:
                 self.floggers[ffpga_n].info('Requested fringe rate is too slow for this configuration. Setting fringe rate to zero.')
             else:
                 self.floggers[ffpga_n].debug('Fringe rate actually set to %e Hz.' % act_fringe_rate)
@@ -1340,7 +1340,7 @@ class Correlator:
         mcnt_before = self.mcnt_current_get(ant_str)
 
         # figure out the load time
-        if ld_time < 0: 
+        if ld_time < 0:
             # User did not ask for a specific time; load now!
             # figure out the load-time mcnt:
             mcnt_ld = int(mcnt_before + (self.config['mcnt_scale_factor'] * min_ld_time))
@@ -1349,22 +1349,22 @@ class Correlator:
             if (ld_time < (time.time() + min_ld_time)):
                 log_runtimeerror(self.syslogger, "Cannot load at a time in the past.")
             mcnt_ld = self.mcnt_from_time(ld_time)
-    
+
 #        if (mcnt_ld < (mcnt_before + self.config['mcnt_scale_factor']*min_ld_time)):
-#            log_runtimeerror(self.syslogger, "This works out to a loadtime in the past! Logic error :(") 
-        
+#            log_runtimeerror(self.syslogger, "This works out to a loadtime in the past! Logic error :(")
+
         # setup the delays:
         self.ffpgas[ffpga_n].write_int('coarse_delay%i' % feng_input,coarse_delay)
         self.floggers[ffpga_n].debug("Set a coarse delay of %i clocks." % coarse_delay)
-        # fine delay (LSbs) is fraction of a cycle * 2^15 (16 bits allocated, signed integer). 
+        # fine delay (LSbs) is fraction of a cycle * 2^15 (16 bits allocated, signed integer).
         # increment fine_delay by MSbs much every FPGA clock cycle shifted 2**20???
         self.ffpgas[ffpga_n].write('a1_fd%i' % feng_input,struct.pack('>hh', fine_delay_rate,fine_delay_i))
         self.floggers[ffpga_n].debug("Wrote %4x to fine_delay and %4x to fine_delay_rate register a1_fd%i." % (fine_delay_i, fine_delay_rate, feng_input))
-        
+
         # setup the fringe rotation
-        # LSbs is offset as a fraction of a cycle in fix_16_15 (1 = pi radians ; -1 = -1radians). 
+        # LSbs is offset as a fraction of a cycle in fix_16_15 (1 = pi radians ; -1 = -1radians).
         # MSbs is fringe rate as fractional increment to fr_offset per FPGA clock cycle as fix_16.15. FPGA divides this rate by 2**20 internally.
-        self.ffpgas[ffpga_n].write('a0_fd%i'%feng_input,struct.pack('>hh',fr_rate,fr_offset))  
+        self.ffpgas[ffpga_n].write('a0_fd%i'%feng_input,struct.pack('>hh',fr_rate,fr_offset))
         self.floggers[ffpga_n].debug("Wrote %4x to fringe_offset and %4x to fringe_rate register a0_fd%i."%(fr_offset,fr_rate,feng_input))
         #print 'Phase offset: %2.3f (%i), phase rate: %2.3f (%i).'%(fringe_phase,fr_offset,fringe_rate,fr_rate)
 
@@ -1418,7 +1418,7 @@ class Correlator:
             'act_fringe_offset': act_fringe_offset,
             'act_fringe_rate': act_fringe_rate,
             'act_delay_rate': act_delay_rate}
-        
+
     def fr_delay_set_all(self,coeffs={},ld_time=-1):
         """Configures all antennas to a delay in seconds using both the coarse and the fine delay. Also configures the fringe rotation components. This is a blocking call.
         It will wait 'till load time and verify that things worked as expected. \n
@@ -1440,7 +1440,7 @@ class Correlator:
         fringe_rate_bits=16
 
         bitshift_schedule=23
-        
+
         min_ld_time = 0.05*self.config['n_inputs'] #assume we're able to set and check all the registers in 100ms
 
         assert(len(coeffs)==self.config['n_inputs'])
@@ -1452,7 +1452,7 @@ class Correlator:
         #get the current system mcnt:
         mcnt=self.mcnt_current_get(self.map_input_to_ant(0))
         #figure out the load time
-        if ld_time < 0: 
+        if ld_time < 0:
             #figure out the load-time mcnt:
             ld_mcnt=int(mcnt + self.config['mcnt_scale_factor']*(min_ld_time))
         else:
@@ -1477,10 +1477,10 @@ class Correlator:
             coarse_delay = int(delay_n) #delay in whole clock cycles #testing for rev370
             fine_delay = (delay_n-coarse_delay)    #delay remainder. need a negative slope for positive delay
             fine_delay_i = int(fine_delay*(2**(fine_delay_bits)))  #16 bits of signed data over range 0 to +pi
-        
-            fine_delay_rate=int(float(delay_rate) * (2**(bitshift_schedule + fine_delay_rate_bits-1))) 
 
-            #figure out the fringe as a fraction of a cycle        
+            fine_delay_rate=int(float(delay_rate) * (2**(bitshift_schedule + fine_delay_rate_bits-1)))
+
+            #figure out the fringe as a fraction of a cycle
             fr_offset=int((fringe_phase%360)/float(360) * (2**(fringe_offset_bits)))
             #figure out the fringe rate. Input is in cycles per second (Hz). 1) divide by brd clock rate to get cycles per clock. 2) multiply by 2**20
             fr_rate = int(float(fringe_rate) / self.config['feng_clk'] * (2**(bitshift_schedule + fringe_rate_bits-1)))
@@ -1491,7 +1491,7 @@ class Correlator:
             ld_cnt_before.append(cnts&0xffff)
 
             act_delay=(coarse_delay + float(fine_delay_i)/2**fine_delay_bits)/self.config['adc_clk']
-            act_fringe_offset = float(fr_offset)/(2**fringe_offset_bits)*360 
+            act_fringe_offset = float(fr_offset)/(2**fringe_offset_bits)*360
             act_fringe_rate = float(fr_rate)/(2**(fringe_rate_bits+bitshift_schedule-1))*self.config['feng_clk']
             act_delay_rate = float(fine_delay_rate)/(2**(bitshift_schedule + fine_delay_rate_bits-1))
 
@@ -1502,7 +1502,7 @@ class Correlator:
             rv[ant_str]['act_fringe_rate']=act_fringe_rate
 
             if (delay != 0):
-                if (fine_delay_i==0) and (coarse_delay==0): 
+                if (fine_delay_i==0) and (coarse_delay==0):
                     self.floggers[ffpga_n].error('fr_delay_set_all - Requested delay is too small for this configuration (our resolution is too low).')
                 elif abs(fine_delay_i) > 2**(fine_delay_bits):
                     log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Internal logic error calculating fine delays.')
@@ -1514,32 +1514,32 @@ class Correlator:
                 if (fine_delay_rate==0): self.floggers[ffpga_n].error('fr_delay_set_all - Requested delay rate too slow for this configuration.')
                 if (abs(fine_delay_rate) > 2**(fine_delay_rate_bits-1)):
                     log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Requested delay rate out of range (+-%e).' % (2**(bitshift_schedule-1)))
-            self.floggers[ffpga_n].debug('fr_delay_set_all - Delay rate actually set to %e seconds per second.'%act_delay_rate) 
+            self.floggers[ffpga_n].debug('fr_delay_set_all - Delay rate actually set to %e seconds per second.'%act_delay_rate)
 
             if (fringe_phase !=0):
-                if (fr_offset == 0): 
+                if (fr_offset == 0):
                     self.floggers[ffpga_n].error('fr_delay_set_all - Requested fringe phase is too small for this configuration (we do not have enough resolution).')
             self.floggers[ffpga_n].debug('fr_delay_set_all - Fringe offset actually set to %6.3f degrees.'%act_fringe_offset)
 
             if (fringe_rate != 0):
-                if (fr_rate==0): 
+                if (fr_rate==0):
                     self.floggers[ffpga_n].error('fr_delay_set_all - Requested fringe rate is too slow for this configuration.')
             self.floggers[ffpga_n].debug('fr_delay_set_all - Fringe rate actually set to %e Hz.'%act_fringe_rate)
 
             #setup the delays:
             self.ffpgas[ffpga_n].write_int('coarse_delay%i'%feng_input,coarse_delay)
             self.floggers[ffpga_n].debug("fr_delay_set_all - Set a coarse delay of %i clocks."%coarse_delay)
-            #fine delay (LSbs) is fraction of a cycle * 2^15 (16 bits allocated, signed integer). 
+            #fine delay (LSbs) is fraction of a cycle * 2^15 (16 bits allocated, signed integer).
             #increment fine_delay by MSbs much every FPGA clock cycle shifted 2**20???
             self.ffpgas[ffpga_n].write('a1_fd%i'%feng_input,struct.pack('>hh',fine_delay_rate,fine_delay_i))
             self.floggers[ffpga_n].debug("fr_delay_set_all - Wrote %4x to fine_delay and %4x to fine_delay_rate register a1_fd%i."%(fine_delay_i,fine_delay_rate,feng_input))
-            
+
             #print 'Coarse delay: %i, fine delay: %2.3f (%i), delay_rate: %2.2f (%i).'%(coarse_delay,fine_delay,fine_delay_i,delay_rate,fine_delay_rate)
 
             #setup the fringe rotation
-            #LSbs is offset as a fraction of a cycle in fix_16_15 (1 = pi radians ; -1 = -1radians). 
+            #LSbs is offset as a fraction of a cycle in fix_16_15 (1 = pi radians ; -1 = -1radians).
             #MSbs is fringe rate as fractional increment to fr_offset per FPGA clock cycle as fix_16.15. FPGA divides this rate by 2**20 internally.
-            self.ffpgas[ffpga_n].write('a0_fd%i'%feng_input,struct.pack('>hh',fr_rate,fr_offset))  
+            self.ffpgas[ffpga_n].write('a0_fd%i'%feng_input,struct.pack('>hh',fr_rate,fr_offset))
             self.floggers[ffpga_n].debug("fr_delay_set_all - Wrote %4x to fringe_offset and %4x to fringe_rate register a0_fd%i."%(fr_offset,fr_rate,feng_input))
             #print 'Phase offset: %2.3f (%i), phase rate: %2.3f (%i).'%(fringe_phase,fr_offset,fringe_rate,fr_rate)
 
@@ -1557,13 +1557,13 @@ class Correlator:
         for input_n,(ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input) in enumerate(locs):
             cnts=self.ffpgas[ffpga_n].read_uint('delay_tr_status%i'%feng_input)
 
-            if (arm_cnt_before[input_n] == cnts>>16): 
+            if (arm_cnt_before[input_n] == cnts>>16):
                 if (cnts>>16)==0:
                     log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Ant %s (Feng %i on %s) appears to be held in master reset. Load failed.' % (self.map_input_to_ant(input_n),feng_input,self.fsrvs[ffpga_n]))
                 else:
                     log_runtimeerror(self.floggers[ffpga_n], 'fr_delay_set_all - Ant %s (Feng %i on %s) did not arm. Load failed.'%(self.map_input_to_ant(input_n),feng_input,self.fsrvs[ffpga_n]))
-            if (ld_cnt_before[input_n] >= (cnts&0xffff)): 
-                after_mcnt=self.mcnt_current_get(self.map_input_to_ant(input_n)) 
+            if (ld_cnt_before[input_n] >= (cnts&0xffff)):
+                after_mcnt=self.mcnt_current_get(self.map_input_to_ant(input_n))
                 #print 'before: %i, target: %i, after: %i'%(mcnt,ld_mcnt,after_mcnt)
                 #print 'start: %10.3f, target: %10.3f, after: %10.3f'%(self.time_from_mcnt(mcnt),self.time_from_mcnt(ld_mcnt),self.time_from_mcnt(after_mcnt))
                 if after_mcnt > ld_mcnt:
@@ -1580,17 +1580,17 @@ class Correlator:
     def time_from_mcnt(self,mcnt):
         """Returns the unix time UTC equivalent to the input MCNT. Does NOT account for wrapping MCNT."""
         return self.config['sync_time']+float(mcnt)/self.config['mcnt_scale_factor']
-        
+
     def mcnt_from_time(self,time_seconds):
         """Returns the mcnt of the correlator from a given UTC system time (seconds since Unix Epoch). Accounts for wrapping mcnt."""
         return int((time_seconds - self.config['sync_time'])*self.config['mcnt_scale_factor'])%(2**self.config['mcnt_bits'])
 
         #print 'Current Feng mcnt: %16X, uptime: %16is, target mcnt: %16X (%16i)'%(current_mcnt,uptime,target_pkt_mcnt,target_pkt_mcnt)
-        
+
     def time_from_pcnt(self, pcnt):
         """Returns the unix time UTC equivalent to the input packet timestamp. Does NOT account for wrapping pcnt."""
         return self.config['sync_time'] + (float(pcnt) / float(self.config['pcnt_scale_factor']))
-        
+
     def pcnt_from_time(self, time_seconds):
         """Returns the packet timestamp from a given UTC system time (seconds since Unix Epoch). Accounts for wrapping pcnt."""
         return int((time_seconds - self.config['sync_time'])*self.config['pcnt_scale_factor'])%(2**self.config['pcnt_bits'])
@@ -1598,7 +1598,7 @@ class Correlator:
     def time_from_spead(self,spead_time):
         """Returns the unix time UTC equivalent to the input packet timestamp. Does not account for wrapping timestamp counters."""
         return self.config['sync_time']+float(spead_time)/float(self.config['spead_timestamp_scale_factor'])
-        
+
     def spead_timestamp_from_time(self,time_seconds):
         """Returns the packet timestamp from a given UTC system time (seconds since Unix Epoch). Accounts for wrapping timestamp."""
         return int((time_seconds - self.config['sync_time'])*self.config['spead_timestamp_scale_factor'])%(2**(self.config['spead_flavour'][1]))
@@ -1612,7 +1612,7 @@ class Correlator:
         self.vacc_sync() #this is needed in case we decrease the accumulation period on a new_acc transition where some vaccs would then be out of sync
         time.sleep(self.acc_time_get()+0.1)
         self.rst_status_and_count() #reset all errors (resyncing VACC will introduce some)
-        if spead_update: 
+        if spead_update:
             self.spead_time_meta_issue()
 
     def acc_n_get(self):
@@ -1622,7 +1622,7 @@ class Correlator:
             if n_accs_all[xn] != n_accs:
                 log_runtimeerror(self.syslogger, 'Not all boards have the same accumulation length set!')
         return n_accs
-    
+
     def acc_time_get(self):
         n_accs = self.acc_n_get()
         return float(self.config['n_chans'] * n_accs) / self.config['bandwidth']
@@ -1655,7 +1655,7 @@ class Correlator:
 #    def get_ant_location(self, ant, pol='x'):
 #        " Returns the (ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input) location for a given antenna/pol. Ant is integer, as are all returns."
 #        #tested ok corr-0.5.0 2010-10-26
-#        if ant > self.config['n_ants']: 
+#        if ant > self.config['n_ants']:
 #            raise RuntimeError("There is no antenna %i in this design (total %i antennas)."%(ant,self.config['n_ants']))
 #        ffpga_n  = ant/self.config['f_per_fpga']
 #        fxaui_n  = ant/self.config['n_ants_per_xaui']%self.config['n_xaui_ports_per_ffpga']
@@ -1671,7 +1671,7 @@ class Correlator:
             return input_n
         except:
             log_runtimeerror(self.syslogger, 'Unable to map antenna %s.'%ant_str)
-     
+
     def map_input_to_ant(self,input_n):
         """Maps an input number to an antenna string."""
         return self.config._get_ant_mapping_list()[input_n]
@@ -1679,7 +1679,7 @@ class Correlator:
     def get_ant_str_location(self, ant_str):
         """ Returns the (ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input) location for a given antenna."""
         return self.get_input_location(self.map_ant_to_input(ant_str))
-        
+
     def get_xeng_location(self, xeng_n):
         """ Returns the (xfpga_n,xeng_core) location for a given x engine."""
         if xeng_n>=self.config['n_xeng']:
@@ -1688,14 +1688,14 @@ class Correlator:
 
     def get_input_location(self, input_n):
         " Returns the (ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input) location for a given system-wide input number."
-        if input_n > self.config['n_inputs'] or input_n < 0: 
+        if input_n > self.config['n_inputs'] or input_n < 0:
             raise RuntimeError("There is no input %i in this design (total %i inputs)."%(input_n,self.config['n_inputs']))
         ant = input_n / 2 #dual-pol ant, as transmitted across XAUI links
         ffpga_n  = ant/self.config['f_per_fpga']
         fxaui_n  = ant/self.config['n_ants_per_xaui']%self.config['n_xaui_ports_per_ffpga']
         xfpga_n  = ant/self.config['n_ants_per_xaui']/self.config['n_xaui_ports_per_xfpga']
         xxaui_n  = ant/self.config['n_ants_per_xaui']%self.config['n_xaui_ports_per_xfpga']
-        feng_input = input_n%self.config['f_inputs_per_fpga'] 
+        feng_input = input_n%self.config['f_inputs_per_fpga']
         return (ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input)
 
     def config_roach_10gbe_ports(self):
@@ -1727,7 +1727,7 @@ class Correlator:
                 if self.config['feng_out_type'] == 'xaui':
                     fpga.write_int('gbe_ip%i'%x, ip)
         self.syslogger.info('All 10GbE cores configured.')
-                        
+
 #    def config_roach_10gbe_ports_static(self):
 #        """STATICALLY configures 10GbE ports on roach X engines for correlator data exchange. Will not work with 10GbE output (we don't know the receiving computer's MAC)."""
 #        arp_table=[(2**48)-1 for i in range(256)]
@@ -1828,7 +1828,7 @@ class Correlator:
                     tmp['ld_cnt'] =  ld_status_reg_data[server]['ld_cnt%i'  % xeng_location]
                     tmp['xeng_index'] = xeng_index
                     server_data['xengs'].append(tmp)
-                rv[server] = server_data 
+                rv[server] = server_data
             return rv
 
         def print_vacc_status(data):
@@ -1845,7 +1845,7 @@ class Correlator:
         reset_required = False
         for key, server in vacc_status_before.items():
             for xeng in server['xengs']:
-                if xeng['arm_cnt'] != xeng['ld_cnt']: 
+                if xeng['arm_cnt'] != xeng['ld_cnt']:
                     self.xloggers[server['xfpga_number']].warning("VACC syncing: xfpga(%i), xeng(%i) - arm count(%i) and load count(%i) differ by %i, resetting VACCs." % (server['xfpga_number'], xeng['xeng_number'], xeng['arm_cnt'], xeng['ld_cnt'], xeng['arm_cnt'] - xeng['ld_cnt']))
                     reset_required = True
         # reset the vaccs if any were out of alignment
@@ -1930,12 +1930,12 @@ class Correlator:
                         log_runtimeerror(xeng_logger, 'vacc_sync - We missed loading the registers by about %4.1f ms.' % miss_ms)
                     else:
                         raise RuntimeError('Xeng %i on %s did not load correctly for an unknown reason.' % (xeng['xeng_number'], serverkey))
-                #print 'xeng(%s, %i) VACC armed correctly.' % (server, loc_xeng_n) 
+                #print 'xeng(%s, %i) VACC armed correctly.' % (server, loc_xeng_n)
 
 #    def freq_to_chan(self,frequency):
 #        """Returns the channel number where a given frequency is to be found. Frequency is in Hz."""
 #TODO: Account for DDC
-#        if frequency<0: 
+#        if frequency<0:
 #            frequency=self.config['bandwidth']+self.config['frequency']
 #            #print 'you want',frequency
 #        if frequency>self.config['bandwidth']: raise RuntimeError("that frequency is too high.")
@@ -1957,7 +1957,7 @@ class Correlator:
         window=numpy.hamming(n_chans*2)
         spectrum=numpy.zeros(n_chans)
         for acc in range(n_accs):
-            spectrum += numpy.abs((numpy.fft.rfft(adc_v[n_chans*2*acc:n_chans*2*(acc+1)]*window)[0:n_chans])) 
+            spectrum += numpy.abs((numpy.fft.rfft(adc_v[n_chans*2*acc:n_chans*2*(acc+1)]*window)[0:n_chans]))
         spectrum  = 20*numpy.log10(spectrum/n_accs/n_chans*4.91)
         return {'freqs':freqs,'spectrum_dbm':spectrum,'adc_v':adc_v}
 
@@ -1973,7 +1973,6 @@ class Correlator:
         max_mcnt_difference=4
         mcnts=dict()
         mcnts_list=[]
-        mcnt_tot=0
         rv=True
 
         for ant in range(0,self.config['n_ants'],self.config['n_ants_per_xaui']):
@@ -2014,7 +2013,7 @@ class Correlator:
         if self.config['adc_type'] != 'katadc':
             log_runtimeerror(self.floggers[ffpga_n], "RF gain cannot be configured on ADC type %s."%self.config['adc_type'])
         if gain == None:
-            gain = self.config['rf_gain_%s' % (input_n)] 
+            gain = self.config['rf_gain_%s' % (input_n)]
         if gain > 20 or gain < -11.5:
             log_runtimeerror(self.floggers[ffpga_n], "Invalid gain setting of %i. Valid range for KATADC is -11.5 to +20")
         self.ffpgas[ffpga_n].write_int('adc_ctrl%i' % feng_input, (1<<31) + int((20 - gain) * 2))
@@ -2022,10 +2021,10 @@ class Correlator:
         self.floggers[ffpga_n].info("KATADC %i RF gain set to %2.1f." % (feng_input, round(gain * 2) / 2))
 
     def rf_status_get(self,ant_str):
-        """Grabs the current value of the RF attenuators and RF switch state for KATADC boards. 
+        """Grabs the current value of the RF attenuators and RF switch state for KATADC boards.
             Returns (enabled,gain in dB)"""
         #RF switch is in MSb.
-        if self.config['adc_type'] != 'katadc' : 
+        if self.config['adc_type'] != 'katadc' :
             self.syslogger.warn("Unsupported ADC type of %s. Only katadc is supported."%self.config['adc_type'])
             return (True,0.0)
         else:
@@ -2052,7 +2051,7 @@ class Correlator:
         #tested ok corr-0.5.0 2010-08-07
         #RF switch is in MSb.
         ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_ant_str_location(ant_str)
-        if self.config['adc_type'] != 'katadc' : 
+        if self.config['adc_type'] != 'katadc' :
             self.floggers[ffpga_n].warn("RF disable unsupported on ADC type of %s. Only katadc is supported at this time."%self.config['adc_type'])
         else:
             self.ffpgas[ffpga_n].write_int('adc_ctrl%i'%feng_input,self.ffpgas[ffpga_n].read_uint('adc_ctrl%i'%feng_input)&0x7fffffff)
@@ -2062,7 +2061,7 @@ class Correlator:
         """Enable the RF switch on the KATADC board associated with requested antenna."""
         #RF switch is in MSb.
         ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = self.get_ant_str_location(ant_str)
-        if self.config['adc_type'] != 'katadc' : 
+        if self.config['adc_type'] != 'katadc' :
             self.floggers[ffpga_n].warn("RF enable unsupported on ADC type of %s. Only katadc is supported at this time."%self.config['adc_type'])
         else:
             self.ffpgas[ffpga_n].write_int('adc_ctrl%i'%feng_input,self.ffpgas[ffpga_n].read_uint('adc_ctrl%i'%feng_input)|0x80000000)
@@ -2075,7 +2074,7 @@ class Correlator:
         self.syslogger.info('Set all EQ gains on all Fengs.')
 
     def eq_default_get(self,ant_str):
-        "Fetches the default equalisation configuration from the config file and returns a list of the coefficients for a given input." 
+        "Fetches the default equalisation configuration from the config file and returns a list of the coefficients for a given input."
         n_coeffs = self.config['n_chans']/self.config['eq_decimation']
         input_n  = self.map_ant_to_input(ant_str)
 
@@ -2087,9 +2086,9 @@ class Correlator:
             equalisation = numpy.polyval(poly, range(self.config['n_chans']))[self.config['eq_decimation']/2::self.config['eq_decimation']]
             if self.config['eq_type'] == 'complex':
                 equalisation = [eq+0*1j for eq in equalisation]
-        else: 
+        else:
             raise RuntimeError("Your EQ type, %s, is not understood." % self.config['eq_type'])
-                
+
         if len(equalisation) != n_coeffs:
             raise RuntimeError("Something's wrong. I have %i eq coefficients when I should have %i." % (len(equalisation), n_coeffs))
         return equalisation
@@ -2113,7 +2112,7 @@ class Correlator:
             coeffs=numpy.array(struct.unpack('>%ih'%n_coeffs,bd))
             nacexp=(numpy.reshape(coeffs,(n_coeffs,1))*numpy.ones((1,self.config['eq_decimation']))).reshape(self.config['n_chans'])
             return nacexp
-            
+
         elif self.config['eq_type'] == 'complex':
             bd=self.ffpgas[ffpga_n].read(register_name,n_coeffs*4)
             coeffs=struct.unpack('>%ih'%(n_coeffs*2),bd)
@@ -2121,7 +2120,7 @@ class Correlator:
             nac=na.view(dtype=numpy.complex128)
             nacexp=(numpy.reshape(nac,(n_coeffs,1))*numpy.ones((1,self.config['eq_decimation']))).reshape(self.config['n_chans'])
             return nacexp
-            
+
         else:
             log_runtimeerror(self.syslogger, "Unable to interpret eq_type from config file. Expecting scalar or complex.")
 
@@ -2136,20 +2135,20 @@ class Correlator:
         register_name = 'eq%i' % (feng_input)
         n_coeffs = self.config['n_chans'] / self.config['eq_decimation']
 
-        if init_coeffs == [] and init_poly == []: 
+        if init_coeffs == [] and init_poly == []:
             coeffs = self.eq_default_get(ant_str)
         elif len(init_coeffs) == n_coeffs:
             coeffs = init_coeffs
         elif len(init_coeffs) == self.config['n_chans']:
             coeffs = init_coeffs[0::self.config['eq_decimation']]
             self.floggers[ffpga_n].warn("You specified %i EQ coefficients but your system only supports %i actual values. Only writing every %ith value."%(self.config['n_chans'],n_coeffs,self.config['eq_decimation']))
-        elif len(init_coeffs)>0: 
+        elif len(init_coeffs)>0:
             raise RuntimeError ('You specified %i coefficients, but there are %i EQ coefficients in this design.'%(len(init_coeffs),n_coeffs))
         else:
             coeffs = numpy.polyval(init_poly, range(self.config['n_chans']))[self.config['eq_decimation']/2::self.config['eq_decimation']]
-        
+
         if self.config['eq_type'] == 'scalar':
-            coeffs = numpy.real(coeffs) 
+            coeffs = numpy.real(coeffs)
             if numpy.max(coeffs) > ((2**16)-1) or numpy.min(coeffs)<0:
                 log_runtimeerror(self.floggers[ffpga_n], "Sorry, your scalar EQ settings are out of range!")
             coeff_str = struct.pack('>%iH'%n_coeffs,coeffs)
@@ -2163,7 +2162,7 @@ class Correlator:
 
         #self.floggers[ffpga_n].info('Writing new EQ coefficient values to config file...')
         #self.config.write('equalisation','eq_coeffs_%i%c'%(ant,pol),str(coeffs.tolist()))
-        
+
         for term, coeff in enumerate(coeffs):
             self.floggers[ffpga_n].debug('''Initialising EQ for antenna %s, input %i on %s (register %s)'s index %i to %s.''' % (ant_str, feng_input, self.fsrvs[ffpga_n], register_name, term, str(coeff)))
 
@@ -2195,7 +2194,7 @@ class Correlator:
             rv[ant_str]['rms_raw'] = numpy.sqrt(self.ffpgas[ffpga_n].read_uint('adc_sum_sq%i'%(feng_input))/float(self.config['adc_levels_acc_len']))
             rv[ant_str]['rms_v'] = rv[ant_str]['rms_raw']*self.config['adc_v_scale_factor']
             rv[ant_str]['adc_rms_dbm'] = v_to_dbm(rv[ant_str]['rms_v'])
-            rf_status=self.rf_status_get(ant_str) 
+            rf_status=self.rf_status_get(ant_str)
             rv[ant_str]['analogue_gain'] = rf_status[1]
             rv[ant_str]['input_rms_dbm'] = rv[ant_str]['adc_rms_dbm']-rv[ant_str]['analogue_gain']
             rv[ant_str]['low_level_warn'] = True if (rv[ant_str]['adc_rms_dbm']<self.config['adc_low_level_warning']) else False
@@ -2211,7 +2210,7 @@ class Correlator:
 
         self.spead_ig.add_item(name="bls_ordering",id=0x100C,
             description="The output ordering of the baselines from each X engine.",
-            #shape=[self.config['n_bls']],fmt=spead.STR_FMT, 
+            #shape=[self.config['n_bls']],fmt=spead.STR_FMT,
             init_val=numpy.array([bl for bl in self.get_bl_order()]))
 
         self.spead_ig.add_item(name="input_labelling",id=0x100E,
@@ -2276,7 +2275,7 @@ class Correlator:
             description="The analogue bandwidth of the digitally processed signal in Hz.",
             shape=[],fmt=spead.mkfmt(('f',64)),
             init_val=self.config['bandwidth'])
-        
+
         # 1015/1016 are taken (see time_metadata_issue below)
 
         # 1017,1018 is number of coarse channels and current_coarse channel, respectively, in narrowband mode - see spead_narrowband_issue
@@ -2479,7 +2478,7 @@ class Correlator:
 
     def is_narrowband(self):
         return self.config['mode'] == CORR_MODE_NB
-    
+
     def is_ddc(self):
         return self.config['mode'] == CORR_MODE_DDC
 
@@ -2487,7 +2486,7 @@ def dbm_to_dbuv(dbm):
     return dbm+107
 
 def dbuv_to_dbm(dbuv):
-    return dbm-107
+    return dbuv-107
 
 def v_to_dbuv(v):
     return 20*numpy.log10(v*1e6)
