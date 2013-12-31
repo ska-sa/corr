@@ -322,72 +322,66 @@ class FpgaClient(CallbackClient):
         if reply.arguments[0]=='ok': return
         else: raise RuntimeError("Failure stopping tap device %s."%(device))
 
-    def tap_multicast_add_send(self, tap_dev, ip, mask):
-        """Adds a range of address to which the roach must subscribe to.
-
+    def tap_multicast_add_send(self, tap_dev, ip, n_addresses=1):
+        """Adds a range of address to which the ROACH must send to (this is only needed if you plan to send multicast packets from the PPC; the FPGA fabric doesn't need anything here). Note that subsequent calls to this function will overwrite previous calls (you can only subscribe to one set of addresses).
             @param self    This object.
             @param tap_dev String: name of the tap device (a Linux identifier). If you want to destroy a device later, you need to use this name.
-            @param ip      integer: IP address, 32 bits.
-            @param mask    power of 2 integer: effectively a mask to specify a range of ip addresses.
-
-            Please note that the function definition changed from corr-0.4.0 to corr-0.4.1 to include the tap_dev identifier.
+            @param ip      integer: IP address, 32 bits. This should be 2^N bounded (ie if you're subscribing to 4 addresses, this address should have zeros in its lowest two bits).
+            @param n_addresses integer: Adjacent number of addresses to subscribe to. Note that this needs to be a power of 2 due to HW restrictions.
            """
         if len(tap_dev) > 8:
             raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s for device %s." % (tap_dev, device))
+        if n_addresses<1:
+            raise RuntimeError("You need to subscribe to at least 1 address!")
+        if n_addresses&(n_addresses-1) != 0:
+            raise RuntimeError("The number of addresses needs to be a power of 2. You specified %s for device %s." % (n_addresses, device))
 
-        if mask&(mask-1) != 0:
-            raise RuntimeError("The mask needs to be a power of 2. You specified %s for device %s." % (mask, device))
+        first_ip=ip&(0xffffffff-n_addresses+1)
+        last_ip=first_ip+ n_addresses
 
-        ip_1 = (ip/(2**24))
-        ip_2 = (ip%(2**24))/(2**16)
-        ip_3 = (ip%(2**16))/(2**8)
-        ip_4 = (ip%(2**8))
+        ip_str_first=ip_to_a(first_ip)
+        ip_str_last=ip_to_a(last_ip)
 
-        ip_str="%i.%i.%i.%i"%(ip_1,ip_2,ip_3,ip_4)
-
-        self._logger.info("Joining the multicast groups with %s with range %s" %(ip_str, mask))
-        reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'send', str(ip_str) + '+' + str(mask))
+        self._logger.info("Joining the multicast groups %s - %s." %(ip_str_first, ip_str_last))
+        reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'send', str(ip_str_first) + '+' + str(n_addresses-1))
         if reply.arguments[0]=='ok': return
-        else: raise RuntimeError("Failure adding multicast address %s to tap device %s" %(ip_str, device))
+        else: raise RuntimeError("Failure adding multicast addresses %s-%s to tap device %s." %(ip_str_first,ip_str_last, device))
 
-    def tap_multicast_add_recv(self, tap_dev, ip, mask):
-        """Adds a range of address to which the roach must subscribe to.
-
+    def tap_multicast_add_recv(self, tap_dev, ip, n_addresses=1):
+        """Adds a range of address to which the ROACH must send to (this is only needed if you plan to send multicast packets from the PPC; the FPGA fabric doesn't need anything here). Note that subsequent calls to this function will overwrite previous calls (you can only subscribe to one set of addresses).
             @param self    This object.
             @param tap_dev String: name of the tap device (a Linux identifier). If you want to destroy a device later, you need to use this name.
-            @param ip      integer: IP address, 32 bits.
-            @param mask    power of 2 integer: effectively a mask to specify a range of ip addresses.
-
-            Please note that the function definition changed from corr-0.4.0 to corr-0.4.1 to include the tap_dev identifier.
+            @param ip      integer: IP address, 32 bits. This should be 2^N bounded (ie if you're subscribing to 4 addresses, this address should have zeros in its lowest two bits).
+            @param n_addresses integer: Adjacent number of addresses to subscribe to. Note that this needs to be a power of 2 due to HW restrictions.
            """
         if len(tap_dev) > 8:
             raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s for device %s." % (tap_dev, device))
+        if n_addresses<1:
+            raise RuntimeError("You need to subscribe to at least 1 address!")
+        if n_addresses&(n_addresses-1) != 0:
+            raise RuntimeError("The number of addresses needs to be a power of 2. You specified %s for device %s." % (n_addresses, device))
 
-        if mask&(mask-1) != 0:
-            raise RuntimeError("The mask needs to be a power of 2. You specified %s for device %s." % (mask, device))
+        first_ip=ip&(0xffffffff-n_addresses+1)
+        last_ip=first_ip+ n_addresses-1
 
-        ip_1 = (ip/(2**24))
-        ip_2 = (ip%(2**24))/(2**16)
-        ip_3 = (ip%(2**16))/(2**8)
-        ip_4 = (ip%(2**8))
+        ip_str_first=ip_to_a(first_ip)
+        ip_str_last=ip_to_a(last_ip)
 
-        ip_str="%i.%i.%i.%i"%(ip_1,ip_2,ip_3,ip_4)
-
-        self._logger.info("iRemoving the multicast groups with %s with range %s" %(ip_str, mask))
-        reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'recv', str(ip_str), str(mask))
+        self._logger.info("Subscribing to the multicast groups %s - %s." %(ip_str_first, ip_str_last))
+        reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'recv', str(ip_str_first) + '+' + str(n_addresses-1))
         if reply.arguments[0]=='ok': return
-        else: raise RuntimeError("Failure removing multicast address %s to tap device %s" %(ip_str, device))
+        else: raise RuntimeError("Failure subscribing to multicast addresses %s-%s to tap device %s." %(ip_str_first,ip_str_last, device))
 
-    def tap_multicast_remove(self, device):
-        """Remove the specified range of multicast addresses.
+    def tap_multicast_remove(self, tap_dev):
+        """Stop subscribing to all multicast addresses on specified TAP device.
 
            @param self  This object.
-           @param device  String: name of the device you want to stop.
+           @param tap_dev  String: name of the device you want to stop.
         """
 
-        reply, informs = self._request("tap-multicast_remove", self._timeout, device)
+        reply, informs = self._request("tap-multicast_remove", self._timeout, tap_dev)
         if reply.arguments[0]=='ok': return
-        else: raise RuntimeError("Failure stopping tap device %s."%(device))
+        else: raise RuntimeError("Failure stopping tap device %s."%(tap_dev))
 
     def upload_program_bof(self, bof_file, port, timeout = 30):
         """Upload a BORPH file to the ROACH board for execution.
@@ -697,6 +691,8 @@ class FpgaClient(CallbackClient):
         #0x28 - 0x2b: PHY config
         #0x28       : RX_eq_mix
         #0x29       : RX_eq_pol
+        #0x30 - 0x33: Multicast IP RX base address
+        #0x34       : Multicast IP RX IP mask
         #0x2a       : TX_preemph
         #0x2b       : TX_diff_ctrl
         #0x1000     : CPU TX buffer
@@ -715,6 +711,20 @@ class FpgaClient(CallbackClient):
 
         my_ip=((port_dump[0x10]<<24) + (port_dump[0x11]<<16) + (port_dump[0x12]<<8) + (port_dump[0x13]))
         rv['my_ip']=my_ip
+
+        rv['multicast_rx_base_ip']=((port_dump[0x30]<<24) + (port_dump[0x31]<<16) + (port_dump[0x32]<<8) + (port_dump[0x33]))
+        rv['multicast_rx_mask'] = ((port_dump[0x34]<<24) + (port_dump[0x35]<<16) + (port_dump[0x36]<<8) + (port_dump[0x37]))
+        possible_addresses=[rv['multicast_rx_base_ip']]
+        for i in range(32):
+            if not ((rv['multicast_rx_mask']>>i)&1):
+                #print "Found a zero!"
+                new_ips=[]
+                for ip in possible_addresses:
+                    new_ips.append(ip&(~(1<<i)))
+                    new_ips.append(new_ips[-1]|(1<<i))
+                    #print new_ips
+                possible_addresses.extend(new_ips)
+        rv['multicast_rx_addresses']=list(set(possible_addresses))
 
         fabric_port=((port_dump[0x22]<<8) + (port_dump[0x23]))
         rv['fabric_port']=fabric_port
@@ -1030,3 +1040,5 @@ class FpgaClient(CallbackClient):
 
         return bram_dmp
 
+def ip_to_a(ip):
+    return '%i.%i.%i.%i'%((ip>>24),((ip&(0xff<<16))>>16),((ip&(0xff<<8))>>8),(ip&(0xff)))
