@@ -20,7 +20,7 @@ def exit_fail():
     print 'FAILURE DETECTED. Log entries:\n',lh.printMessages()
     print "Unexpected error:", sys.exc_info()
     try:
-        scroller.screenTeardown()
+        corr.scroll.screen_teardown()
         c.disconnect_all()
     except: pass
     if verbose:
@@ -29,7 +29,7 @@ def exit_fail():
 
 def exit_clean():
     try:
-        scroller.screenTeardown()
+        corr.scroll.screen_teardown()
         c.disconnect_all()
     except: pass
     exit()
@@ -59,7 +59,7 @@ try:
 
     # set up the curses scroll screen
     scroller = corr.scroll.Scroll()
-    scroller.screenSetup()
+    scroller.screen_setup()
     # get FPGA data
     servers = c.xsrvs
     n_xeng_per_fpga = c.config['x_per_fpga']
@@ -70,8 +70,8 @@ try:
     lastUpdate = time.time() - 3
     while True:
         # get key presses from ncurses
-        if scroller.processKeyPress()[0] > 0:
-            scroller.drawScreen(screenData)
+        if scroller.on_keypress()[0] > 0:
+            scroller.draw_screen(screenData)
 
         if (time.time() > (lastUpdate + 1)): # or gotNewKey:
             screenData = []
@@ -80,8 +80,8 @@ try:
                 loopmcnt=[]
                 gbemcnt=[]
                 try:
-                    loopback_ok=c.check_loopback_mcnt() 
-                except: 
+                    loopback_ok=c.check_loopback_mcnt()
+                except:
                     loopback_ok=False
                 xaui_errors =  [c.xread_uint_all('xaui_err%i'%(x)) for x in range(n_xaui_ports_per_fpga)]
                 xaui_rx_cnt =  [c.xread_uint_all('xaui_cnt%i'%(x)) for x in range(n_xaui_ports_per_fpga)]
@@ -105,7 +105,7 @@ try:
             x_cnt      = [c.xread_uint_all('pkt_reord_cnt%i'%(x)) for x in range(n_xeng_per_fpga)]
             x_miss     = [c.xread_uint_all('pkt_reord_err%i'%(x)) for x in range(n_xeng_per_fpga)]
             last_miss_ant = [c.xread_uint_all('last_missing_ant%i'%(x)) for x in range(n_xeng_per_fpga)]
-            
+
             vacc_cnt   = [c.xread_uint_all('vacc_cnt%i'%x) for x in range(n_xeng_per_fpga)]
             vacc_err_cnt = [c.xread_uint_all('vacc_err_cnt%i'%x) for x in range(n_xeng_per_fpga)]
             vacc_ld_stat = c.vacc_ld_status_get()
@@ -129,7 +129,7 @@ try:
                         screenData.append('\t  Loopback%i     mcnt: %6i' % (x,loopmcnt[x][fn]))
                         screenData.append('\t  GBE%i          mcnt: %6i' % (x,gbemcnt[x][fn]))
 
-                    
+
                 for x in range(n_xeng_per_fpga):
                     printString = '\tX engine%i Spectr cnt: %10i    Errors: %10.2f' % (x,x_cnt[x][fn],float(x_miss[x][fn])/float(xeng_acc_len))
                     if x_miss[x][fn] > 0:
@@ -147,12 +147,12 @@ try:
             screenData.append('Total number of spectra processed: %i' % sum_spectra)
             screenData.append('Total bad X engine data: %i packets' % sum_bad_pkts)
             screenData.append('Time: %i' %(time.time() - start_t))
-            scroller.drawScreen(screenData)
+            scroller.draw_screen(screenData)
             lastUpdate = time.time()
 
 except KeyboardInterrupt:
         exit_clean()
-except: 
+except:
         exit_fail()
 
 exit_clean()

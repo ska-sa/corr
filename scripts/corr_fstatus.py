@@ -32,16 +32,16 @@ def exit_fail():
     print 'FAILURE DETECTED. Log entries:\n',lh.printMessages()
     print "Unexpected error:", sys.exc_info()
     try:
-        scroller.screenTeardown()
-        c.disconnect_all()        
+        corr.scroll.screen_teardown()
+        c.disconnect_all()
     except: pass
     if verbose: raise
     exit()
 
 def exit_clean():
     try:
-        scroller.screenTeardown()
-        c.disconnect_all()        
+        corr.scroll.screen_teardown()
+        c.disconnect_all()
     except: pass
     exit()
 
@@ -62,7 +62,7 @@ if __name__ == '__main__':
         config_file = args[0]
     verbose = opts.verbose
 lh = corr.log_handlers.DebugLogHandler(35)
-try:    
+try:
     print 'Connecting...',
     c = corr.corr_functions.Correlator(config_file = config_file, log_level = logging.DEBUG if verbose else logging.INFO, connect = False, log_handler = lh)
     c.connect()
@@ -72,41 +72,41 @@ try:
     screenData = []
     # set up the curses scroll screen
     scroller = corr.scroll.Scroll()
-    scroller.screenSetup()
-    scroller.setInstructionString("A toggles auto-clear, C to clear once.")
-    scroller.clearScreen()
-    scroller.drawString('Connecting...', refresh = True)
+    scroller.screen_setup()
+    scroller.set_instruction_string("A toggles auto-clear, C to clear once.")
+    scroller.clear_screen()
+    scroller.draw_string('Connecting...', refresh = True)
     autoClear = False
     clearOnce = False
-    scroller.drawString(' done.\n', refresh = True) 
+    scroller.draw_string(' done.\n', refresh = True)
     # get FPGA data
     servers = c.fsrvs
     n_ants = c.config['n_ants']
     start_t = time.time()
     if opts.clk_check:
         clk_check = c.feng_clks_get()
-        scroller.drawString('Estimating clock frequencies for connected F engines...\n', refresh = True)
+        scroller.draw_string('Estimating clock frequencies for connected F engines...\n', refresh = True)
         sys.stdout.flush()
         for fn,feng in enumerate(c.fsrvs):
-            scroller.drawString('\t %s (%i MHz)\n' % (feng,clk_check[fn]), refresh = True)
-        scroller.drawString('F engine clock integrity: ', refresh = True)
+            scroller.draw_string('\t %s (%i MHz)\n' % (feng,clk_check[fn]), refresh = True)
+        scroller.draw_string('F engine clock integrity: ', refresh = True)
         pps_check = c.check_feng_clks()
-        scroller.drawString('%s\n' % {True : 'Pass', False: 'FAIL!'}[pps_check], refresh = True)
+        scroller.draw_string('%s\n' % {True : 'Pass', False: 'FAIL!'}[pps_check], refresh = True)
         if not pps_check:
-            scroller.drawString(c.check_feng_clk_freq(verbose = True) + '\n', refresh = True)
+            scroller.draw_string(c.check_feng_clk_freq(verbose = True) + '\n', refresh = True)
     time.sleep(2)
 
     # main program loop
     lastUpdate = time.time() - 3
     while True:
         # get key presses from ncurses
-        keyPress = scroller.processKeyPress()
+        keyPress = scroller.on_keypress()
         if keyPress[0] > 0:
             if (keyPress[1] == 'a') or (keyPress[1] == 'A'):
                 autoClear = not autoClear
             elif (keyPress[1] == 'c') or (keyPress[1] == 'C'):
                 clearOnce = True
-            scroller.drawScreen(screenData)
+            scroller.draw_screen(screenData)
 
         if (time.time() > (lastUpdate + 1)): # or gotNewKey:
             screenData = []
@@ -116,7 +116,7 @@ try:
             status = c.feng_status_get_all()
             uptime = c.feng_uptime()
             fft_shift = c.fft_shift_get_all()
-            
+
             if c.config['adc_type'] == 'katadc':
                 rf_status = c.rf_status_get_all()
             if autoClear or clearOnce:
@@ -134,7 +134,7 @@ try:
                 printString = '    Cumulative errors: '
                 brd_err = False
                 for item, error in status[ant_str].items():
-                    if (error == True) and not (item in ignore): 
+                    if (error == True) and not (item in ignore):
                         try:
                             printString += lookup[item]
                             if lookup[item][0]=='[': brd_err = True
@@ -149,12 +149,12 @@ try:
             #lineattrs.append(curses.A_NORMAL)
             screenData.append("Auto-clear ON." if autoClear else "Auto-clear OFF.")
             #lineattrs.append(curses.A_NORMAL)
-            scroller.drawScreen(screenData)#, lineattrs)
+            scroller.draw_screen(screenData)#, lineattrs)
             lastUpdate = time.time()
 
 except KeyboardInterrupt:
         exit_clean()
-except: 
+except:
         exit_fail()
 
 exit_clean()

@@ -10,26 +10,26 @@ Revisions:
                 ncurses scroller fix to allow fast scrolling of screen.
 1.32 JRM swapped corr.rst_cnt for corr.rst_fstat and swapped column for RMS levels in dB.
 1.31 PVP Changed to accomodate change to corr_functions.adc_amplitudes_get() function - key in return dict changed from rms to rms_raw
-1.30 PVP Change to ncurses interface with ability to clear error statuses using corr.rst_cnt 
+1.30 PVP Change to ncurses interface with ability to clear error statuses using corr.rst_cnt
 1.21 PVP Fix filename in OptionParser section.
 1.20 JRM Support any number of antennas together with F engine 305 and X engine rev 322 and later.\n
 1.10 JRM Requires F engine rev 302 or later and X engine rev 308 or later.\n
 
 '''
-import corr, time, numpy, struct, sys, logging,curses
+import corr, time, sys, logging, curses
 
 def exit_fail():
     print 'FAILURE DETECTED. Log entries:\n', c.log_handler.printMessages()
     print "Unexpected error:", sys.exc_info()
     try:
-        #scroller.screenTeardown()
+        #corr.scroll.screen_teardown()
         c.disconnect_all()
     except: pass
     raise
     exit()
 
 def exit_clean():
-    scroller.screenTeardown()
+    corr.scroll.screen_teardown()
     try:
         c.disconnect_all()
     except: pass
@@ -49,7 +49,7 @@ if __name__ == '__main__':
         config_file=args[0]
     verbose=opts.verbose
 
-try:    
+try:
     print 'Connecting...',
     c=corr.corr_functions.Correlator(config_file=config_file,log_level=logging.DEBUG if verbose else logging.INFO, connect=False)
     c.connect()
@@ -58,8 +58,8 @@ try:
     time.sleep(1)
     # set up the curses scroll screen
     scroller = corr.scroll.Scroll()
-    scroller.screenSetup()
-    scroller.setInstructionString("A toggles auto-clear, C to clear once.")
+    scroller.screen_setup()
+    scroller.set_instruction_string("A toggles auto-clear, C to clear once.")
     # main program loop
     lastUpdate = time.time() - 3
     autoClear = False
@@ -67,13 +67,13 @@ try:
     screenData = []
     while(True):
         # get key presses from ncurses
-        keyPress = scroller.processKeyPress()
+        keyPress = scroller.on_keypress()
         if keyPress[0] > 0:
             if (keyPress[1] == 'a') or (keyPress[1] == 'A'):
                 autoClear = not autoClear
             elif (keyPress[1] == 'c') or (keyPress[1] == 'C'):
                 clearOnce = True
-            scroller.drawScreen(screenData)
+            scroller.draw_screen(screenData)
 
         if (time.time() > (lastUpdate + 1)):
             screenData = []
@@ -120,8 +120,8 @@ try:
             if autoClear: screenData.append("Auto-clear ON.")
             else: screenData.append("Auto-clear OFF.")
             lineattrs.append(curses.COLOR_WHITE)
-            scroller.drawScreen(screenData,lineattrs)
-            #scroller.drawScreen(screenData)
+            scroller.draw_screen(screenData,lineattrs)
+            #scroller.draw_screen(screenData)
             lastUpdate = time.time()
             time.sleep(0.1)
 
