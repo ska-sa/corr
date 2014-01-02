@@ -1,4 +1,6 @@
 #! /usr/bin/env python
+# pylint: disable-msg = C0301
+# pylint: disable-msg = C0103
 """
 Reads the error counters on the correlator Xengines and reports such things as accumulated XAUI and packet errors.
 \n\n
@@ -15,7 +17,7 @@ Revisions:
 Todo:
 print errors in RED.
 """
-import corr, time, sys,struct,logging, curses
+import corr, time, sys, logging
 
 lookup = {'adc_overrange': '[ADC OVERRANGE]',
           'ct_error': '[CORNER-TURNER ERROR]',
@@ -29,20 +31,23 @@ lookup = {'adc_overrange': '[ADC OVERRANGE]',
 ignore = ['sync_val']
 
 def exit_fail():
-    print 'FAILURE DETECTED. Log entries:\n',lh.printMessages()
+    print 'FAILURE DETECTED. Log entries:\n', lh.printMessages()
     print "Unexpected error:", sys.exc_info()
     try:
         corr.scroll.screen_teardown()
         c.disconnect_all()
-    except: pass
-    if verbose: raise
+    except:
+        pass
+    if verbose:
+        raise
     exit()
 
 def exit_clean():
     try:
         corr.scroll.screen_teardown()
         c.disconnect_all()
-    except: pass
+    except:
+        pass
     exit()
 
 if __name__ == '__main__':
@@ -51,9 +56,9 @@ if __name__ == '__main__':
     p = OptionParser()
     p.set_usage('%prog [options] CONFIG_FILE')
     p.set_description(__doc__)
-    p.add_option('-c', '--clk_check', dest='clk_check',action='store_true', default=False,
+    p.add_option('-c', '--clk_check', dest='clk_check', action='store_true', default=False,
         help='Perform clock integrity checks.')
-    p.add_option('-v', '--verbose', dest='verbose',action='store_true', default=False,
+    p.add_option('-v', '--verbose', dest='verbose', action='store_true', default=False,
         help='Log verbosely.')
     opts, args = p.parse_args(sys.argv[1:])
     if args == []:
@@ -87,8 +92,8 @@ try:
         clk_check = c.feng_clks_get()
         scroller.draw_string('Estimating clock frequencies for connected F engines...\n', refresh = True)
         sys.stdout.flush()
-        for fn,feng in enumerate(c.fsrvs):
-            scroller.draw_string('\t %s (%i MHz)\n' % (feng,clk_check[fn]), refresh = True)
+        for fn, feng in enumerate(c.fsrvs):
+            scroller.draw_string('\t %s (%i MHz)\n' % (feng, clk_check[fn]), refresh = True)
         scroller.draw_string('F engine clock integrity: ', refresh = True)
         pps_check = c.check_feng_clks()
         scroller.draw_string('%s\n' % {True : 'Pass', False: 'FAIL!'}[pps_check], refresh = True)
@@ -124,10 +129,10 @@ try:
                 clearOnce = False
             for in_n, ant_str in enumerate(c.config._get_ant_mapping_list()):
                 ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input = c.get_ant_str_location(ant_str)
-                screenData.append('  Input %s (%s input %i, mcnt %i):' % (ant_str,c.fsrvs[ffpga_n],feng_input, mcnts[ffpga_n]))
+                screenData.append('  Input %s (%s input %i, mcnt %i):' % (ant_str, c.fsrvs[ffpga_n], feng_input, mcnts[ffpga_n]))
                 #lineattrs.append(curses.A_UNDERLINE)
                 if c.config['adc_type'] == 'katadc' :
-                    screenData.append("    RF %8s:      gain:  %5.1f dB" % ({True: 'Enabled', False: 'Disabled'}[rf_status[ant_str][0]],rf_status[ant_str][1]))
+                    screenData.append("    RF %8s:      gain:  %5.1f dB" % ({True: 'Enabled', False: 'Disabled'}[rf_status[ant_str][0]], rf_status[ant_str][1]))
                     #lineattrs.append(curses.A_NORMAL)
                 #screenData.append('    FFT shift pattern:       0x%06x' % fft_shift[ant_str])
                 #lineattrs.append(curses.A_NORMAL)
@@ -137,8 +142,10 @@ try:
                     if (error == True) and not (item in ignore):
                         try:
                             printString += lookup[item]
-                            if lookup[item][0]=='[': brd_err = True
-                        except KeyError: printString += item
+                            if lookup[item][0] == '[':
+                                brd_err = True
+                        except KeyError:
+                            printString += item
                         printString += ', '
                 screenData.append(printString)
                 #lineattrs.append(curses.A_STANDOUT) if brd_err == True else lineattrs.append(curses.A_NORMAL)

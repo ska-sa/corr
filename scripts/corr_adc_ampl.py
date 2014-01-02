@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-
+# pylint: disable-msg = C0301
+# pylint: disable-msg = C0103
 '''
 Reads the values of the RMS amplitude accumulators on the ibob through the X engine's XAUI connection.\n
 
@@ -24,34 +25,35 @@ def exit_fail():
     try:
         #corr.scroll.screen_teardown()
         c.disconnect_all()
-    except: pass
+    except:
+        pass
     raise
-    exit()
 
 def exit_clean():
     corr.scroll.screen_teardown()
     try:
         c.disconnect_all()
-    except: pass
+    except:
+        pass
     exit()
 
 if __name__ == '__main__':
     from optparse import OptionParser
     p = OptionParser()
     p.set_usage(__file__ + ' [options] CONFIG FILE')
-    p.add_option('-v', '--verbose', dest='verbose', action='store_true', help='Print raw output.')
+    p.add_option('-v', '--verbose', dest = 'verbose', action = 'store_true', help = 'Print raw output.')
     p.set_description(__doc__)
     opts, args = p.parse_args(sys.argv[1:])
 
-    if args==[]:
-        config_file=None
+    if args == []:
+        config_file = None
     else:
-        config_file=args[0]
-    verbose=opts.verbose
+        config_file = args[0]
+    verbose = opts.verbose
 
 try:
     print 'Connecting...',
-    c=corr.corr_functions.Correlator(config_file=config_file,log_level=logging.DEBUG if verbose else logging.INFO, connect=False)
+    c = corr.corr_functions.Correlator(config_file = config_file, log_level = logging.DEBUG if verbose else logging.INFO, connect = False)
     c.connect()
     print 'done'
 
@@ -77,7 +79,7 @@ try:
 
         if (time.time() > (lastUpdate + 1)):
             screenData = []
-            lineattrs=[]
+            lineattrs = []
             amps = c.adc_amplitudes_get()
             stats = c.feng_status_get_all()
             if autoClear or clearOnce:
@@ -90,37 +92,40 @@ try:
             for line in range(4):
                 lineattrs.append(curses.A_NORMAL)
             for i in range(c.config['n_inputs']):
-                error=False
-                ant_str=c.config.map_input_to_ant(i)
-                ffpga_n,xfpga_n,fxaui_n,xxaui_n,feng_input = c.get_input_location(c.config.map_ant_to_input(ant_str))
+                error = False
+                ant_str = c.config.map_input_to_ant(i)
+                ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input = c.get_input_location(c.config.map_ant_to_input(ant_str))
                 displayString = 'Ant %s (%s in%i): ' % (ant_str, c.fsrvs[ffpga_n], feng_input)
                 if c.config['adc_type'] == 'katadc':
                     displayString += ' Board input of %6.2f dBm with preamp of %5.1fdB = %6.2fdBm into ADC.' % (
-                        amps[ant_str]['input_rms_dbm'],amps[ant_str]['analogue_gain'],amps[ant_str]['adc_rms_dbm'])
+                        amps[ant_str]['input_rms_dbm'], amps[ant_str]['analogue_gain'], amps[ant_str]['adc_rms_dbm'])
                 else:
                     displayString += ' %.3f' % (amps[ant_str]['rms_raw'])
                 if stats[ant_str]['adc_overrange']:
                     displayString += ' ADC OVERRANGE!'
-                    error=True
+                    error = True
                 if stats[ant_str]['adc_disabled']:
                     displayString += ' ADC is disabled!'
-                    error=True
+                    error = True
                 if amps[ant_str]['low_level_warn']:
                     displayString += ' ADC input low; readings inaccurate!'
-                    error=True
+                    error = True
                 screenData.append(displayString)
-                #lineattrs.append(curses.A_BOLD if error==True else curses.A_NORMAL)
-                lineattrs.append(curses.A_STANDOUT if error==True else curses.A_NORMAL)
-                #if error==True:
-                #    screenData.append(corr.termcolors.colorize(displayString,fg='red'))
+                #lineattrs.append(curses.A_BOLD if error == True else curses.A_NORMAL)
+                lineattrs.append(curses.A_STANDOUT if error == True else curses.A_NORMAL)
+                #if error == True:
+                #    screenData.append(corr.termcolors.colorize(displayString, fg = 'red'))
                 #else:
-                #    screenData.append(corr.termcolors.colorize(displayString,fg='green'))
-                #lineattrs.append(curses.COLOR_RED if error==True else curses.COLOR_GREEN)
-            screenData.append(""); lineattrs.append(curses.A_NORMAL)
-            if autoClear: screenData.append("Auto-clear ON.")
-            else: screenData.append("Auto-clear OFF.")
+                #    screenData.append(corr.termcolors.colorize(displayString, fg = 'green'))
+                #lineattrs.append(curses.COLOR_RED if error == True else curses.COLOR_GREEN)
+            screenData.append("")
+            lineattrs.append(curses.A_NORMAL)
+            if autoClear:
+                screenData.append("Auto-clear ON.")
+            else:
+                screenData.append("Auto-clear OFF.")
             lineattrs.append(curses.COLOR_WHITE)
-            scroller.draw_screen(screenData,lineattrs)
+            scroller.draw_screen(screenData, lineattrs)
             #scroller.draw_screen(screenData)
             lastUpdate = time.time()
             time.sleep(0.1)
