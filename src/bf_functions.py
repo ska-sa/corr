@@ -1046,16 +1046,19 @@ class fbf:
         beams = self.beams2beams(beams)
 
         for beam in beams:
-            if dest_ip_str==None: dest_ip_str=self.get_beam_param(beam, 'rx_meta_ip_str')
+            if dest_ip_str==None: rx_meta_ip_str=self.get_beam_param(beam, 'rx_meta_ip_str')
             else:
+                rx_meta_ip_str=dest_ip_str
                 self.set_beam_param(beam, 'rx_meta_ip_str', dest_ip_str)
                 self.set_beam_param(beam, 'rx_meta_ip', struct.unpack('>L',socket.inet_aton(dest_ip_str))[0])
 
-            if dest_port==None: dest_port=self.get_beam_param(beam, 'rx_meta_port')
-            else: self.set_beam_param(beam, 'rx_meta_port', dest_port)
+            if dest_port==None: rx_meta_port=self.get_beam_param(beam, 'rx_meta_port')
+            else:
+                rx_meta_port=dest_port 
+                self.set_beam_param(beam, 'rx_meta_port', dest_port)
            
-            self.spead_tx['bf_spead_tx_beam%i'%self.beam2index(beam)[0]] = spead.Transmitter(spead.TransportUDPtx(dest_ip_str, dest_port))
-            self.syslogger.info("Destination for SPEAD meta data transmitter for beam %s changed. New destination IP = %s, port = %d" %(beam, dest_ip_str, dest_port))
+            self.spead_tx['bf_spead_tx_beam%i'%self.beam2index(beam)[0]] = spead.Transmitter(spead.TransportUDPtx(rx_meta_ip_str, rx_meta_port))
+            self.syslogger.info("Destination for SPEAD meta data transmitter for beam %s changed. New destination IP = %s, port = %d" %(beam, rx_meta_ip_str, rx_meta_port))
             
             #reissue all SPEAD meta-data to new receiver
             if issue_spead: self.spead_issue_all(beam)
@@ -1066,17 +1069,20 @@ class fbf:
 
         for beam in beams:
 
-            if dest_ip_str==None: dest_ip_str=self.get_beam_param(beam, 'rx_udp_ip_str')
+            if dest_ip_str==None: rx_udp_ip_str=self.get_beam_param(beam, 'rx_udp_ip_str')
             else:
+                rx_udp_ip_str=dest_ip_str
                 self.set_beam_param(beam, 'rx_udp_ip_str', dest_ip_str)
                 self.set_beam_param(beam, 'rx_udp_ip', struct.unpack('>L',socket.inet_aton(dest_ip_str))[0])
 
-            if dest_port==None: dest_port=self.get_beam_param(beam, 'rx_udp_port')
-            else: self.set_beam_param(beam, 'rx_udp_port', dest_port)
+            if dest_port==None: rx_udp_port=self.get_beam_param(beam, 'rx_udp_port')
+            else: 
+                rx_udp_port=dest_port
+                self.set_beam_param(beam, 'rx_udp_port', dest_port)
 
             beam_offset = self.get_beam_param(beam, 'location')
 
-            dest_ip = struct.unpack('>L',socket.inet_aton(dest_ip_str))[0]
+            dest_ip = struct.unpack('>L',socket.inet_aton(rx_udp_ip_str))[0]
 
             #restart if currently transmitting
             restart = self.tx_status_get(beam)
@@ -1084,9 +1090,9 @@ class fbf:
             if restart: self.tx_stop(beam)
 
             self.write_int('dest', data=[dest_ip], offset=(beam_offset*2))                     
-            self.write_int('dest', data=[dest_port], offset=(beam_offset*2+1))                     
+            self.write_int('dest', data=[rx_udp_port], offset=(beam_offset*2+1))                     
             #each beam output from each beamformer group can be configured differently
-            self.syslogger.info("Beam %s configured to output to %s:%i." %(beam, dest_ip_str, dest_port))
+            self.syslogger.info("Beam %s configured to output to %s:%i." %(beam, rx_udp_ip_str, rx_udp_port))
            
             if issue_spead: self.spead_destination_meta_issue(beam)
             if restart: self.tx_start(beam)
