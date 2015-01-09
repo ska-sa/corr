@@ -410,8 +410,9 @@ class FpgaClient(CallbackClient):
             upload_socket = socket.socket()
             stime = time.time()
             connected = False
-            while (not connected) and (time.time() < stime + 2):
+            while (not connected) and (time.time() < (stime + 2)):
                 try:
+                    upload_socket = socket.socket()
                     upload_socket.connect((self.host, port))
                     connected = True
                 except:
