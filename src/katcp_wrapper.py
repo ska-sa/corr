@@ -979,7 +979,7 @@ class FpgaClient(CallbackClient):
             rv['app_rev']=app&((2**28)-1)
         return rv
 
-    def snapshot_arm(self, dev_name, man_trig, man_valid, offset, circular_capture):
+    def snapshot_arm(self, dev_name, man_trig=False, man_valid=False, offset=-1, circular_capture=False):
         if offset >=0:
             self.write_int(dev_name+'_trig_offset', offset)
             #print 'Capturing from snap offset %i'%offset
