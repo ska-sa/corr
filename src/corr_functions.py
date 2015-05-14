@@ -51,7 +51,8 @@ Revisions:
 2009-06-26  JRM UNDER CONSTRUCTION.
 \n"""
 
-import corr, time, sys, numpy, logging, struct, construct, socket, spead
+import corr, time, sys, numpy, logging, struct, construct, socket
+import spead64_48 as spead
 
 CORR_MODE_WB = 'wbc'
 CORR_MODE_NB = 'nbc'

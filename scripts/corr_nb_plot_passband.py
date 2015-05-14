@@ -40,7 +40,7 @@ if not opts.plotonly:
     if config_file == None:
         raise RuntimeError('A config file is necessary to log data.')
 
-    import corr, spead
+    import corr, spead64_48 as spead
 
     print 'Parsing config file...',
     sys.stdout.flush()
@@ -81,7 +81,7 @@ if not opts.plotonly:
             while(crx.isAlive() and (not timedout)):
                 if time.time() - s_time > opts.capture_time:
                     timedout = True
-                    raise Exception 
+                    raise Exception
                 time.sleep(0.2)
             print 'RX process ended.'
             crx.join()
@@ -97,7 +97,7 @@ if not opts.plotonly:
 # end
 
 # plot
-if not opts.noplot: 
+if not opts.noplot:
     import numpy, pylab, os, h5py
 
     h5files = []
@@ -132,13 +132,13 @@ if not opts.noplot:
             raise RuntimeError('coarse channel %i does not make sense, last one was %i.' % (chan, last_chan))
         last_chan = chan
         if f['coarse_chans'].value[0] != mdata['coarse_chans']:
-            raise RuntimeError('Can only compare data from the same correlator output. coarse_chans differs from first file checked.') 
+            raise RuntimeError('Can only compare data from the same correlator output. coarse_chans differs from first file checked.')
         if f['n_chans'].value[0] != mdata['n_chans']:
-            raise RuntimeError('Can only compare data from the same correlator output. n_chans differs from first file checked.') 
+            raise RuntimeError('Can only compare data from the same correlator output. n_chans differs from first file checked.')
         s = f['xeng_raw']
         d = numpy.zeros(mdata['n_chans'])
         for data in s:
-            temp = numpy.vectorize(complex)(data[:,baseline,0], data[:,baseline,1]) 
+            temp = numpy.vectorize(complex)(data[:,baseline,0], data[:,baseline,1])
             d = d + temp
         #pylab.plot(numpy.unwrap(numpy.angle(d)))
         si = ctr * (mdata['n_chans']-10)
