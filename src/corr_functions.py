@@ -51,7 +51,7 @@ Revisions:
 2009-06-26  JRM UNDER CONSTRUCTION.
 \n"""
 
-import corr, time, sys, numpy, logging, struct, construct, socket
+import corr, time, sys, numpy, logging, struct, construct, socket, os
 import spead64_48 as spead
 
 CORR_MODE_WB = 'wbc'
@@ -215,15 +215,20 @@ def non_blocking_request(fpgas, timeout, request, request_args):
         f._nb_pop_request_by_id(request_id)
     return (not timedout), (rv)
 
+katcp_prefix = '/'
+if os.environ.has_key('VIRTUAL_ENV'):
+    katcp_prefix = os.environ['VIRTUAL_ENV']
+default_config = os.path.join(katcp_prefix, 'etc/corr/default')
 class Correlator:
-    def __init__(self, connect = True, config_file = '/etc/corr/default', log_handler = None, log_level = logging.INFO):
+    def __init__(self, connect = True, config_file = default_config, log_handler = None, log_level = logging.INFO):
+        global default_config
         self.log_handler = log_handler if log_handler != None else corr.log_handlers.DebugLogHandler(100)
         self.syslogger = logging.getLogger('corrsys')
         self.syslogger.addHandler(self.log_handler)
         self.syslogger.setLevel(log_level)
 
-        if config_file == '/etc/corr/default':
-            self.syslogger.warn('Defaulting to config file %s.' % '/etc/corr/default')
+        if config_file == default_config:
+            self.syslogger.warn('Defaulting to config file %s.' % default_config)
         self.config = corr.cn_conf.CorrConf(config_file)
 
         self.xsrvs = self.config['servers_x']
