@@ -3,6 +3,10 @@ import os, sys, glob
 
 __version__ = '0.7.3'
 
+katcp_prefix = '/'
+if os.environ.has_key('VIRTUAL_ENV'):
+    katcp_prefix = os.environ['VIRTUAL_ENV']
+
 setup(name = 'corr',
     version = __version__,
     description = 'Interfaces to CASPER correlators',
@@ -24,7 +28,7 @@ setup(name = 'corr',
     package_dir = {'corr':'src'},
     packages = ['corr'],
     scripts=glob.glob('scripts/*'),
-    data_files=[('/etc/corr',['etc/default']),
+    data_files=[(os.path.join(katcp_prefix, 'etc/corr'),['etc/default']),
                 #('/var/run/corr',['support_files/sync_time'])
                 ]
 )
