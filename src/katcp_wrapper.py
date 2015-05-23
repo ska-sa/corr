@@ -247,6 +247,7 @@ class FpgaClient(CallbackClient):
            @param mac   integer: MAC address, 48 bits.
            @param ip    integer: IP address, 32 bits.
            @param port  integer: port of fabric interface (16 bits).
+           @param subnet_mask  integer: Subnet mask (32 bits).
            @param arp_table  list of integers: MAC addresses (48 bits ea).
            """
         #assemble struct for header stuff...
@@ -812,6 +813,11 @@ class FpgaClient(CallbackClient):
 
         print 'Gateware Port: ',
         print '%5d'%(port_dump[0x22]*(2**8)+port_dump[0x23])
+
+        print 'Subnet Mask: ',
+        for i in port_dump[0x38:0x38+4]:
+            print '%3d'%i,
+        print ''
 
         print 'Fabric interface is currently: ',
         if port_dump[0x21]&1: print 'Enabled'
