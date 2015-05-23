@@ -335,11 +335,11 @@ class FpgaClient(CallbackClient):
             @param n_addresses integer: Adjacent number of addresses to subscribe to. Note that this needs to be a power of 2 due to HW restrictions.
            """
         if len(tap_dev) > 8:
-            raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s for device %s." % (tap_dev, device))
+            raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s." % (tap_dev))
         if n_addresses<1:
             raise RuntimeError("You need to subscribe to at least 1 address!")
         if n_addresses&(n_addresses-1) != 0:
-            raise RuntimeError("The number of addresses needs to be a power of 2. You specified %s for device %s." % (n_addresses, device))
+            raise RuntimeError("The number of addresses needs to be a power of 2. You specified %s for device %s." % (n_addresses, tap_dev))
 
         first_ip=ip&(0xffffffff-n_addresses+1)
         last_ip=first_ip+ n_addresses
@@ -348,23 +348,26 @@ class FpgaClient(CallbackClient):
         ip_str_last=ip_to_a(last_ip)
 
         self._logger.info("Joining the multicast groups %s - %s." %(ip_str_first, ip_str_last))
-        reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'send', str(ip_str_first) + '+' + str(n_addresses-1))
+        if n_addresses==1:
+            reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'send', str(ip_str_first))
+        else:
+            reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'send', str(ip_str_first) + '+' + str(n_addresses-1))
         if reply.arguments[0]=='ok': return
-        else: raise RuntimeError("Failure adding multicast addresses %s-%s to tap device %s." %(ip_str_first,ip_str_last, device))
+        else: raise RuntimeError("Failure adding multicast addresses %s-%s to tap device %s." %(ip_str_first,ip_str_last, tap_dev))
 
     def tap_multicast_add_recv(self, tap_dev, ip, n_addresses=1):
-        """Adds a range of address to which the ROACH must send to (this is only needed if you plan to send multicast packets from the PPC; the FPGA fabric doesn't need anything here). Note that subsequent calls to this function will overwrite previous calls (you can only subscribe to one set of addresses).
+        """Adds a range of address to which the ROACH must receive from. Note that subsequent calls to this function will overwrite previous calls (you can only subscribe to one set of addresses).
             @param self    This object.
             @param tap_dev String: name of the tap device (a Linux identifier). If you want to destroy a device later, you need to use this name.
             @param ip      integer: IP address, 32 bits. This should be 2^N bounded (ie if you're subscribing to 4 addresses, this address should have zeros in its lowest two bits).
-            @param n_addresses integer: Adjacent number of addresses to subscribe to. Note that this needs to be a power of 2 due to HW restrictions.
+            @param n_addresses integer: Adjacent number of addresses to subscribe to. Note that this needs to be a power of 2 due to HW restrictions. Default of 1 means only this address.
            """
         if len(tap_dev) > 8:
-            raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s for device %s." % (tap_dev, device))
+            raise RuntimeError("Tap device identifier must be shorter than 9 characters. You specified %s." % (tap_dev))
         if n_addresses<1:
             raise RuntimeError("You need to subscribe to at least 1 address!")
         if n_addresses&(n_addresses-1) != 0:
-            raise RuntimeError("The number of addresses needs to be a power of 2. You specified %s for device %s." % (n_addresses, device))
+            raise RuntimeError("The number of addresses needs to be a power of 2. You specified %s for device %s." % (n_addresses, tap_dev))
 
         first_ip=ip&(0xffffffff-n_addresses+1)
         last_ip=first_ip+ n_addresses-1
@@ -373,9 +376,13 @@ class FpgaClient(CallbackClient):
         ip_str_last=ip_to_a(last_ip)
 
         self._logger.info("Subscribing to the multicast groups %s - %s." %(ip_str_first, ip_str_last))
-        reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'recv', str(ip_str_first) + '+' + str(n_addresses-1))
+        #work around initial interface bug with '+x' off-by-one error:
+        if n_addresses==1:
+            reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'recv', str(ip_str_first))
+        else:
+            reply, informs = self._request("tap-multicast-add", self._timeout, tap_dev, 'recv', str(ip_str_first) + '+' + str(n_addresses-1))
         if reply.arguments[0]=='ok': return
-        else: raise RuntimeError("Failure subscribing to multicast addresses %s-%s to tap device %s." %(ip_str_first,ip_str_last, device))
+        else: raise RuntimeError("Failure subscribing to multicast addresses %s-%s to tap device %s." %(ip_str_first,ip_str_last, tap_dev))
 
     def tap_multicast_remove(self, tap_dev):
         """Stop subscribing to all multicast addresses on specified TAP device.
@@ -450,10 +457,11 @@ class FpgaClient(CallbackClient):
         self._logger.info(debugstr)
         stime = time.time()
         done = False
-        while (not done) and (time.time() < stime + 2):
+        while (not done) and (time.time() < stime + 15):
             try:
                 self.listdev()
                 done = True
+                #print "Got a successful listdev from %s!"%self.host
             except:
                 time.sleep(0.1)
         if not done:
@@ -1051,6 +1059,55 @@ class FpgaClient(CallbackClient):
             bram_dmp['val']=self.read_uint(dev_name+'_val')
 
         return bram_dmp
+
+    def arp_announce_adj(self,dev_name, announce_start=130, announce_stop=10000, announce_step=500):
+        """Adjust the issuing of unsolicited ARP announcements' algorithm parameters. Requires ROACH2 romfs 2014-12-11 or later.
+          @param announce_start A
+          @param announce_stop A
+          @param announce_step A
+          @return katcp response. 
+        """
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'announce-start',announce_start/10)
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'announce-step',announce_step/10)
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'announce-stop',announce_stop/10)
+        self._logger.info("Adjusting ARP algorithm on interface %s: announce period initially %i ms, incrementing by %i ms to %i ms... %s"%(dev_name,announce_start,announce_step,announce_stop,reply.arguments[0]))
+        return reply.arguments[0]
+
+    def arp_timeout_adj(self,dev_name, valid_timeout=500000):
+        """Adjusts the ARP valid timeout (cache time). 
+          @param self  This object.
+          @param dev_name The name of the GbE device.
+          @param valid_timout Time in ms since last receiving an ARP response before an address will be re-queried. Ie don't send a query for an address that responded in the last valid_timeout ms.
+          @return katcp response. 
+        """
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'valid_timeout',valid_timeout/10)
+        self._logger.info("Adjusting ARP algorithm on interface %s: cache timeout set to %i ms... %s"%(dev_name,valid_timeout,reply.arguments[0]))
+        return reply.arguments[0]
+    
+    def arp_query_adj(self,dev_name, query_start=250, query_stop=50000, query_step=500):
+        """Adjust the ARP query algorithm parameters. Requires ROACH2 romfs 2014-12-11 or later.
+          @param self  This object.
+          @param dev_name The name of the GbE device.
+          @param query_start   Rate at which to start issuing ARP requests (ms between packets). Nominally ~100ms.
+          @param query_stop    Final, minimum rate at which to issue ARP requests (ms between packets). Nominally ~10000ms.
+          @param query_step    Adjusts the slope steepness between query_start and query_stop. Higher values move to query_stop steady-state more quickly.
+          @return katcp response. 
+        """
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'query-start',query_start/10)
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'query-step',query_step/10)
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'query-stop',query_stop/10)
+        self._logger.info("Adjusting ARP algorithm on interface %s: query period initially %i ms, incrementing by %i ms to %i ms... %s"%(dev_name,query_start,query_step,query_stop,reply.arguments[0]))
+        return reply.arguments[0]
+        
+    def arp_reload(self, dev_name):
+        """Force an ARP update on 'dev_name' interface.
+          @param self  This object.
+          @param dev_name The name of the GbE device.
+          @return  Nothing, just the KATCP response.
+        """
+        reply, informs = self._request("tap-arp-reload", self._timeout, dev_name)
+        self._logger.info("Reloading ARP table on interface %s... %s."%(dev_name,reply.arguments[0]))
+        return reply.arguments[0]
 
 def ip_to_a(ip):
     return '%i.%i.%i.%i'%((ip>>24),((ip&(0xff<<16))>>16),((ip&(0xff<<8))>>8),(ip&(0xff)))
