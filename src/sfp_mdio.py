@@ -22,7 +22,7 @@ class Sfp_mezzanine_card(object):
     def mdio_enable_sw_control(self):
         '''Enable software control of SFP MDIOs.
         '''
-        self.fpga.write_int('gpio_data_ded', 0x618)     # See SW enable status below:
+        self.fpga.write_int('sfp_gpio_data_ded', 0x618)     # See SW enable status below:
         '''
         # mgt_gpio[11]  Unused 
         # ENABLE SW CONTROL => mgt_gpio[10]  SFP1: MDIO          MDIO data line
@@ -116,9 +116,9 @@ class Sfp_phy(object):
                     phy_value = 0x100       # 0b0001 0000 0000
         if phy_value == -1:
             raise ValueError('Mezzanine(%i), Phy(%i) produce invalid phy value.' % (self.card, phy))
-        self.card.fpga.write_int('gpio_data_oe',  phy_value)   # Set Output Enable for all phy resets
-        self.card.fpga.write_int('gpio_data_out', phy_value)   # Assert Reset high for all phys
-        self.card.fpga.write_int('gpio_data_out', 0)           # Deassert Reset for all phys
+        self.card.fpga.write_int('sfp_gpio_data_oe',  phy_value)   # Set Output Enable for all phy resets
+        self.card.fpga.write_int('sfp_gpio_data_out', phy_value)   # Assert Reset high for all phys
+        self.card.fpga.write_int('sfp_gpio_data_out', 0)           # Deassert Reset for all phys
         '''
         # mgt_gpio[11]  Unused 
         # mgt_gpio[10]  SFP1: MDIO          MDIO data line

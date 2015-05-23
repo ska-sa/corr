@@ -1048,5 +1048,54 @@ class FpgaClient(CallbackClient):
 
         return bram_dmp
 
+    def arp_announce_adj(self,dev_name, announce_start=130, announce_stop=10000, announce_step=500):
+        """Adjust the issuing of unsolicited ARP announcements' algorithm parameters. Requires ROACH2 romfs 2014-12-11 or later.
+          @param announce_start A
+          @param announce_stop A
+          @param announce_step A
+          @return katcp response. 
+        """
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'announce-start',announce_start/10)
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'announce-step',announce_step/10)
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'announce-stop',announce_stop/10)
+        self._logger.info("Adjusting ARP algorithm on interface %s: announce period initially %i ms, incrementing by %i ms to %i ms... %s"%(dev_name,announce_start,announce_step,announce_stop,reply.arguments[0]))
+        return reply.arguments[0]
+
+    def arp_timeout_adj(self,dev_name, valid_timeout=500000):
+        """Adjusts the ARP valid timeout (cache time). 
+          @param self  This object.
+          @param dev_name The name of the GbE device.
+          @param valid_timout Time in ms since last receiving an ARP response before an address will be re-queried. Ie don't send a query for an address that responded in the last valid_timeout ms.
+          @return katcp response. 
+        """
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'valid_timeout',valid_timeout/10)
+        self._logger.info("Adjusting ARP algorithm on interface %s: cache timeout set to %i ms... %s"%(dev_name,valid_timeout,reply.arguments[0]))
+        return reply.arguments[0]
+    
+    def arp_query_adj(self,dev_name, query_start=250, query_stop=50000, query_step=500):
+        """Adjust the ARP query algorithm parameters. Requires ROACH2 romfs 2014-12-11 or later.
+          @param self  This object.
+          @param dev_name The name of the GbE device.
+          @param query_start   Rate at which to start issuing ARP requests (ms between packets). Nominally ~100ms.
+          @param query_stop    Final, minimum rate at which to issue ARP requests (ms between packets). Nominally ~10000ms.
+          @param query_step    Adjusts the slope steepness between query_start and query_stop. Higher values move to query_stop steady-state more quickly.
+          @return katcp response. 
+        """
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'query-start',query_start/10)
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'query-step',query_step/10)
+        reply, informs = self._request("tap-arp-config", self._timeout, dev_name, 'query-stop',query_stop/10)
+        self._logger.info("Adjusting ARP algorithm on interface %s: query period initially %i ms, incrementing by %i ms to %i ms... %s"%(dev_name,query_start,query_step,query_stop,reply.arguments[0]))
+        return reply.arguments[0]
+        
+    def arp_reload(self, dev_name):
+        """Force an ARP update on 'dev_name' interface.
+          @param self  This object.
+          @param dev_name The name of the GbE device.
+          @return  Nothing, just the KATCP response.
+        """
+        reply, informs = self._request("tap-arp-reload", self._timeout, dev_name)
+        self._logger.info("Reloading ARP table on interface %s... %s."%(dev_name,reply.arguments[0]))
+        return reply.arguments[0]
+
 def ip_to_a(ip):
     return '%i.%i.%i.%i'%((ip>>24),((ip&(0xff<<16))>>16),((ip&(0xff<<8))>>8),(ip&(0xff)))

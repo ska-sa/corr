@@ -55,30 +55,33 @@ class Scroll(object):
         '''
         key = self.screen.getch()
         if key > 0:
-            if chr(key) ==  'q':
-                raise KeyboardInterrupt		# q for quit
-            elif chr(key) ==  'u':
-                self.offset_y -=  curses.LINES
-            elif chr(key) ==  'd':
-                self.offset_y +=  curses.LINES
-            elif chr(key) ==  'l':
-                self.offset_x +=  curses.COLS
-            elif chr(key) ==  'r':
-                self.offset_x -=  curses.COLS
-            elif chr(key) ==  'h':
-                self.offset_x = 0
-                self.offset_y = 0
-            elif key ==  65:
-                self.offset_y -=  1               # up
-            elif key ==  66:
-                self.offset_y +=  1               # down
-            elif key ==  67:
-                self.offset_x -=  1               # right
-            elif key ==  68:
-                self.offset_x +=  1               # left
-            return [key, chr(key)]
+            try:
+                if chr(key) ==  'q':
+                    raise KeyboardInterrupt		# q for quit
+                elif chr(key) ==  'u':
+                    self.offset_y -=  curses.LINES
+                elif chr(key) ==  'd':
+                    self.offset_y +=  curses.LINES
+                elif chr(key) ==  'l':
+                    self.offset_x +=  curses.COLS
+                elif chr(key) ==  'r':
+                    self.offset_x -=  curses.COLS
+                elif chr(key) ==  'h':
+                    self.offset_x = 0
+                    self.offset_y = 0
+                elif key ==  65:
+                    self.offset_y -=  1               # up
+                elif key ==  66:
+                    self.offset_y +=  1               # down
+                elif key ==  67:
+                    self.offset_x -=  1               # right
+                elif key ==  68:
+                    self.offset_x +=  1               # left
+                return [key, chr(key)]
+            except ValueError:
+                return [0, 0]
         else:
-            return [0, chr(0)]
+            return [0, 0]
 
     def clear_screen(self):
         '''Clear the ncurses screen.
