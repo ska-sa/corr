@@ -239,7 +239,7 @@ class FpgaClient(CallbackClient):
             self._logger.info("Programming FPGA with %s... %s."%(boffile,reply.arguments[0]))
         return reply.arguments[0]
 
-    def config_10gbe_core(self,device_name,mac,ip,port,arp_table,gateway=1):
+    def config_10gbe_core(self,device_name,mac,ip,port,arp_table,gateway=1,subnet_mask=0xffffff00):
         """Hard-codes a 10GbE core with the provided params. It does a blindwrite, so there is no verifcation that configuration was successful (this is necessary since some of these registers are set by the fabric depending on traffic received).
 
            @param self  This object.
@@ -269,13 +269,17 @@ class FpgaClient(CallbackClient):
         #0x2a       : TX_preemph
         #0x2b       : TX_diff_ctrl
 
+        #0x38 - 0x4b: subnet mask
+
         #0x1000     : CPU TX buffer
         #0x2000     : CPU RX buffer
         #0x3000     : ARP tables start
 
         ctrl_pack=struct.pack('>QLLLLLLBBH',mac, 0, gateway, ip, 0, 0, 0, 0, 1, port)
+        subnet_mask_pack=struct.pack('>L',subnet_mask)
         arp_pack=struct.pack('>256Q',*arp_table)
         self.blindwrite(device_name,ctrl_pack,offset=0)
+        self.blindwrite(device_name,subnet_mask_pack,offset=0x38)
         self.write(device_name,arp_pack,offset=0x3000)
 
     def tap_start(self, tap_dev, device, mac, ip, port):
