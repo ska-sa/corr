@@ -3,13 +3,13 @@
 2011-12-12  JRM Metadata propagation to SD.
                 Datatype propagation through to SD
                 min/max value logging (was not scaling back).
-                Loggin: SPEAD and RX levels. 
+                Loggin: SPEAD and RX levels.
                 Timestamps to SD.
 """
 
 import threading
 import numpy as np
-import spead
+import spead64_48 as spead
 import logging
 import sys
 import time
@@ -17,8 +17,8 @@ import h5py
 import corr
 
 class CorrRx(threading.Thread):
-    def __init__(self, mode = 'cont', port=7148, log_handler = None, log_level = logging.INFO, spead_log_level = spead.logging.WARN, **kwargs):
-        if log_handler == None: 
+    def __init__(self, mode = 'cont', port=7148, log_handler = None, log_level = logging.INFO, spead_log_level = logging.WARN, **kwargs):
+        if log_handler == None:
             log_handler = corr.log_handlers.DebugLogHandler(100)
         self.log_handler = log_handler
         self.logger = logging.getLogger('rx')
@@ -35,12 +35,12 @@ class CorrRx(threading.Thread):
         self._kwargs = kwargs
         #print kwargs
         threading.Thread.__init__(self)
- 
+
     def run(self):
         #print 'starting target with kwargs ',self._kwargs
         self._target(**self._kwargs)
-        
-    def rx_cont(self,data_port=7148, sd_ip='127.0.0.1', sd_port=7149,acc_scale=True, filename=None,**kwargs): 
+
+    def rx_cont(self,data_port=7148, sd_ip='127.0.0.1', sd_port=7149,acc_scale=True, filename=None,**kwargs):
         logger=self.logger
         logger.info("Data reception on port %i."%data_port)
         rx = spead.TransportUDPrx(data_port, pkt_count=1024, buffer_size=51200000)
@@ -56,7 +56,7 @@ class CorrRx(threading.Thread):
         ts_ds = None
         idx = 0
         dump_size = 0
-        datasets = {} 
+        datasets = {}
         datasets_index = {}
         meta_required = ['n_chans','bandwidth','n_bls','n_xengs','center_freq','bls_ordering']
          # we need these bits of meta data before being able to assemble and transmit signal display data
@@ -114,14 +114,14 @@ class CorrRx(threading.Thread):
                      # reinit the group to force meta data resend
                     ig_sd = spead.ItemGroup()
                     ig_sd.add_item(name=('sd_data'),
-                                    id=(0x3501), 
-                                    description="Combined raw data from all x engines.", 
+                                    id=(0x3501),
+                                    description="Combined raw data from all x engines.",
                                     ndarray=(scaled_data.dtype,scaled_data.shape))
-                    ig_sd.add_item(name=('sd_timestamp'), 
-                                    id=0x3502, 
-                                    description='Timestamp of this sd frame in centiseconds since epoch (40 bit limitation).', 
+                    ig_sd.add_item(name=('sd_timestamp'),
+                                    id=0x3502,
+                                    description='Timestamp of this sd frame in centiseconds since epoch (40 bit limitation).',
                                     init_val=sd_timestamp)
-                                    #shape=[], 
+                                    #shape=[],
                                     #fmt=spead.mkfmt(('u',spead.ADDRSIZE)))
                     t_it = ig_sd.get_item('sd_data')
                     logger.debug("Added SD frame with shape %s, dtype %s"%(str(t_it.shape),str(t_it.dtype)))
@@ -130,7 +130,7 @@ class CorrRx(threading.Thread):
                     logger.info("Sending signal display frame with timestamp %i (%s). %s. Max: %i, Mean: %i"%(
                         sd_timestamp,
                         time.ctime(sd_timestamp),
-                        "Unscaled" if not acc_scale else "Scaled by %i" % (scale_factor), 
+                        "Unscaled" if not acc_scale else "Scaled by %i" % (scale_factor),
                         np.max(scaled_data),
                         np.mean(scaled_data)))
                     ig_sd['sd_data'] = scaled_data
@@ -178,7 +178,7 @@ class CorrRx(threading.Thread):
         ts_ds = None
         idx = 0
         dump_size = 0
-        datasets = {} 
+        datasets = {}
         datasets_index = {}
         # we need these bits of meta data before being able to assemble and transmit signal display data
         meta_required = ['n_chans','n_bls','n_xengs','center_freq','bls_ordering','bandwidth']
@@ -200,7 +200,7 @@ class CorrRx(threading.Thread):
 
                 # the item is not marked as changed and we already have a record for it, continue
                 if not item._changed and datasets.has_key(name):
-                  continue         
+                  continue
                 logger.debug("PROCESSING KEY %s @ %.4f" % (name, time.time()))
 
                 if name in meta_desired:
@@ -243,7 +243,7 @@ class CorrRx(threading.Thread):
                   f[name].resize(datasets_index[name]+1, axis=0)
 
                 # now we store this x engine's data for sending sd data.
-                if sd_frame is not None and name.startswith("xeng_raw"):          
+                if sd_frame is not None and name.startswith("xeng_raw"):
                   xeng_id = int(name[8:])
                   sd_frame[xeng_id::meta['n_xengs']] = ig[name]
                   logger.debug('Received data for Xeng %i @ %.4f' % (xeng_id, time.time()))

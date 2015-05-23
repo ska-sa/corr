@@ -239,7 +239,7 @@ class FpgaClient(CallbackClient):
             self._logger.info("Programming FPGA with %s... %s."%(boffile,reply.arguments[0]))
         return reply.arguments[0]
 
-    def config_10gbe_core(self,device_name,mac,ip,port,arp_table,gateway=1):
+    def config_10gbe_core(self,device_name,mac,ip,port,arp_table,gateway=1,subnet_mask=0xffffff00):
         """Hard-codes a 10GbE core with the provided params. It does a blindwrite, so there is no verifcation that configuration was successful (this is necessary since some of these registers are set by the fabric depending on traffic received).
 
            @param self  This object.
@@ -269,13 +269,17 @@ class FpgaClient(CallbackClient):
         #0x2a       : TX_preemph
         #0x2b       : TX_diff_ctrl
 
+        #0x38 - 0x4b: subnet mask
+
         #0x1000     : CPU TX buffer
         #0x2000     : CPU RX buffer
         #0x3000     : ARP tables start
 
         ctrl_pack=struct.pack('>QLLLLLLBBH',mac, 0, gateway, ip, 0, 0, 0, 0, 1, port)
+        subnet_mask_pack=struct.pack('>L',subnet_mask)
         arp_pack=struct.pack('>256Q',*arp_table)
         self.blindwrite(device_name,ctrl_pack,offset=0)
+        self.blindwrite(device_name,subnet_mask_pack,offset=0x38)
         self.write(device_name,arp_pack,offset=0x3000)
 
     def tap_start(self, tap_dev, device, mac, ip, port):
@@ -388,7 +392,7 @@ class FpgaClient(CallbackClient):
 
         reply, informs = self._request("tap-multicast_remove", self._timeout, tap_dev)
         if reply.arguments[0]=='ok': return
-        else: raise RuntimeError("Failure stopping tap device %s."%(tap_dev))
+        else: raise RuntimeError("Failure stopping tap device %s." % (tap_dev))
 
     def upload_program_bof(self, bof_file, port, timeout = 30):
         """Upload a BORPH file to the ROACH board for execution.
@@ -398,7 +402,7 @@ class FpgaClient(CallbackClient):
            @param timeout  The timeout to use for uploading.
            @return
         """
-        # does the bof file exist?
+        # does the bof file exist on the local filesystem?
         try:
             os.path.getsize(bof_file)
         except:
@@ -417,8 +421,9 @@ class FpgaClient(CallbackClient):
             upload_socket = socket.socket()
             stime = time.time()
             connected = False
-            while (not connected) and (time.time() < stime + 2):
+            while (not connected) and (time.time() < (stime + 2)):
                 try:
+                    upload_socket = socket.socket()
                     upload_socket.connect((self.host, port))
                     connected = True
                 except:
@@ -986,7 +991,15 @@ class FpgaClient(CallbackClient):
             rv['app_rev']=app&((2**28)-1)
         return rv
 
-    def snapshot_get(self, dev_name, man_trig=False, man_valid=False, wait_period=1, offset=-1, circular_capture=False, get_extra_val=False):
+    def snapshot_arm(self, dev_name, man_trig=False, man_valid=False, offset=-1, circular_capture=False):
+        if offset >=0:
+            self.write_int(dev_name+'_trig_offset', offset)
+            #print 'Capturing from snap offset %i'%offset
+        #print 'Triggering Capture...',
+        self.write_int(dev_name + '_ctrl', (0 + (man_trig<<1) + (man_valid<<2) + (circular_capture<<3)))
+        self.write_int(dev_name + '_ctrl', (1 + (man_trig<<1) + (man_valid<<2) + (circular_capture<<3)))
+
+    def snapshot_get(self, dev_name, man_trig=False, man_valid=False, wait_period=1, offset=-1, circular_capture=False, get_extra_val=False, arm=True):
         """Grabs all brams from a single snap block on this FPGA device.\n
             \tdev_name: string, name of the snap block.\n
             \tman_trig: boolean, Trigger the snap block manually.\n
@@ -999,15 +1012,8 @@ class FpgaClient(CallbackClient):
             \t\tdata: list of data from each fpga for corresponding bram.\n"""
         # new snapshot block support (bytes instead of words) with hardware-configurable datawidth and user-selectable features.
         #TODO Test offset, get_extra_val and circular capture modes.
-
-        if offset >=0:
-            self.write_int(dev_name+'_trig_offset',offset)
-            #print 'Capturing from snap offset %i'%offset
-
-        #print 'Triggering Capture...',
-        self.write_int(dev_name+'_ctrl',(0 + (man_trig<<1) + (man_valid<<2) + (circular_capture<<3)))
-        self.write_int(dev_name+'_ctrl',(1 + (man_trig<<1) + (man_valid<<2) + (circular_capture<<3)))
-
+        if arm:
+            self.snapshot_arm(dev_name=dev_name, man_trig=man_trig, man_valid=man_valid, offset=offset, circular_capture=circular_capture)
         done=False
         start_time=time.time()
         while not done and ((time.time()-start_time)<wait_period or (wait_period < 0)):

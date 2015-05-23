@@ -7,10 +7,17 @@ Revs:
 
 """
 
-import corr, numpy, time, struct, construct, logging
-from construct import *
+import corr, numpy, time, construct, logging
 
-def snapshots_get(fpgas,dev_names,man_trig=False,man_valid=False,wait_period=-1,offset=-1,circular_capture=False):
+def snapshots_arm(fpgas, dev_names, man_trig, man_valid, offset, circular_capture):
+    if offset >=0:
+        for fn, fpga in enumerate(fpgas):
+            fpga.write_int(dev_names[fn] + '_trig_offset', offset)
+    for fn, fpga in enumerate(fpgas):
+        fpga.write_int(dev_names[fn]+'_ctrl', (0 + (man_trig<<1) + (man_valid<<2) + (circular_capture<<3)))
+        fpga.write_int(dev_names[fn]+'_ctrl', (1 + (man_trig<<1) + (man_valid<<2) + (circular_capture<<3)))
+
+def snapshots_get(fpgas, dev_names, man_trig=False, man_valid=False, wait_period=-1, offset=-1, circular_capture=False, arm=True):
     """Fetches data from multiple snapshot devices. fpgas and dev_names are lists of katcp_wrapper.FpgaClient,and 'snapshot_device_name', respectively.
         This function triggers and retrieves data from the snap block devices. The actual captured length and starting offset is returned with the dictionary of data for each FPGA (useful if you've done a circular capture and can't calculate this yourself).\n
         \tdev_names: list of strings, names of the snap block corresponding to FPGA list. Can optionally be 1-D, in which case name is used for all FPGAs.\n
@@ -23,21 +30,15 @@ def snapshots_get(fpgas,dev_names,man_trig=False,man_valid=False,wait_period=-1,
         \t\toffset: optional (depending on snap block version) list of number of valids elapsed since last trigger on each fpga.
         \t\t{brams}: list of data from each fpga for corresponding bram.\n
         """
-    # 2011-06-24 JRM first write. 
-    if isinstance(dev_names,str):
+    # 2011-06-24 JRM first write.
+    if isinstance(dev_names, str):
         dev_names=[dev_names for f in fpgas]
-
-    if offset >=0:
-        for fn,fpga in enumerate(fpgas):
-            fpga.write_int(dev_names[fn]+'_trig_offset',offset)
-
-    for fn,fpga in enumerate(fpgas):
-        fpga.write_int(dev_names[fn]+'_ctrl',(0 + (man_trig<<1) + (man_valid<<2) + (circular_capture<<3)))
-        fpga.write_int(dev_names[fn]+'_ctrl',(1 + (man_trig<<1) + (man_valid<<2) + (circular_capture<<3)))
-
+    if arm:
+        snapshots_arm(fpgas=fpgas, dev_names=dev_names, man_trig=man_trig, man_valid=man_valid, offset=offset, circular_capture=circular_capture)
+    # wait
     done=False
     start_time=time.time()
-    while not done and ((time.time()-start_time)<wait_period or (wait_period < 0)): 
+    while not done and ((time.time()-start_time)<wait_period or (wait_period < 0)):
         addr      = [fpga.read_uint(dev_names[fn]+'_status') for fn,fpga in enumerate(fpgas)]
         done_list = [not bool(i & 0x80000000) for i in addr]
         if (done_list == [True for i in fpgas]): done=True
@@ -50,14 +51,14 @@ def snapshots_get(fpgas,dev_names,man_trig=False,man_valid=False,wait_period=-1,
         now_status=bool(fpga.read_uint(dev_names[fn]+'_status')&0x80000000)
         now_addr=fpga.read_uint(dev_names[fn]+'_status')&0x7fffffff
         if (bram_dmp['lengths'][fn] != now_addr) or (bram_dmp['lengths'][fn]==0) or (now_status==True):
-            #if address is still changing, then the snap block didn't finish capturing. we return empty.  
+            #if address is still changing, then the snap block didn't finish capturing. we return empty.
             raise RuntimeError("A snap block logic error occurred on capture #%i. It reported capture complete but the address is either still changing, or it returned 0 bytes captured after the allotted %2.2f seconds. Addr at stop time: %i. Now: Still running :%s, addr: %i."%(fn,wait_period,bram_dmp['lengths'][fn],{True:'yes',False:'no'}[now_status],now_addr))
             bram_dmp['lengths'][fn]=0
             bram_dmp['offsets'][fn]=0
 
         if circular_capture:
             bram_dmp['offsets'][fn]=fpga.read_uint(dev_names[fn]+'_tr_en_cnt') - bram_dmp['lengths'][fn]
-        else: 
+        else:
             bram_dmp['offsets'][fn]=0
 
         if bram_dmp['lengths'][fn] == 0:
@@ -66,9 +67,9 @@ def snapshots_get(fpgas,dev_names,man_trig=False,man_valid=False,wait_period=-1,
             bram_dmp['data'].append(fpga.read(dev_names[fn]+'_bram',bram_dmp['lengths'][fn]))
 
     bram_dmp['offsets']=numpy.add(bram_dmp['offsets'],offset)
-    
+
     for fn,fpga in enumerate(fpgas):
-        if (bram_dmp['offsets'][fn]<0): 
+        if (bram_dmp['offsets'][fn]<0):
             bram_dmp['offsets'][fn]=0
 
     return bram_dmp
@@ -86,19 +87,19 @@ def snapshots_get(fpgas,dev_names,man_trig=False,man_valid=False,wait_period=-1,
 #    elif word_width==128:
 #        req_dtype=numpy.uint128
 #
-#    unpacked_data = numpy.fromstring(data,dtype=numpy.int8)        
+#    unpacked_data = numpy.fromstring(data,dtype=numpy.int8)
 #    for key,value in bitmap.iteritems():
 #   INCOMPLETE. use construct instead.
 
 
 def get_adc_snapshots(correlator, ant_strs = [], trig_level = -1, sync_to_pps = True):
     """Fetches multiple ADC snapshots from hardware. Set trig_level to negative value to disable triggered captures. Timestamps only valid if system is correctly sync'd!"""
-    if correlator.config['adc_n_bits'] !=8: 
+    if correlator.config['adc_n_bits'] !=8:
         raise RuntimeError('This function is hardcoded to work with 8 bit ADCs. According to your config file, yours is %i bits.' % correlator.config['adc_n_bits'])
 
     fpgas = []
     dev_names = []
-    for ant_str in ant_strs:    
+    for ant_str in ant_strs:
         (ffpga_n, xfpga_n, fxaui_n, xxaui_n, feng_input) = correlator.get_ant_str_location(ant_str)
         fpgas.append(correlator.ffpgas[ffpga_n])
         dev_names.append('adc_snap%i' % feng_input)
@@ -118,18 +119,18 @@ def get_adc_snapshots(correlator, ant_strs = [], trig_level = -1, sync_to_pps = 
             ready = ((int(time.time() * 10) % 10) == 5)
     else:
         raw = snapshots_get(fpgas, dev_names, wait_period = 2, circular_capture = False, man_trig = (not sync_to_pps))
-    
+
     rv = {}
-    for ant_n, ant_str in enumerate(ant_strs):    
+    for ant_n, ant_str in enumerate(ant_strs):
         rv[ant_str] = {'data': numpy.fromstring(raw['data'][ant_n], dtype = numpy.int8), 'offset': raw['offsets'][ant_n], 'length': raw['lengths'][ant_n]}
         ts = fpgas[ant_n].read_uint(dev_names[ant_n] + '_val')
         rv[ant_str]['timestamp'] = correlator.time_from_mcnt((init_mcnt & 0xffffffff00000000) + ts)
-        if mcnt_lsbs > ts: 
+        if mcnt_lsbs > ts:
             rv[ant_str]['timestamp'] += 0x100000000 # 32 bit number must've overflowed once.
 
     return rv
-       
-    #return numpy.fromstring(self.ffpgas[ffpga_n].snapshot_get('adc_snap%i'%feng_input,man_trig=False,circular_capture=True,wait_period=-1)['data'],dtype=numpy.int8)        
+
+    #return numpy.fromstring(self.ffpgas[ffpga_n].snapshot_get('adc_snap%i'%feng_input,man_trig=False,circular_capture=True,wait_period=-1)['data'],dtype=numpy.int8)
 
 def get_quant_snapshot(correlator, ant_str, n_spectra = 1, man_trig = False, man_valid = False, wait_period = 2):
     """
@@ -182,7 +183,7 @@ def get_quant_snapshot(correlator, ant_str, n_spectra = 1, man_trig = False, man
 
 def Swapped(subcon):
     """swaps the bytes of the stream, prior to parsing"""
-    return Buffered(subcon,
+    return construct.Buffered(subcon,
         encoder = lambda buf: buf[::-1],
         decoder = lambda buf: buf[::-1],
         resizer = lambda length: length
