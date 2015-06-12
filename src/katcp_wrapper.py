@@ -269,7 +269,7 @@ class FpgaClient(CallbackClient):
         #0x2a       : TX_preemph
         #0x2b       : TX_diff_ctrl
 
-        #0x38 - 0x4b: subnet mask
+        #0x38 - 0x3b: subnet mask
 
         #0x1000     : CPU TX buffer
         #0x2000     : CPU RX buffer
@@ -706,6 +706,7 @@ class FpgaClient(CallbackClient):
         #0x29       : RX_eq_pol
         #0x30 - 0x33: Multicast IP RX base address
         #0x34       : Multicast IP RX IP mask
+        #0x38 - 0x3b: Subnet mask
         #0x2a       : TX_preemph
         #0x2b       : TX_diff_ctrl
         #0x1000     : CPU TX buffer
@@ -727,6 +728,7 @@ class FpgaClient(CallbackClient):
 
         rv['multicast_rx_base_ip']=((port_dump[0x30]<<24) + (port_dump[0x31]<<16) + (port_dump[0x32]<<8) + (port_dump[0x33]))
         rv['multicast_rx_mask'] = ((port_dump[0x34]<<24) + (port_dump[0x35]<<16) + (port_dump[0x36]<<8) + (port_dump[0x37]))
+        rv['subnet_mask'] = ((port_dump[0x38]<<24) + (port_dump[0x39]<<16) + (port_dump[0x3a]<<8) + (port_dump[0x3b]))
         possible_addresses=[rv['multicast_rx_base_ip']]
         for i in range(32):
             if not ((rv['multicast_rx_mask']>>i)&1):
@@ -777,27 +779,6 @@ class FpgaClient(CallbackClient):
            @param arp boolean: Include the ARP table
            @param cpu boolean: Include the cpu packet buffers
         """
-        #assemble struct for header stuff...
-        #0x00 - 0x07: My MAC address
-        #0x08 - 0x0b: Not used
-        #0x0c - 0x0f: Gateway addr
-        #0x10 - 0x13: my IP addr
-        #0x14 - 0x17: Not assigned
-        #0x18 - 0x1b: Buffer sizes
-        #0x1c - 0x1f: Not assigned
-        #0x20       : soft reset (bit 0)
-        #0x21       : fabric enable (bit 0)
-        #0x22 - 0x23: fabric port
-        #0x24 - 0x27: XAUI status (bit 2,3,4,5=lane sync, bit6=chan_bond)
-        #0x28 - 0x2b: PHY config
-        #0x28       : RX_eq_mix
-        #0x29       : RX_eq_pol
-        #0x2a       : TX_preemph
-        #0x2b       : TX_diff_ctrl
-        #0x1000     : CPU TX buffer
-        #0x2000     : CPU RX buffer
-        #0x3000     : ARP tables start
-
         port_dump=list(struct.unpack('>16384B',self.read(dev_name,16384)))
         ip_prefix= '%3d.%3d.%3d.'%(port_dump[0x10],port_dump[0x11],port_dump[0x12])
 
@@ -815,6 +796,11 @@ class FpgaClient(CallbackClient):
 
         print 'This IP: ',
         for i in port_dump[0x10:0x10+4]:
+            print '%3d'%i,
+        print ''
+
+        print 'Subnet Mask: ',
+        for i in port_dump[0x38:0x38+4]:
             print '%3d'%i,
         print ''
 
