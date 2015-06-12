@@ -808,11 +808,6 @@ class FpgaClient(CallbackClient):
         print 'Gateware Port: ',
         print '%5d'%(port_dump[0x22]*(2**8)+port_dump[0x23])
 
-        print 'Subnet Mask: ',
-        for i in port_dump[0x38:0x38+4]:
-            print '%3d'%i,
-        print ''
-
         print 'Fabric interface is currently: ',
         if port_dump[0x21]&1: print 'Enabled'
         else: print 'Disabled'
